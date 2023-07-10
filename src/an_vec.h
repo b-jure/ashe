@@ -32,7 +32,7 @@ bool an_vec_sort(an_vec_t *vec, CmpFn cmp);
 
 bool an_vec_is_sorted(an_vec_t *vec, CmpFn cmp);
 
-void an_vec_drop(an_vec_t *vec, FreeFn free_fn);
+void an_vec_drop(an_vec_t **vec, FreeFn free_fn);
 
 void *an_vec_index(const an_vec_t *vec, const size_t index);
 
@@ -49,6 +49,17 @@ void *an_vec_index_unsafe(const an_vec_t *vec, const size_t index);
 
 bool an_vec_insert(an_vec_t *vec, const void *element, const size_t index);
 
+bool an_vec_splice(an_vec_t *self, size_t index, size_t remove_n,
+                   const void *array, size_t insert_n);
+
+bool an_vec_append(an_vec_t *self, const void *arr, size_t append_n);
+
+bool an_vec_get(an_vec_t *self, size_t index, void *out);
+
+bool an_vec_set(an_vec_t *self, const void *element, size_t index);
+
 bool an_vec_remove(an_vec_t *vec, const size_t index, FreeFn free_fn);
+
+bool an_vec_eq(const an_vec_t *self, const an_vec_t *other, CmpFn cmp_ele_fn);
 
 #endif
