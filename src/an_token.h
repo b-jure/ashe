@@ -2,13 +2,15 @@
 #include <stddef.h>
 
 typedef enum {
+  REDIROP_TOKEN,
+  WORD_TOKEN,
   PIPE_TOKEN,
-  REDIR_O_CRT_TOKEN,
-  REDIR_O_APN_TOKEN,
-  REDIR_I_TOKEN,
-  ID_TOKEN,
-  EOL_TOKEN,
-  NAT_TOKEN
+  AND_TOKEN,
+  OR_TOKEN,
+  BG_TOKEN,
+  FG_TOKEN,
+  NAT_TOKEN,
+  EOL_TOKEN
 } an_tokentype_t;
 
 typedef struct {

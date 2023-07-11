@@ -15,6 +15,8 @@ an_chariter_t an_chariter_from_string(an_string_t *string);
 
 int an_chariter_next(an_chariter_t *iter);
 
+int an_chariter_goback_unsafe(an_chariter_t *iter, size_t steps);
+
 int an_chariter_peek(an_chariter_t *iter);
 
 #endif

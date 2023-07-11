@@ -29,6 +29,21 @@ int an_chariter_next(an_chariter_t *iter)
     return *iter->next++;
 }
 
+int an_chariter_goback_unsafe(an_chariter_t *iter, size_t steps)
+{
+    if (is_null(iter) || is_exhausted(iter))
+    {
+        return EOL;
+    }
+
+    while (steps--)
+    {
+        iter->next--;
+    }
+
+    return 0;
+}
+
 int an_chariter_peek(an_chariter_t *iter)
 {
     if (is_null(iter) || is_exhausted(iter))

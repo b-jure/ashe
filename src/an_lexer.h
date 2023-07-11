@@ -6,4 +6,8 @@
 
 typedef struct an_lexer_t an_lexer_t;
 
+an_lexer_t an_lexer_new(byte *start, size_t len);
+
+an_token_t an_lexer_next(an_lexer_t *lexer);
+
 #endif
