@@ -3,20 +3,23 @@
 
 #include "an_string.h"
 #include "an_utils.h"
+#include <stdbool.h>
 
 typedef struct {
   byte *next;
   byte *end;
-} an_chariter_t;
+} chariter_t;
 
-an_chariter_t an_chariter_new(byte *start, size_t len);
+chariter_t chariter_new(byte *start, size_t len);
 
-an_chariter_t an_chariter_from_string(an_string_t *string);
+chariter_t chariter_from_string(string_t *string);
 
-int an_chariter_next(an_chariter_t *iter);
+int chariter_next(chariter_t *iter);
 
-int an_chariter_goback_unsafe(an_chariter_t *iter, size_t steps);
+int chariter_goback_unsafe(chariter_t *iter, size_t steps);
 
-int an_chariter_peek(an_chariter_t *iter);
+int chariter_peek(chariter_t *iter);
+
+bool chariter_set_unsafe(chariter_t *iter, byte *next);
 
 #endif

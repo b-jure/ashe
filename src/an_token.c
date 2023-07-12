@@ -2,14 +2,18 @@
 #include "an_token.h"
 #include "an_utils.h"
 #include <stdio.h>
+#include <string.h>
 
 an_token_t an_token_new(an_tokentype_t ttype, const byte *str)
 {
-    an_string_t *string = an_string_from(str);
+    an_string_t *string;
 
-    if (is_null(string))
-    {
-        fprintf(stderr, "%s:%d - out of memory\n", __FILE__, __LINE__);
+    if(is_some(str)) {
+        string = an_string_from(str);
+    }
+
+    if(is_null(string)) {
+        OOM_ERR(strlen(str));
         return (an_token_t){0};
     }
 

@@ -1,53 +1,56 @@
 #include "an_chiter.h"
 #include <stdio.h>
-#define is_exhausted(iter) ((iter)->next == (iter)->end || (iter)->next == NULL)
+#define is_exhausted(iter) ((iter)->next >= (iter)->end || (iter)->next == NULL)
 
-an_chariter_t an_chariter_new(byte *start, size_t len)
+chariter_t chariter_new(byte *start, size_t len)
 {
-    return (an_chariter_t){.next = start, .end = start + len};
+    return (chariter_t){.next = start, .end = start + len};
 }
 
-an_chariter_t an_chariter_from_string(an_string_t *string)
+chariter_t chariter_from_string(an_string_t *string)
 {
-    if (is_null(string))
-    {
-        return an_chariter_new(0, 0);
-    }
-    else
-    {
-        return an_chariter_new(an_string_slice(string, 0), an_string_len(string));
+    if(is_null(string)) {
+        return chariter_new(0, 0);
+    } else {
+        return chariter_new(an_string_slice(string, 0), an_string_len(string));
     }
 }
 
-int an_chariter_next(an_chariter_t *iter)
+int chariter_next(chariter_t *iter)
 {
-    if (is_null(iter) || is_exhausted(iter))
-    {
+    if(is_null(iter) || is_exhausted(iter)) {
         return EOL;
     }
 
     return *iter->next++;
 }
 
-int an_chariter_goback_unsafe(an_chariter_t *iter, size_t steps)
+int chariter_goback_unsafe(chariter_t *iter, size_t steps)
 {
-    if (is_null(iter) || is_exhausted(iter))
-    {
+    if(is_null(iter) || is_exhausted(iter)) {
         return EOL;
     }
 
-    while (steps--)
-    {
+    while(steps--) {
         iter->next--;
     }
 
     return 0;
 }
 
-int an_chariter_peek(an_chariter_t *iter)
+bool chariter_set_unsafe(chariter_t *iter, byte *next)
 {
-    if (is_null(iter) || is_exhausted(iter))
-    {
+    if(next > iter->end) {
+        return false;
+    }
+
+    iter->next = next;
+    return true;
+}
+
+int chariter_peek(chariter_t *iter)
+{
+    if(is_null(iter) || is_exhausted(iter)) {
         return EOL;
     }
 

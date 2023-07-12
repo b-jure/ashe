@@ -1,13 +1,21 @@
 #ifndef __AN_LEXER_H__
 #define __AN_LEXER_H__
 
+#include "an_chiter.h"
 #include "an_token.h"
 #include "an_utils.h"
 
-typedef struct an_lexer_t an_lexer_t;
+typedef struct lexer_t lexer_t;
 
-an_lexer_t an_lexer_new(byte *start, size_t len);
+struct lexer_t {
+  token_t token;
+  chariter_t iter;
+};
 
-an_token_t an_lexer_next(an_lexer_t *lexer);
+lexer_t lexer_new(const byte *start, size_t len);
+
+token_t lexer_next(lexer_t *lexer);
+
+token_t lexer_peek(lexer_t *lexer);
 
 #endif
