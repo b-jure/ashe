@@ -1,4 +1,7 @@
-#include "an_string.h"
+#ifndef __ASH_TOKEN_H__
+#define __ASH_TOKEN_H__
+
+#include "string.h"
 #include <stddef.h>
 
 typedef enum {
@@ -11,7 +14,8 @@ typedef enum {
   BG_TOKEN = 32,
   FG_TOKEN = 64,
   NAT_TOKEN = 128,
-  EOL_TOKEN = 256
+  EOL_TOKEN = 256,
+  ARGMAX_TOKEN = 512
 } tokentype_t;
 
 typedef struct {
@@ -20,3 +24,5 @@ typedef struct {
 } token_t;
 
 token_t token_new(tokentype_t ttype, const byte *str);
+
+#endif

@@ -1,6 +1,6 @@
 // clang-format off
-#ifndef __AN_UTILS_H__
-#define __AN_UTILS_H__
+#ifndef __ASH_UTILS_H__
+#define __ASH_UTILS_H__
 
 typedef char byte;
 
@@ -52,13 +52,37 @@ typedef char byte;
 #endif
 
 // clang-format on
+
 /// ERRORS
 #define EXPECTED_STRING_ERR(str)                                               \
   fprintf(stderr, "anshell: expected a string instead got '%s'\n", str);
+#define EXPECTED_CMD_ERR(str)                                                  \
+  fprintf(stderr, "anshell: expected a command instead got '%s'\n", str);
 #define OOM_ERR(bytes)                                                         \
   fprintf(stderr, "anshell - out of memory, tried to allocated %ld bytes\n",   \
           bytes)
 #define ARG_SIZE_ERR(size)                                                     \
   fprintf(stderr, "anshell: maximum arg size of %lub exceeded\n", size - 1)
+#define EXPECTED_STREOL_GOT_REDIR_ERR(str)                                     \
+  fprintf(stderr,                                                              \
+          "anshell: expected a string or end of line instead got redirection " \
+          "'%s'\n",                                                            \
+          str)
+#define INVALID_SYNTAX_ERR(str)                                                \
+  fprintf(stderr, "anshell: invalid syntax '%s'\n", str)
+#define EXPECTED_ANDOR_OR_EOL_ERR(str)                                         \
+  fprintf(stderr,                                                              \
+          "anshell: expected '&' or ';' or end of line, instead got '%s'\n",   \
+          str);
+#define CMDLINE_READ_ERR                                                       \
+  fprintf(stderr, "anshell: read error occured while reading the line\n");
+#define CMDLINE_ARGSIZE_ERR(size)                                              \
+  fprintf(stderr,                                                              \
+          "anshell: maximum argument size limit of %ld bytes exceeded\n",      \
+          size)
+
+/// Exit codes
+#define FAILURE -1
+#define SUCCESS 0
 
 #endif

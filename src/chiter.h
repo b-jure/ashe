@@ -1,8 +1,8 @@
-#ifndef __AN_CHITER_H__
-#define __AN_CHITER_H__
+#ifndef __ASH_CHITER_H__
+#define __ASH_CHITER_H__
 
-#include "an_string.h"
-#include "an_utils.h"
+#include "string.h"
+#include "asheutils.h"
 #include <stdbool.h>
 
 typedef struct {

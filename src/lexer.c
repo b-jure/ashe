@@ -1,9 +1,11 @@
-#include "an_lexer.h"
+#include "lexer.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
 #define char_before_ptr(ptr) *((ptr) -1)
+#define is_reserved_symbol(ch)                                                      \
+    ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
 
 static token_t process_word(tokentype_t ttype, const byte *word);
 
@@ -18,16 +20,19 @@ static void lexer_get_string(lexer_t *lexer)
 
     int c, i;
     byte *ptr;
-    byte *old;
+    byte old;
     bool parens = false;
     bool escape = false;
     chariter_t *iter = &lexer->iter;
     tokentype_t ttype;
 
-    for(i = 0;
-        i < (ARG_MAX - 1) && ((!isspace(chariter_peek(iter))) || parens || escape);
+    for(i = 0; i < (ARG_MAX - 1)
+               && ((!isspace((c = chariter_peek(iter)))) || parens || escape);
         i++)
     {
+        if(!escape && is_reserved_symbol(c)) {
+            break;
+        }
         word[i] = chariter_next(iter);
         if((c = chariter_peek(iter)) == '\\') {
             escape ^= true;
@@ -40,7 +45,7 @@ static void lexer_get_string(lexer_t *lexer)
 
     if(i >= ARG_MAX - 1) {
         ARG_SIZE_ERR(ARG_MAX);
-        lexer->token = token_new(NAT_TOKEN, "");
+        lexer->token = token_new(ARGMAX_TOKEN, "");
         return;
     }
 
@@ -48,12 +53,12 @@ static void lexer_get_string(lexer_t *lexer)
     ttype = WORD_TOKEN;
 
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
-        *old = *ptr;
+        old = *ptr;
         *ptr = '\0';
         if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word)) {
             ttype = KVPAIR_TOKEN;
         }
-        *ptr = *old;
+        *ptr = old;
     }
 
     lexer->token = process_word(ttype, word);
@@ -133,7 +138,7 @@ token_t lexer_next(lexer_t *lexer)
         case ';':
             lexer->token = token_new(FG_TOKEN, ";");
             break;
-        case EOL:
+        case '\n':
             lexer->token = token_new(EOL_TOKEN, NULL);
             break;
         default:

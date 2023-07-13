@@ -1,16 +1,14 @@
-#ifndef __AN_LEXER_H__
-#define __AN_LEXER_H__
+#ifndef __ASH_LEXER_H__
+#define __ASH_LEXER_H__
 
-#include "an_chiter.h"
-#include "an_token.h"
-#include "an_utils.h"
+#include "asheutils.h"
+#include "chiter.h"
+#include "token.h"
 
-typedef struct lexer_t lexer_t;
-
-struct lexer_t {
+typedef struct {
   token_t token;
   chariter_t iter;
-};
+} lexer_t;
 
 lexer_t lexer_new(const byte *start, size_t len);
 

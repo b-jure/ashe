@@ -1,7 +1,7 @@
-#ifndef __AN_STRING_H__
-#define __AN_STRING_H__
+#ifndef __ASH_STRING_H__
+#define __ASH_STRING_H__
 
-#include "an_utils.h"
+#include "asheutils.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -18,6 +18,10 @@ const char *string_ref(string_t *string);
 byte *string_slice(string_t *string, size_t index);
 
 string_t *string_from(const char *str);
+
+int string_first(string_t *self);
+
+int string_last(string_t *self);
 
 bool string_splice(string_t *self, size_t index, size_t remove_n,
                    const char *str, size_t insert_n);

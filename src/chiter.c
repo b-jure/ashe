@@ -1,4 +1,4 @@
-#include "an_chiter.h"
+#include "chiter.h"
 #include <stdio.h>
 #define is_exhausted(iter) ((iter)->next >= (iter)->end || (iter)->next == NULL)
 
@@ -7,12 +7,12 @@ chariter_t chariter_new(byte *start, size_t len)
     return (chariter_t){.next = start, .end = start + len};
 }
 
-chariter_t chariter_from_string(an_string_t *string)
+chariter_t chariter_from_string(string_t *string)
 {
     if(is_null(string)) {
         return chariter_new(0, 0);
     } else {
-        return chariter_new(an_string_slice(string, 0), an_string_len(string));
+        return chariter_new(string_slice(string, 0), string_len(string));
     }
 }
 
