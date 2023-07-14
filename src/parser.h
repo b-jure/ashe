@@ -22,7 +22,15 @@ typedef struct {
 
 typedef struct {
   vec_t *commands;
-  bool is_and; /* Pipeline is connected with '&&' */
+  int connection; /* Pipeline is connected with '&&' */
 } pipeline_t;
+
+#define ASH_NONE (int)-1
+#define ASH_OR (int)0
+#define ASH_AND (int)1
+
+#define IS_AND(connection) ((connection) == ASH_AND)
+#define IS_OR(connection) ((connection) == ASH_OR)
+#define IS_NONE(connection) ((connection) == ASH_NONE)
 
 #endif

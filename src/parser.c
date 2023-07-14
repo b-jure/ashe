@@ -94,9 +94,9 @@ int parse_commandline(const byte *line, commandline_t *out)
 
             if(token.type & (AND_TOKEN | OR_TOKEN)) {
                 if(token.type == AND_TOKEN) {
-                    pipeline.is_and = true;
+                    pipeline.connection = ASH_AND;
                 } else {
-                    pipeline.is_and = false;
+                    pipeline.connection = ASH_OR;
                 }
 
                 if(!vec_push(cond.pipelines, &pipeline)) {
@@ -106,14 +106,15 @@ int parse_commandline(const byte *line, commandline_t *out)
                     token = lexer_next(&lexer);
                 }
             } else {
+#ifdef ASHE_DEBUG
+                assert(pipeline.connection == ASH_NONE);
+#endif
                 break;
             }
         }
 
         if(token.type & (FG_TOKEN | BG_TOKEN)) {
-            if(token.type == FG_TOKEN) {
-                cond.is_background = false;
-            } else {
+            if(token.type == BG_TOKEN) {
                 cond.is_background = true;
             }
 
@@ -133,10 +134,9 @@ int parse_commandline(const byte *line, commandline_t *out)
             break;
         case NAT_TOKEN:
             INVALID_SYNTAX_ERR(string_ref(token.contents));
-        case ARGMAX_TOKEN:
             goto err;
         default:
-            EXPECTED_ANDOR_OR_EOL_ERR(string_ref(token.contents))
+            EXPECTED_ANDOR_OR_EOL_ERR(string_ref(token.contents));
             goto err;
             break;
     }
@@ -185,7 +185,7 @@ static pipeline_t pipeline_new(void)
 {
     return (pipeline_t){
         .commands = vec_new(sizeof(command_t)),
-        .is_and = false,
+        .connection = ASH_NONE,
     };
 }
 

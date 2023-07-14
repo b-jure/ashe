@@ -86,13 +86,13 @@ typedef char byte;
 #define FILE_CLOSE_ERR                                                         \
   fprintf(stderr, "anshell: errored while closing the file\n")
 #define EXEC_ERR(prog) fprintf(stderr, "anshell: failed executing '%s'\n", prog)
-#define OUTPUT_REDIRECT_ERR                                                    \
-  fprintf(stderr, "anshell: errored trying to redirect the stdout\n")
-#define INPUT_REDIRECT_ERR                                                     \
-  fprintf(stderr, "anshell: errored trying to redirect the stdin\n")
+#define REDIRECT_ERR fprintf(stderr, "anshell: errored trying to redirect\n")
+#define WAIT_ERR(pid)                                                          \
+  fprintf(stderr,                                                              \
+          "anshell: errored while trying to wait for process id:'%d'\n", pid)
 
 /// Exit codes
-#define FAILURE -1
+#define FAILURE 1
 #define SUCCESS 0
 
 #endif

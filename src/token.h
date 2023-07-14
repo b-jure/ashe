@@ -15,7 +15,6 @@ typedef enum {
   FG_TOKEN = 64,
   NAT_TOKEN = 128,
   EOL_TOKEN = 256,
-  ARGMAX_TOKEN = 512
 } tokentype_t;
 
 typedef struct {

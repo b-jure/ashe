@@ -26,10 +26,7 @@ static void lexer_get_string(lexer_t *lexer)
     chariter_t *iter = &lexer->iter;
     tokentype_t ttype;
 
-    for(i = 0; i < (ARG_MAX - 1)
-               && ((!isspace((c = chariter_peek(iter)))) || parens || escape);
-        i++)
-    {
+    for(i = 0; ((!isspace((c = chariter_peek(iter)))) || parens || escape); i++) {
         if(!escape && is_reserved_symbol(c)) {
             break;
         }
@@ -41,12 +38,6 @@ static void lexer_get_string(lexer_t *lexer)
             parens ^= true;
         }
         escape = false;
-    }
-
-    if(i >= ARG_MAX - 1) {
-        ARG_SIZE_ERR(ARG_MAX);
-        lexer->token = token_new(ARGMAX_TOKEN, "");
-        return;
     }
 
     word[i] = '\0';

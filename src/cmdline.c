@@ -3,6 +3,7 @@
 #include "string.h"
 #include "vec.h"
 #include <fcntl.h>
+#include <memory.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -10,16 +11,16 @@
 
 extern char **environ;
 
-#define CHILD_PROCESS 0
+#define PIPELINE_OK 0
+#define PIPELINE_ERR 1
+#define PIPE_R_END 0 /* Read  end */
+#define PIPE_W_END 1 /* Write end */
 #define openf(file, append)                                                         \
     open((file), O_CREAT, (append) ? O_APPEND : O_TRUNC, O_WRONLY)
 
 static int conditional_execute(conditional_t *cond);
-static int pipeline_execute(pipeline_t *pipeline);
-static int command_execute(command_t *command, int pipefd);
-static void **command_as_argv(command_t *command, byte **out);
-static void **command_as_envp(command_t *command, byte **out);
-static void **command_as_internal(command_t *command, vec_t *args, byte **out);
+static int pipeline_execute(pipeline_t *pipeline, bool bg);
+static int command_execute(command_t *command, bool piped);
 
 commandline_t commandline_new(void)
 {
@@ -35,35 +36,28 @@ void commandline_drop(commandline_t *cmdline)
     }
 }
 
-int commandline_execute(commandline_t *cmdline)
+void commandline_execute(commandline_t *cmdline, int *status)
 {
-#ifdef ASHE_DEBUG
-    assert(is_some(cmdline));
-#endif
-    vec_t *conditionals = cmdline->conditionals;
-    size_t size = vec_len(conditionals);
+    vec_t *cnds = cmdline->conditionals;
+    size_t cndn = vec_len(cnds);
 
-    for(size_t i = 0; i < size; i++) {
-        conditional_t *cond = vec_index(conditionals, i);
-        if(conditional_execute(cond) == FAILURE) {
-            return FAILURE;
-        }
+    for(size_t i = 0; i < cndn; i++) {
+        *status = conditional_execute(vec_index(cnds, i));
     }
-
-    return SUCCESS;
 }
 
 static int conditional_execute(conditional_t *cond)
 {
-#ifdef ASHE_DEBUG
-    assert(is_some(cond));
-#endif
-    vec_t *pipelines = cond->pipelines;
-    size_t size = vec_len(pipelines);
+    vec_t *pips = cond->pipelines;
+    size_t pipn = vec_len(pips);
+    pipeline_t *pipeline = NULL;
+    int ctn = PIPELINE_OK;
 
-    for(size_t i = 0; i < size; i++) {
-        pipeline_t *pipeline = vec_index(pipelines, i);
-        if(pipeline_execute(pipeline) == FAILURE) {
+    for(size_t i = 0; i < pipn; i++) {
+        pipeline = vec_index(pips, i);
+        pipeline_execute(pipeline, cond->is_background);
+
+        if(ctn == PIPELINE_ERR && IS_AND(pipeline->connection)) {
             return FAILURE;
         }
     }
@@ -71,78 +65,97 @@ static int conditional_execute(conditional_t *cond)
     return SUCCESS;
 }
 
-static int pipeline_execute(pipeline_t *pipeline)
+static int pipeline_execute(pipeline_t *pipeline, bool bg)
 {
-#ifdef ASHE_DEBUG
-    assert(is_some(pipeline));
-#endif
     vec_t *commands = pipeline->commands;
-    size_t size = vec_len(commands);
-    int pipefd = -1;
+    size_t cmdn = vec_len(commands);
+    size_t cproc, temp;
+    int ctl, status;
+    int pipefd[2];
+    pid_t childPID;
+    pid_t childPIDs[cmdn];
 
-    for(size_t i = 0; i < size; i++) {
-        command_t *command = vec_index(commands, i);
-        command_execute(command, -1);
+    memset(childPIDs, 0, cmdn * sizeof(pid_t));
+
+    pipe(pipefd);
+
+    pid_t *cPIDp = childPIDs;
+    for(size_t i = cproc = temp = 0; i < cmdn; i++) {
+        if((childPID = command_execute(vec_index(commands, i), -1)) != FAILURE) {
+            cproc++;
+            *cPIDp++ = childPID;
+        }
     }
 
-    return SUCCESS;
+    status = PIPELINE_OK;
+
+    if(bg && IS_NONE(pipeline->connection)) {
+        return status;
+    } else {
+        for(size_t i = 0; cproc--; i++) {
+            if(waitpid(childPIDs[i], &ctl, 0) == -1) {
+                WAIT_ERR(childPID);
+                perror("waitpid");
+            } else if(!WIFEXITED(ctl) && cproc == 0) {
+                status = PIPELINE_ERR;
+            }
+        }
+    }
+
+    return status;
 }
 
-/// TODO: make command_t contain input, output, err stream
-/// filenames that get pushed into argv during parsing, this
-/// would require creating a seperate token for each kind of
-/// redirection or the other way would be to check the string_t
-/// of each token and figure out that way which one is out, err and input
-/// redirection. This will result in cleaner code during command
-/// execution by skipping over the pruning of 'argv' and also
-/// performance increase where we won't need to open multiple files
-/// in case mutliple redirections of the same stream to multiple files.
-static int command_execute(command_t *command, int pipefd)
+static int command_execute(command_t *command, bool piped)
 {
-#ifdef ASHE_DEBUG
-    assert(is_some(command));
-#endif
-    /// Fork immediately in case command arguments contain
-    /// redirection, this way our file descriptors won't get
-    /// messed with and we won't need to open/close files.
-    int pid = fork();
+    pid_t childPID = fork();
 
-    if(pid == -1) {
+    if(childPID == -1) {
         FORK_ERR;
         return FAILURE;
-    } else if(pid == CHILD_PROCESS) {
+    } else if(childPID == 0) {
+        vec_t *args = command->args;
+        size_t argc = vec_len(args);
 
-        /// Extract args and env variables
-        size_t argc = vec_len(command->args);
-        size_t envc = vec_len(command->env);
         byte *argv[argc + 1];
-        byte *envp[envc + 1];
-        byte **ptr = argv; /* Loop pointer for traversal */
+        byte **argvp = argv;
 
         /// Pruned 'argv' with only command arguments
         byte *pruned_argv[argc + 1];
-        byte **cptr = pruned_argv; /* Loop pointer for traversal */
+        byte **pargvp = pruned_argv;
 
         /// Set default file descriptors
-        int outfd = (pipefd != -1) ? pipefd : STDOUT_FILENO;
+        int outfd = STDOUT_FILENO;
         int errfd = STDERR_FILENO;
         int infd = STDIN_FILENO;
 
-        /// Null out the arrays for 'execve' call
-        argv[argc] = NULL;
-        envp[envc] = NULL;
-        pruned_argv[argc] = NULL;
-        /// In case we have redirections make sure
-        /// we are correctly appending or truncating
-        bool append = false;
+        vec_t *envs = command->env;
+        size_t child_envc = vec_len(envs);
+        size_t envc = 0;
+        byte **environp = environ;
+        size_t i;
 
-        /// Configure the file descriptors and prune the argv into 'clean_argv'
-        /// TODO: remove all of this by having command_t hold filenames of all
-        /// streams (or NULL in case of no redirections).
-        for(; is_some(*ptr); ptr++) {
-            switch(**ptr) {
+        /// Get parent env var count
+        while(is_some(*environp++)) envc++;
+
+        /// Holds all of our env vars
+        byte *envp[envc + child_envc + 1];
+        byte **envptr = envp;
+
+        /// Populate the envp array
+        while(is_some(*environp)) *envptr++ = *environp++;
+        for(i = 0; child_envc--; i++)
+            *envptr++ = string_slice((string_t *) vec_index(envs, i), 0);
+        envp[envc + child_envc] = NULL;
+
+        /// Populate the argv array
+        for(i = 0; i < argc; i++) *argvp++ = string_slice(vec_index(args, i), 0);
+        argv[argc] = pruned_argv[argc] = NULL;
+
+        bool append = false;
+        for(argvp = argv; is_some(*argvp); argvp++) {
+            switch(**argvp) {
                 case '>':
-                    if(*(*ptr + 1) == '>') {
+                    if(*(*argvp + 1) == '>') {
                         append = true;
                     }
                     if(outfd != STDOUT_FILENO && close(outfd) == -1) {
@@ -150,16 +163,16 @@ static int command_execute(command_t *command, int pipefd)
                         perror("close");
                         return FAILURE;
                     }
-                    outfd = openf(*(++ptr), append);
+                    outfd = openf(*(++argvp), append);
                     if(outfd == -1) {
-                        FILE_OPEN_ERR(*ptr);
+                        FILE_OPEN_ERR(*argvp);
                         perror("open");
                         return FAILURE;
                     }
                     append = false;
                     break;
                 case '2':
-                    if(*(*ptr + 2) == '>') {
+                    if(*(*argvp + 2) == '>') {
                         append = true;
                     }
                     if(errfd != STDERR_FILENO && close(errfd) == -1) {
@@ -167,9 +180,9 @@ static int command_execute(command_t *command, int pipefd)
                         perror("close");
                         return FAILURE;
                     }
-                    errfd = openf(*(++ptr), append);
+                    errfd = openf(*(++argvp), append);
                     if(errfd == -1) {
-                        FILE_OPEN_ERR(*ptr);
+                        FILE_OPEN_ERR(*argvp);
                         perror("open");
                         return FAILURE;
                     }
@@ -181,76 +194,34 @@ static int command_execute(command_t *command, int pipefd)
                         perror("close");
                         return FAILURE;
                     }
-                    infd = open(*(++ptr), O_RDONLY);
+                    infd = open(*(++argvp), O_RDONLY);
                     if(infd == -1) {
-                        FILE_OPEN_ERR(*ptr);
+                        FILE_OPEN_ERR(*argvp);
                         perror("open");
                         return FAILURE;
                     }
                 default:
-                    *cptr++ = *ptr;
+                    *pargvp++ = *argvp;
                     break;
             }
         }
-        /// Null out pruned argv for 'execve' call
-        *cptr = NULL;
+        *pargvp = NULL;
 
-        /// Re-route output, input and err streams
-        if(outfd != STDOUT_FILENO) {
-            if(dup2(outfd, STDOUT_FILENO) == -1) {
-                OUTPUT_REDIRECT_ERR;
-                perror("dup2");
-                return FAILURE;
-            }
-        }
-        if(infd != STDIN_FILENO) {
-            if(dup2(infd, STDIN_FILENO) == -1) {
-                INPUT_REDIRECT_ERR;
-                perror("dup2");
-                return FAILURE;
-            }
-        }
-        if(errfd != STDERR_FILENO) {
-            if(dup2(errfd, STDOUT_FILENO) == -1) {
-                OUTPUT_REDIRECT_ERR;
-                perror("dup2");
-                return FAILURE;
-            }
+        /// Redirect output, input and err streams
+        if(dup2(outfd, STDOUT_FILENO) == -1 || dup2(infd, STDIN_FILENO) == -1
+           || dup2(errfd, STDOUT_FILENO) == -1)
+        {
+            REDIRECT_ERR;
+            perror("dup2");
+            return FAILURE;
         }
 
+        /// Finally execute the command
         if(execve(pruned_argv[0], pruned_argv, envp) == -1) {
             EXEC_ERR(pruned_argv[0]);
             perror("execve");
             return FAILURE;
         }
-#ifdef ASHE_DEBUG
-        printf("UNREACHABLE CODE\n");
-        assert(false);
-#endif
     }
-
-    return SUCCESS;
-}
-
-static void **command_as_argv(command_t *command, byte **out)
-{
-    return command_as_internal(command, command->args, out);
-}
-
-static void **command_as_envp(command_t *command, byte **out)
-{
-    return command_as_internal(command, command->env, out);
-}
-
-static void **command_as_internal(command_t *command, vec_t *args, byte **out)
-{
-#ifdef ASHE_DEBUG
-    assert(is_some(command));
-#endif
-    size_t argc = vec_len(args);
-    byte *arg;
-    for(size_t i = 0; i < argc; i++, out++) {
-        arg = string_slice((string_t *) vec_index(args, i), 0);
-        *out = arg;
-    }
+    return childPID;
 }
