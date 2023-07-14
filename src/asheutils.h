@@ -55,9 +55,9 @@ typedef char byte;
 
 /// ERRORS
 #define EXPECTED_STRING_ERR(str)                                               \
-  fprintf(stderr, "anshell: expected a string instead got '%s'\n", str);
+  fprintf(stderr, "anshell: expected a string instead got '%s'\n", str)
 #define EXPECTED_CMD_ERR(str)                                                  \
-  fprintf(stderr, "anshell: expected a command instead got '%s'\n", str);
+  fprintf(stderr, "anshell: expected a command instead got '%s'\n", str)
 #define OOM_ERR(bytes)                                                         \
   fprintf(stderr, "anshell - out of memory, tried to allocated %ld bytes\n",   \
           bytes)
@@ -73,13 +73,23 @@ typedef char byte;
 #define EXPECTED_ANDOR_OR_EOL_ERR(str)                                         \
   fprintf(stderr,                                                              \
           "anshell: expected '&' or ';' or end of line, instead got '%s'\n",   \
-          str);
+          str)
 #define CMDLINE_READ_ERR                                                       \
-  fprintf(stderr, "anshell: read error occured while reading the line\n");
+  fprintf(stderr, "anshell: read error occured while reading the line\n")
 #define CMDLINE_ARGSIZE_ERR(size)                                              \
   fprintf(stderr,                                                              \
           "anshell: maximum argument size limit of %ld bytes exceeded\n",      \
           size)
+#define FILE_OPEN_ERR(filename)                                                \
+  fprintf(stderr, "anshell: errored while trying to open file '%s'\n", filename)
+#define FORK_ERR fprintf(stderr, "anshell: errored while forking\n")
+#define FILE_CLOSE_ERR                                                         \
+  fprintf(stderr, "anshell: errored while closing the file\n")
+#define EXEC_ERR(prog) fprintf(stderr, "anshell: failed executing '%s'\n", prog)
+#define OUTPUT_REDIRECT_ERR                                                    \
+  fprintf(stderr, "anshell: errored trying to redirect the stdout\n")
+#define INPUT_REDIRECT_ERR                                                     \
+  fprintf(stderr, "anshell: errored trying to redirect the stdin\n")
 
 /// Exit codes
 #define FAILURE -1

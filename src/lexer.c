@@ -100,7 +100,13 @@ token_t lexer_next(lexer_t *lexer)
         case '2':
             chariter_next(iter);
             if(chariter_peek(iter) == '>') {
-                lexer->token = token_new(REDIROP_TOKEN, "2>");
+                chariter_next(iter);
+                if(chariter_peek(iter) == '>') {
+                    lexer->token = token_new(REDIROP_TOKEN, "2>>");
+                } else {
+                    chariter_goback_unsafe(iter, 1);
+                    lexer->token = token_new(REDIROP_TOKEN, "2>");
+                }
             } else {
                 lexer->token = token_new(NAT_TOKEN, NULL);
             }
