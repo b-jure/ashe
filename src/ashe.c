@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define PROMPT "/ashe/::> "
 #define INSIZE 200
 
 int rcmdline(string_t *buffer)
@@ -33,17 +34,24 @@ int main()
 {
     commandline_t cmdline;
     string_t *line;
+    int status = SUCCESS;
 
-    if(is_null((cmdline = commandline_new()).conditionals)
-       || is_null(line = string_with_cap(INSIZE)))
-    {
-        return FAILURE;
+    if(is_null(line = string_with_cap(INSIZE))) {
+        exit(EXIT_FAILURE);
+    }
+
+    if(is_null((cmdline = commandline_new()).conditionals)) {
+        string_drop(&line);
+        exit(EXIT_FAILURE);
     }
 
     while(true) {
+        printf("%s", PROMPT);
         string_set(line, 0, '\0');
 
         if(rcmdline(line) == FAILURE) {
+            string_drop(&line);
+            commandline_drop(&cmdline);
             exit(EXIT_FAILURE);
         }
 
@@ -53,6 +61,8 @@ int main()
             continue;
         }
 
-        commandline_run(&cmdline);
+        commandline_execute(&cmdline, &status);
+
+        commandline_clear(&cmdline);
     }
 }

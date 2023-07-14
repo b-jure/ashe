@@ -90,6 +90,7 @@ typedef char byte;
 #define WAIT_ERR(pid)                                                          \
   fprintf(stderr,                                                              \
           "anshell: errored while trying to wait for process id:'%d'\n", pid)
+#define PIPE_ERR fprintf(stderr, "anshell: errored while trying to pipe\n")
 
 /// Exit codes
 #define FAILURE 1
