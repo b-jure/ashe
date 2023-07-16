@@ -6,7 +6,10 @@ typedef char byte;
 
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)
+#define char_before_ptr(ptr) *((ptr) -1)
+#define char_after_ptr(ptr) *((ptr) +1)
 #define EOL '\0'
+#define NULL_TERM '\0'
 
 #define PCS_EXTRA "/.-"
 #define PORTABLE_CHARACTER_SET \
@@ -78,8 +81,7 @@ typedef char byte;
   fprintf(stderr, "anshell: read error occured while reading the line\n")
 #define CMDLINE_ARGSIZE_ERR(size)                                              \
   fprintf(stderr,                                                              \
-          "anshell: maximum argument size limit of %ld bytes exceeded\n",      \
-          size)
+          "anshell: maximum argument size limit of %d bytes exceeded\n", size)
 #define FILE_OPEN_ERR(filename)                                                \
   fprintf(stderr, "anshell: errored while trying to open file '%s'\n", filename)
 #define FORK_ERR fprintf(stderr, "anshell: errored while forking\n")
@@ -91,6 +93,8 @@ typedef char byte;
   fprintf(stderr,                                                              \
           "anshell: errored while trying to wait for process id:'%d'\n", pid)
 #define PIPE_ERR fprintf(stderr, "anshell: errored while trying to pipe\n")
+#define FAILED_SETTING_ENVVAR(var)                                             \
+  fprintf(stderr, "anshell: errored while setting env var '%s'\n", var)
 
 /// Exit codes
 #define FAILURE 1

@@ -1,8 +1,8 @@
 #ifndef __ASH_CHITER_H__
 #define __ASH_CHITER_H__
 
-#include "string.h"
-#include "asheutils.h"
+#include "ashe_string.h"
+#include "ashe_utils.h"
 #include <stdbool.h>
 
 typedef struct {

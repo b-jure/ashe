@@ -1,6 +1,7 @@
 #ifndef __ASH_VEC_H__
 #define __ASH_VEC_H__
 
+#include "ashe_string.h"
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -43,14 +44,14 @@ void *vec_inner_unsafe(const vec_t *vec);
 void *vec_back(const vec_t *vec);
 
 bool vec_insert_non_contiguous(vec_t *vec, const void *element,
-                                  const size_t index);
+                               const size_t index);
 
 void *vec_index_unsafe(const vec_t *vec, const size_t index);
 
 bool vec_insert(vec_t *vec, const void *element, const size_t index);
 
-bool vec_splice(vec_t *self, size_t index, size_t remove_n,
-                   const void *array, size_t insert_n);
+bool vec_splice(vec_t *self, size_t index, size_t remove_n, const void *array,
+                size_t insert_n);
 
 bool vec_append(vec_t *self, const void *arr, size_t append_n);
 
@@ -62,6 +63,10 @@ bool vec_remove(vec_t *vec, const size_t index, FreeFn free_fn);
 
 bool vec_remove_at_ptr(vec_t *self, void *ptr, FreeFn free_fn);
 
+bool vec_set_at_ptr(vec_t *self, void *ptr, void *element);
+
 bool vec_eq(const vec_t *self, const vec_t *other, CmpFn cmp_ele_fn);
+
+void vec_clear_capacity(vec_t *self, FreeFn free_fn);
 
 #endif

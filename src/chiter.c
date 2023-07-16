@@ -28,7 +28,7 @@ int chariter_next(chariter_t *iter)
 int chariter_goback_unsafe(chariter_t *iter, size_t steps)
 {
     if(is_null(iter) || is_exhausted(iter)) {
-        return EOL;
+        return -1;
     }
 
     while(steps--) {
@@ -54,5 +54,5 @@ int chariter_peek(chariter_t *iter)
         return EOL;
     }
 
-    return *iter->next;
+    return *(iter->next);
 }

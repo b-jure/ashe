@@ -3,11 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define char_before_ptr(ptr) *((ptr) -1)
 #define is_reserved_symbol(ch)                                                      \
     ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
-
-static token_t process_word(tokentype_t ttype, const byte *word);
 
 lexer_t lexer_new(const byte *start, size_t len)
 {
@@ -26,18 +23,19 @@ static void lexer_get_string(lexer_t *lexer)
     chariter_t *iter = &lexer->iter;
     tokentype_t ttype;
 
-    for(i = 0; ((!isspace((c = chariter_peek(iter)))) || parens || escape); i++) {
-        if(!escape && is_reserved_symbol(c)) {
+    for(i = 0; ((c = chariter_peek(iter)) != EOL); i++) {
+        if(!parens && ((isspace(c)) || is_reserved_symbol(c))) {
             break;
         }
-        word[i] = chariter_next(iter);
-        if((c = chariter_peek(iter)) == '\\') {
-            escape ^= true;
-            continue;
-        } else if(!escape && c == '"') {
+
+        if(!escape && c == '"') {
             parens ^= true;
+            printf("Parens are -> '%s'\n", (parens) ? "ON" : "OFF");
+        } else if(c == '\\' || escape) {
+            escape ^= true;
         }
-        escape = false;
+
+        word[i] = chariter_next(iter);
     }
 
     word[i] = '\0';
@@ -52,24 +50,8 @@ static void lexer_get_string(lexer_t *lexer)
         *ptr = old;
     }
 
-    lexer->token = process_word(ttype, word);
-}
-
-static token_t process_word(tokentype_t ttype, const byte *word)
-{
-    byte *ptr;
-    token_t token = token_new(ttype, word);
-
-    if(is_null(token.contents)) {
-        return token;
-    }
-
-    ptr = string_slice(token.contents, 0);
-    while(is_some(ptr = strstr(ptr, "\"")) && char_before_ptr(ptr) != '\\') {
-        string_remove_at_ptr(token.contents, ptr);
-    }
-
-    return token;
+    printf("Processed so far -> '%s'\n", word);
+    lexer->token = token_new(ttype, word);
 }
 
 static void lexer_skip_ws(lexer_t *lexer)
@@ -82,11 +64,12 @@ static void lexer_skip_ws(lexer_t *lexer)
 token_t lexer_next(lexer_t *lexer)
 {
     int c;
-    byte *identifier;
     chariter_t *iter = &lexer->iter;
 
+    printf("\n\nSCANNING FOR NEXT TOKEN\n");
     lexer_skip_ws(lexer);
 
+    printf("FIRST CHAR IS '%d'|'%c'\n\n", chariter_peek(iter), chariter_peek(iter));
     switch((c = chariter_peek(iter))) {
         case '2':
             chariter_next(iter);
@@ -135,7 +118,7 @@ token_t lexer_next(lexer_t *lexer)
         case ';':
             lexer->token = token_new(FG_TOKEN, ";");
             break;
-        case '\n':
+        case '\0':
             lexer->token = token_new(EOL_TOKEN, NULL);
             break;
         default:

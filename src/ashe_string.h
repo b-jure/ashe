@@ -1,7 +1,7 @@
 #ifndef __ASH_STRING_H__
 #define __ASH_STRING_H__
 
-#include "asheutils.h"
+#include "ashe_utils.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -36,10 +36,16 @@ bool string_append(string_t *self, const void *str, size_t len);
 
 bool string_set(string_t *self, const char ch, size_t index);
 
+bool string_set_at_ptr(string_t *self, byte *ptr, char c);
+
 int string_get(string_t *self, size_t index);
 
 size_t string_len(string_t *self);
 
-void string_drop(string_t **self);
+void string_drop(string_t *self);
+
+void string_drop_inner(string_t *self);
+
+bool string_clear(string_t *self);
 
 #endif

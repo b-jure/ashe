@@ -1,20 +1,19 @@
-#include "string.h"
+#include "ashe_string.h"
+#include "ashe_utils.h"
 #include "token.h"
-#include "utils.h"
 #include <stdio.h>
 #include <string.h>
 
 token_t token_new(tokentype_t ttype, const byte *str)
 {
-    string_t *string;
+    string_t *string = NULL;
 
     if(is_some(str)) {
         string = string_from(str);
-    }
-
-    if(is_null(string)) {
-        OOM_ERR(strlen(str));
-        return (token_t){0};
+        if(is_null(string)) {
+            OOM_ERR(strlen(str));
+            return (token_t){.type = OOM_TOKEN, .contents = NULL};
+        }
     }
 
     return (token_t){.type = ttype, .contents = string};

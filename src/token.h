@@ -1,20 +1,21 @@
 #ifndef __ASH_TOKEN_H__
 #define __ASH_TOKEN_H__
 
-#include "string.h"
+#include "ashe_string.h"
 #include <stddef.h>
 
 typedef enum {
-  REDIROP_TOKEN = 0,
-  WORD_TOKEN = 1,
-  KVPAIR_TOKEN = 2,
-  PIPE_TOKEN = 4,
-  AND_TOKEN = 8,
-  OR_TOKEN = 16,
-  BG_TOKEN = 32,
-  FG_TOKEN = 64,
-  NAT_TOKEN = 128,
-  EOL_TOKEN = 256,
+  REDIROP_TOKEN = 1,
+  WORD_TOKEN = 2,
+  KVPAIR_TOKEN = 4,
+  PIPE_TOKEN = 8,
+  AND_TOKEN = 16,
+  OR_TOKEN = 32,
+  BG_TOKEN = 64,
+  FG_TOKEN = 128,
+  NAT_TOKEN = 256,
+  EOL_TOKEN = 512,
+  OOM_TOKEN = 1024
 } tokentype_t;
 
 typedef struct {

@@ -1,8 +1,7 @@
-#include "string.h"
+#include "ashe_string.h"
 #include "vec.h"
 #include <stdlib.h>
 #include <string.h>
-#define NULL_TERM '\0'
 
 struct string_t {
     vec_t *vec;
@@ -18,7 +17,7 @@ string_t *string_new(void)
     if(is_null(string->vec = vec_with_capacity(sizeof(byte), 1))) {
         return NULL;
     } else if(!vec_push(string->vec, &(char){NULL_TERM})) {
-        string_drop(&string);
+        string_drop(string);
         return NULL;
     } else {
         return string;
@@ -39,7 +38,7 @@ string_t *string_with_cap(size_t capacity)
             string->vec = vec_with_capacity(sizeof(char), capacity);
 
             if(is_null(string->vec) || !vec_push(string->vec, &(char){NULL_TERM})) {
-                string_drop(&string);
+                string_drop(string);
                 return NULL;
             }
         }
@@ -64,7 +63,7 @@ int string_last(string_t *self)
     } else if(vec_len(self->vec) == 0) {
         return NULL_TERM;
     } else {
-        return *(int *) (vec_back(self->vec) - 1);
+        return *((byte *) vec_back(self->vec) - 1);
     }
 }
 
@@ -86,6 +85,15 @@ bool string_remove_at_ptr(string_t *self, byte *ptr)
     }
 
     return vec_remove_at_ptr(self->vec, ptr, NULL);
+}
+
+bool string_set_at_ptr(string_t *self, byte *ptr, char c)
+{
+    if(is_null(self)) {
+        return false;
+    }
+
+    return vec_set_at_ptr(self->vec, ptr, &c);
 }
 
 string_t *string_from(const byte *str)
@@ -139,7 +147,24 @@ bool string_append(string_t *self, const void *str, size_t len)
         return false;
     }
 
-    return vec_append(self->vec, str, len);
+    return vec_splice(self->vec, string_len(self), 0, str, len);
+}
+
+bool string_push(string_t *self, byte c)
+{
+    if(is_some(self)) {
+        return vec_push(self->vec, &c);
+    }
+    return false;
+}
+
+bool string_clear(string_t *self)
+{
+    if(is_some(self)) {
+        vec_clear(self->vec, NULL);
+        return string_push(self, NULL_TERM);
+    }
+    return false;
 }
 
 bool string_set(string_t *self, const byte ch, size_t index)
@@ -180,11 +205,23 @@ size_t string_len(string_t *self)
     return vec_len(self->vec) - 1; /* Do not count null terminator */
 }
 
-void string_drop(string_t **self)
+void string_drop_inner(string_t *self)
 {
-    if(is_some(self) && is_some(*self)) {
-        vec_drop(&(*self)->vec, NULL);
-        free(*self);
-        *self = NULL;
+    if(is_some(self) && is_some(self->vec)) {
+        printf("Dropping string -> '%s'...\n", string_ref(self));
+        vec_clear_capacity(self->vec, NULL);
+        printf("done [string]!\n");
+    }
+}
+
+void string_drop(string_t *self)
+{
+    if(is_some(self)) {
+        printf("Dropping string -> '%s'...\n", string_ref(self));
+        vec_drop(&self->vec, NULL);
+        printf("Dropping string wrapper...\n");
+        free(self);
+        printf("done [string wrapper]!\n");
+        printf("done [string]!\n");
     }
 }

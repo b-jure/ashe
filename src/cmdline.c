@@ -1,14 +1,13 @@
+#define _DEFAULT_SOURCE
+#include "ashe_string.h"
 #include "cmdline.h"
 #include "parser.h"
-#include "string.h"
 #include "vec.h"
 #include <fcntl.h>
 #include <memory.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-extern char **environ;
 
 #define is_even(n) (n) % 2 == 0
 #define is_odd(n) (n) % 2 != 0
@@ -46,14 +45,17 @@ commandline_t commandline_new(void)
 void commandline_clear(commandline_t *cmdline)
 {
     if(is_some(cmdline)) {
+        printf("Clearing commandline...\n");
         vec_clear(cmdline->conditionals, (FreeFn) conditional_drop);
+        printf("done! [commandline clear]\n");
     }
 }
 
 void commandline_drop(commandline_t *cmdline)
 {
     if(is_some(cmdline)) {
-        vec_drop(&cmdline->conditionals, (FreeFn) conditional_drop);
+        printf("Dropping commandline\n");
+        vec_clear(cmdline->conditionals, (FreeFn) conditional_drop);
     }
 }
 
@@ -63,8 +65,12 @@ void commandline_execute(commandline_t *cmdline, int *status)
     size_t cndn = vec_len(cnds);
 
     for(size_t i = 0; i < cndn; i++) {
+        printf("Executing conditional [%ld]\n", i);
         *status = conditional_execute(vec_index(cnds, i));
     }
+    printf(
+        "Returning from commandline with status '%s'\n",
+        (*status) ? "FAILURE" : "SUCCESS");
 }
 
 static int conditional_execute(conditional_t *cond)
@@ -76,7 +82,8 @@ static int conditional_execute(conditional_t *cond)
 
     for(size_t i = 0; i < pipn; i++) {
         pipeline = vec_index(pips, i);
-        pipeline_execute(pipeline, cond->is_background);
+        printf("Executing pipeline [%ld]\n", i);
+        ctn = pipeline_execute(pipeline, cond->is_background);
 
         if(ctn == FAILURE && IS_AND(pipeline->connection)) {
             return FAILURE;
@@ -85,6 +92,9 @@ static int conditional_execute(conditional_t *cond)
         }
     }
 
+    printf(
+        "Returning from conditional with status '%s'\n",
+        (ctn) ? "FAILURE" : "SUCCESS");
     return ctn;
 }
 
@@ -105,7 +115,8 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     for(size_t i = cproc = temp = 0; i < cmdn; i++) {
         ctx = context_new();
 
-        if(i + 1 != cmdn || is_odd(i)) {
+        if(cmdn > 1 && (i + 1 != cmdn || is_odd(i))) {
+            printf("Opening pipe [%ld]\n", i);
             if(is_even(i)) {
                 if(pipe(pipefd) == -1) {
                     PIPE_ERR;
@@ -120,12 +131,14 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
             }
         }
 
+        printf("Executing command [%ld]\n", i);
         if((childPID = command_execute(vec_index(commands, i), &ctx)) != FAILURE) {
             cproc++;
             *cPIDp++ = childPID;
         }
 
-        if(i + 1 != cmdn && is_odd(i)) {
+        if(cmdn > 1 && (i + 1 != cmdn && is_odd(i))) {
+            printf("Closing pipe [%ld]\n", i);
             if(close(pipefd[STDIN_FILENO]) == -1
                || close(pipefd[STDOUT_FILENO]) == -1)
             {
@@ -139,11 +152,13 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     status = SUCCESS;
 
     if(bg && IS_NONE(pipeline->connection)) {
+        printf("Returning, process is marked as background\n");
         return status;
     } else {
         for(size_t i = 0; cproc--; i++) {
+            printf("Waiting on process ID = %d\n", childPIDs[i]);
             if(waitpid(childPIDs[i], &ctl, 0) == -1) {
-                WAIT_ERR(childPID);
+                WAIT_ERR(childPIDs[i]);
                 perror("waitpid");
                 exit(EXIT_FAILURE);
             } else if(!WIFEXITED(ctl) && cproc == 0) {
@@ -152,6 +167,7 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
         }
     }
 
+    printf("Returning with status '%s'\n", (status) ? "FAILURE" : "SUCCESS");
     return status;
 }
 
@@ -185,26 +201,21 @@ static int command_execute(command_t *command, context_t *ctx)
         }
 
         vec_t *envs = command->env;
-        size_t child_envc = vec_len(envs);
-        size_t envc = 0;
-        byte **environp = environ;
-        size_t i;
+        size_t envc = vec_len(envs);
+        byte *var;
 
-        /// Get parent env var count
-        while(is_some(*environp++)) envc++;
-
-        /// Holds all of our env vars
-        byte *envp[envc + child_envc + 1];
-        byte **envptr = envp;
-
-        /// Populate the envp array
-        while(is_some(*environp)) *envptr++ = *environp++;
-        for(i = 0; child_envc--; i++)
-            *envptr++ = string_slice((string_t *) vec_index(envs, i), 0);
-        envp[envc + child_envc] = NULL;
+        /// Set env vars
+        while(envc--) {
+            if(putenv((var = string_slice(vec_index(envs, envc), 0))) == -1) {
+                FAILED_SETTING_ENVVAR(var);
+                perror("putenv");
+            }
+        }
 
         /// Populate the argv array
-        for(i = 0; i < argc; i++) *argvp++ = string_slice(vec_index(args, i), 0);
+        for(size_t i = 0; i < argc; i++)
+            *argvp++ = string_slice(vec_index(args, i), 0);
+
         argv[argc] = pruned_argv[argc] = NULL;
 
         bool append = false;
@@ -214,10 +225,9 @@ static int command_execute(command_t *command, context_t *ctx)
                     if(*(*argvp + 1) == '>') {
                         append = true;
                     }
-                    if(outfd != STDOUT_FILENO && close(outfd) == -1) {
+                    if(outfd != ctx->pipefd[STDOUT_FILENO] && close(outfd) == -1) {
                         FILE_CLOSE_ERR;
                         perror("close");
-                        return FAILURE;
                     }
                     outfd = openf(*(++argvp), append);
                     if(outfd == -1) {
@@ -233,7 +243,6 @@ static int command_execute(command_t *command, context_t *ctx)
                     if(errfd != STDERR_FILENO && close(errfd) == -1) {
                         FILE_CLOSE_ERR;
                         perror("close");
-                        return FAILURE;
                     }
                     errfd = openf(*(++argvp), append);
                     if(errfd == -1) {
@@ -243,10 +252,9 @@ static int command_execute(command_t *command, context_t *ctx)
                     }
                     break;
                 case '<':
-                    if(infd != STDIN_FILENO && close(infd) == -1) {
+                    if(infd != ctx->pipefd[STDIN_FILENO] && close(infd) == -1) {
                         FILE_CLOSE_ERR;
                         perror("close");
-                        return FAILURE;
                     }
                     infd = open(*(++argvp), O_RDONLY);
                     if(infd == -1) {
@@ -254,6 +262,7 @@ static int command_execute(command_t *command, context_t *ctx)
                         perror("open");
                         return FAILURE;
                     }
+                    break;
                 default:
                     *pargvp++ = *argvp;
                     break;
@@ -270,11 +279,13 @@ static int command_execute(command_t *command, context_t *ctx)
             perror("dup2");
             return FAILURE;
         }
+
+        printf("COMMAND: '%s'\n", pruned_argv[0]);
         /// Exec the command
-        if(execve(pruned_argv[0], pruned_argv, envp) == -1) {
+        if(execvp(pruned_argv[0], pruned_argv) == -1) {
             EXEC_ERR(pruned_argv[0]);
             perror("execve");
-            return FAILURE;
+            exit(EXIT_FAILURE);
         }
     }
 
