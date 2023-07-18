@@ -1,37 +1,36 @@
+#include "ashe_utils.h"
 #define _DEFAULT_SOURCE
 #include "ashe_string.h"
 #include "cmdline.h"
 #include "parser.h"
 #include "vec.h"
+#include <assert.h>
 #include <fcntl.h>
 #include <memory.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define is_even(n) (n) % 2 == 0
-#define is_odd(n) (n) % 2 != 0
-#define PIPELINE_OK 0
-#define PIPELINE_ERR 1
-#define PIPE_R_END 0 /* Read  end */
-#define PIPE_W_END 1 /* Write end */
+#define pipe_at(i) (i * 2)
+#define not_last(i, total) (i + 1 != total)
+#define not_first(i) (i != 0)
+#define PIPE_R 0 /* Read  end */
+#define PIPE_W 1 /* Write end */
 #define openf(file, append)                                                         \
-    open((file), O_CREAT, (append) ? O_APPEND : O_TRUNC, O_WRONLY)
+    open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
 
 typedef struct {
     int pipefd[2];
-    int closefd;
 } context_t;
 
 static int conditional_execute(conditional_t *cond);
 static int pipeline_execute(pipeline_t *pipeline, bool bg);
-static int command_execute(command_t *command, context_t *ctx);
+static int command_execute(command_t *command, context_t *ctx, int *pipes);
 
 context_t context_new(void)
 {
     return (context_t){
         .pipefd = {STDIN_FILENO, STDOUT_FILENO},
-        .closefd = -1,
     };
 }
 
@@ -87,7 +86,7 @@ static int conditional_execute(conditional_t *cond)
 
         if(ctn == FAILURE && IS_AND(pipeline->connection)) {
             return FAILURE;
-        } else if(ctn == PIPELINE_OK && IS_OR(pipeline->connection)) {
+        } else if(ctn == SUCCESS && IS_OR(pipeline->connection)) {
             return SUCCESS;
         }
     }
@@ -100,68 +99,78 @@ static int conditional_execute(conditional_t *cond)
 
 static int pipeline_execute(pipeline_t *pipeline, bool bg)
 {
-    context_t ctx;
-    vec_t *commands = pipeline->commands;
-    size_t cmdn = vec_len(commands);
-    size_t cproc, temp;
-    int ctl, status;
-    pid_t childPID;
-    pid_t childPIDs[cmdn];
-    pid_t *cPIDp = childPIDs;
-    int pipefd[2];
+    context_t ctx; /* Context, instructs child proc which stream to dup */
+    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
+    size_t cmd_n = vec_len(commands);     /* Amount of commands in this pipeline */
+    size_t cproc; /* Number of successfully forked proccesses to wait for */
+    size_t i;
+    int ctl;            /* Control flag storage for waitpid */
+    int status;         /* Return status of this pipeline */
+    pid_t cPID;         /* child Process ID */
+    pid_t cPIDs[cmd_n]; /* All successfully forked child Process ID's */
+    pid_t *cPIDp = cPIDs;
 
-    memset(childPIDs, 0, cmdn * sizeof(pid_t));
+    assert(cmd_n > 0);
+    unsigned pn = ((cmd_n - 1) * 2); /* Size of pipe array */
+    int pipes[pn + 1];               /* Pipe storage */
+    pipes[pn] = -1;                  /* Set end */
 
-    for(size_t i = cproc = temp = 0; i < cmdn; i++) {
-        ctx = context_new();
-
-        if(cmdn > 1 && (i + 1 != cmdn || is_odd(i))) {
-            printf("Opening pipe [%ld]\n", i);
-            if(is_even(i)) {
-                if(pipe(pipefd) == -1) {
-                    PIPE_ERR;
-                    perror("pipe");
-                    exit(EXIT_FAILURE);
-                }
-                ctx.pipefd[STDOUT_FILENO] = pipefd[PIPE_W_END];
-                ctx.closefd = pipefd[PIPE_R_END];
-            } else {
-                ctx.pipefd[STDIN_FILENO] = pipefd[PIPE_R_END];
-                ctx.closefd = pipefd[PIPE_W_END];
-            }
-        }
-
-        printf("Executing command [%ld]\n", i);
-        if((childPID = command_execute(vec_index(commands, i), &ctx)) != FAILURE) {
-            cproc++;
-            *cPIDp++ = childPID;
-        }
-
-        if(cmdn > 1 && (i + 1 != cmdn && is_odd(i))) {
-            printf("Closing pipe [%ld]\n", i);
-            if(close(pipefd[STDIN_FILENO]) == -1
-               || close(pipefd[STDOUT_FILENO]) == -1)
-            {
-                FILE_CLOSE_ERR;
-                perror("close");
-                exit(EXIT_FAILURE);
-            }
+    for(i = 0; i < (cmd_n - 1); i++) {
+        if(pipe(pipes + (i * 2)) < 0) {
+            PIPE_OPEN_ERR;
+            perror("pipe");
+            exit(EXIT_FAILURE);
         }
     }
 
-    status = SUCCESS;
+    for(i = cproc = 0; i < cmd_n; i++) {
+        ctx = context_new();
 
+        if(cmd_n > 1) {
+            if(!not_first(i)) {
+                ctx.pipefd[PIPE_W] = pipes[pipe_at(i) + 1]; /* This PIPE_W */
+            } else if(not_first(i) && not_last(i, cmd_n)) {
+                ctx.pipefd[PIPE_R] = pipes[pipe_at(i) - 2]; /* Last PIPE_R */
+                ctx.pipefd[PIPE_W] = pipes[pipe_at(i) + 1]; /* This PIPE_W */
+            } else {
+                ctx.pipefd[PIPE_R] = pipes[pipe_at(i) - 2]; /* Last PIPE_R */
+            }
+        }
+
+        if((cPID = command_execute(vec_index(commands, i), &ctx, pipes)) != FAILURE)
+        {
+            cproc++;
+            *cPIDp++ = cPID;
+        } else {
+            break; /* Stop executing */
+        }
+    }
+
+    for(i = 0; i < pn; i++) {
+        if(close(pipes[i]) < 0) {
+            FILE_CLOSE_ERR;
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    status = (cPID == FAILURE) ? FAILURE : SUCCESS;
     if(bg && IS_NONE(pipeline->connection)) {
-        printf("Returning, process is marked as background\n");
+        /// This is last or only pipeline that is ran
+        /// in background don't wait for child processes
         return status;
     } else {
-        for(size_t i = 0; cproc--; i++) {
-            printf("Waiting on process ID = %d\n", childPIDs[i]);
-            if(waitpid(childPIDs[i], &ctl, 0) == -1) {
-                WAIT_ERR(childPIDs[i]);
+        for(i = 0; cproc--; i++) {
+        try_again:
+            if(waitpid(cPIDs[i], &ctl, 0) == -1) {
+                WAIT_ERR(cPIDs[i]);
                 perror("waitpid");
-                exit(EXIT_FAILURE);
-            } else if(!WIFEXITED(ctl) && cproc == 0) {
+                if(sleep(1) != 0) exit(EXIT_FAILURE);
+                goto try_again;
+            } else if(
+                status != FAILURE && cproc == 0
+                && (!WIFEXITED(ctl) || WEXITSTATUS(ctl) != 0))
+            {
                 status = FAILURE;
             }
         }
@@ -171,53 +180,58 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     return status;
 }
 
-static int command_execute(command_t *command, context_t *ctx)
+static int command_execute(command_t *command, context_t *ctx, int *pipes)
 {
     pid_t childPID = fork();
 
     if(childPID == -1) {
         FORK_ERR;
         perror("fork");
-        return FAILURE;
+        return FAILURE; /* For now recoverable error */
     } else if(childPID == 0) {
-        vec_t *args = command->args;
-        size_t argc = vec_len(args);
+        /// COMMAND ARGS ///
+        vec_t *args = command->args; /* cstrings (command and arguments) */
+        size_t argc = vec_len(args); /* Number of arguments including command */
+        byte *argv[argc + 1]; /* Storage for command arguments with redirections */
+        byte **argvp = argv;  /* Pointer for looping */
+        byte **pargvp = argv; /* Pointer for pruning argv array */
 
-        byte *argv[argc + 1];
-        byte **argvp = argv;
+        /// ENV VARS ///
+        vec_t *envs = command->env;  /* Env variables */
+        size_t envc = vec_len(envs); /* Number of env variables */
+        byte *var;                   /* Temp storage for env var */
 
-        /// Pruned 'argv' with only command arguments
-        byte *pruned_argv[argc + 1];
-        byte **pargvp = pruned_argv;
-
-        /// Set default file descriptors
-        int infd = ctx->pipefd[STDIN_FILENO];
-        int outfd = ctx->pipefd[STDOUT_FILENO];
-        int errfd = STDERR_FILENO;
-
-        if(ctx->closefd != -1 && close(ctx->closefd) == -1) {
-            FILE_CLOSE_ERR;
-            perror("close");
+        /// PIPE STREAMS ///
+        if(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
+           || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0)
+        {
+            REDIRECT_ERR;
+            perror("dup2");
+            exit(EXIT_FAILURE);
         }
 
-        vec_t *envs = command->env;
-        size_t envc = vec_len(envs);
-        byte *var;
+        /// DEFAULT STREAMS ///
+        int infd = PIPE_R;         /* Default input stream */
+        int outfd = PIPE_W;        /* Default output stream */
+        int errfd = STDERR_FILENO; /* Default err stream */
+        int redfd = -1;            /* Redirections fd */
 
-        /// Set env vars
+        /// Add env vars
         while(envc--) {
             if(putenv((var = string_slice(vec_index(envs, envc), 0))) == -1) {
                 FAILED_SETTING_ENVVAR(var);
                 perror("putenv");
+                exit(EXIT_FAILURE);
             }
         }
 
-        /// Populate the argv array
+        /// Populate and null out the argv array
         for(size_t i = 0; i < argc; i++)
             *argvp++ = string_slice(vec_index(args, i), 0);
+        argv[argc] = NULL;
 
-        argv[argc] = pruned_argv[argc] = NULL;
-
+        /// Parse redirections and also prune out argv leaving
+        /// only command and its arguments
         bool append = false;
         for(argvp = argv; is_some(*argvp); argvp++) {
             switch(**argvp) {
@@ -225,43 +239,51 @@ static int command_execute(command_t *command, context_t *ctx)
                     if(*(*argvp + 1) == '>') {
                         append = true;
                     }
-                    if(outfd != ctx->pipefd[STDOUT_FILENO] && close(outfd) == -1) {
-                        FILE_CLOSE_ERR;
-                        perror("close");
-                    }
-                    outfd = openf(*(++argvp), append);
-                    if(outfd == -1) {
+
+                    if((redfd = openf(*(++argvp), append)) == -1) {
                         FILE_OPEN_ERR(*argvp);
                         perror("open");
-                        return FAILURE;
+                        exit(EXIT_FAILURE);
+                    } else if(close(outfd) == -1) {
+                        FILE_CLOSE_ERR;
+                        perror("close");
+                        exit(EXIT_FAILURE);
+                    } else {
+                        outfd = redfd;
                     }
+
                     break;
                 case '2':
                     if(*(*argvp + 2) == '>') {
                         append = true;
                     }
-                    if(errfd != STDERR_FILENO && close(errfd) == -1) {
-                        FILE_CLOSE_ERR;
-                        perror("close");
-                    }
-                    errfd = openf(*(++argvp), append);
-                    if(errfd == -1) {
+
+                    if((redfd = openf(*(++argvp), append)) == -1) {
                         FILE_OPEN_ERR(*argvp);
                         perror("open");
-                        return FAILURE;
+                        exit(EXIT_FAILURE);
+                    } else if(close(errfd) == -1) {
+                        FILE_CLOSE_ERR;
+                        perror("close");
+                        exit(EXIT_FAILURE);
+                    } else {
+                        errfd = redfd;
                     }
+
                     break;
                 case '<':
-                    if(infd != ctx->pipefd[STDIN_FILENO] && close(infd) == -1) {
-                        FILE_CLOSE_ERR;
-                        perror("close");
-                    }
-                    infd = open(*(++argvp), O_RDONLY);
-                    if(infd == -1) {
+                    if((redfd = open(*(++argvp), O_RDONLY)) == -1) {
                         FILE_OPEN_ERR(*argvp);
                         perror("open");
-                        return FAILURE;
+                        exit(EXIT_FAILURE);
+                    } else if(close(infd) == -1) {
+                        FILE_CLOSE_ERR;
+                        perror("close");
+                        exit(EXIT_FAILURE);
+                    } else {
+                        infd = redfd;
                     }
+
                     break;
                 default:
                     *pargvp++ = *argvp;
@@ -269,21 +291,11 @@ static int command_execute(command_t *command, context_t *ctx)
             }
             append = false;
         }
-        *pargvp = NULL;
+        *pargvp = NULL; /* Null out the pruned argv */
 
-        /// Redirect output, input and err streams
-        if(dup2(outfd, STDOUT_FILENO) == -1 || dup2(infd, STDIN_FILENO) == -1
-           || dup2(errfd, STDOUT_FILENO) == -1)
-        {
-            REDIRECT_ERR;
-            perror("dup2");
-            return FAILURE;
-        }
-
-        printf("COMMAND: '%s'\n", pruned_argv[0]);
         /// Exec the command
-        if(execvp(pruned_argv[0], pruned_argv) == -1) {
-            EXEC_ERR(pruned_argv[0]);
+        if(execvp(argv[0], argv) == -1) {
+            EXEC_ERR(argv[0]);
             perror("execve");
             exit(EXIT_FAILURE);
         }

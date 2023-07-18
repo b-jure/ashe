@@ -147,6 +147,7 @@ bool string_append(string_t *self, const void *str, size_t len)
         return false;
     }
 
+    printf("APPENDING\n");
     return vec_splice(self->vec, string_len(self), 0, str, len);
 }
 

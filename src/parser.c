@@ -81,8 +81,11 @@ int parse_commandline(const byte *line, commandline_t *out, bool *set_env)
     int status = SUCCESS;
     lexer_t lexer = lexer_new(line, strlen(line));
     token_t token = lexer_next(&lexer);
-    printf("\n\n[first] ");
-    print_token(&token);
+
+    /// Empty cmdline
+    if(token.type == EOL_TOKEN) {
+        return SUCCESS;
+    }
 
     status = _parse_commandline(&lexer, out, set_env);
     token = lexer.token;

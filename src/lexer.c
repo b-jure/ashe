@@ -6,6 +6,10 @@
 #define is_reserved_symbol(ch)                                                      \
     ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
 
+static token_t token_without_quotes(tokentype_t ttype, byte *word);
+static void lexer_get_string(lexer_t *lexer);
+static void lexer_skip_ws(lexer_t *lexer);
+
 lexer_t lexer_new(const byte *start, size_t len)
 {
     return (lexer_t){.token = {0}, .iter = chariter_new((byte *) start, len)};
@@ -18,19 +22,18 @@ static void lexer_get_string(lexer_t *lexer)
     int c, i;
     byte *ptr;
     byte old;
-    bool parens = false;
+    bool dquote = false;
     bool escape = false;
     chariter_t *iter = &lexer->iter;
     tokentype_t ttype;
 
     for(i = 0; ((c = chariter_peek(iter)) != EOL); i++) {
-        if(!parens && ((isspace(c)) || is_reserved_symbol(c))) {
+        if(!dquote && ((isspace(c)) || is_reserved_symbol(c))) {
             break;
         }
 
         if(!escape && c == '"') {
-            parens ^= true;
-            printf("Parens are -> '%s'\n", (parens) ? "ON" : "OFF");
+            dquote ^= true;
         } else if(c == '\\' || escape) {
             escape ^= true;
         }
@@ -43,15 +46,38 @@ static void lexer_get_string(lexer_t *lexer)
 
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
         old = *ptr;
-        *ptr = '\0';
-        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word)) {
+        *ptr = NULL_TERM;
+        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word))
             ttype = KVPAIR_TOKEN;
-        }
         *ptr = old;
     }
 
     printf("Processed so far -> '%s'\n", word);
-    lexer->token = token_new(ttype, word);
+    lexer->token = token_without_quotes(ttype, word);
+}
+
+static token_t token_without_quotes(tokentype_t ttype, byte *word)
+{
+    token_t token;
+    string_t *string = string_from(word);
+    byte *ptr = string_slice(string, 0);
+
+    if(is_null(string)) {
+        return token_new(OOM_TOKEN, NULL);
+    }
+
+    token.type = ttype;
+    token.contents = string;
+
+    while(is_some(ptr = strchr(ptr, '"'))) {
+        if(char_before_ptr(ptr) != '\\') {
+            string_remove_at_ptr(string, ptr);
+        } else {
+            ptr++;
+        }
+    }
+
+    return token;
 }
 
 static void lexer_skip_ws(lexer_t *lexer)

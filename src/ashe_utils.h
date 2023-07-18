@@ -58,46 +58,44 @@ typedef char byte;
 
 /// ERRORS
 #define EXPECTED_STRING_ERR(str)                                               \
-  fprintf(stderr, "anshell: expected a string instead got '%s'\n", str)
+  fprintf(stderr, "ashe: expected a string instead got '%s'\n", str)
 #define EXPECTED_CMD_ERR(str)                                                  \
-  fprintf(stderr, "anshell: expected a command instead got '%s'\n", str)
+  fprintf(stderr, "ashe: expected a command instead got '%s'\n", str)
 #define OOM_ERR(bytes)                                                         \
-  fprintf(stderr, "anshell - out of memory, tried to allocated %ld bytes\n",   \
-          bytes)
+  fprintf(stderr, "ashe - out of memory, tried to allocated %ld bytes\n", bytes)
 #define ARG_SIZE_ERR(size)                                                     \
-  fprintf(stderr, "anshell: maximum arg size of %lub exceeded\n", size - 1)
+  fprintf(stderr, "ashe: maximum arg size of %lub exceeded\n", size - 1)
 #define EXPECTED_STREOL_GOT_REDIR_ERR(str)                                     \
   fprintf(stderr,                                                              \
-          "anshell: expected a string or end of line instead got redirection " \
+          "ashe: expected a string or end of line instead got redirection "    \
           "'%s'\n",                                                            \
           str)
 #define INVALID_SYNTAX_ERR(str)                                                \
-  fprintf(stderr, "anshell: invalid syntax '%s'\n", str)
+  fprintf(stderr, "ashe: invalid syntax '%s'\n", str)
 #define EXPECTED_ANDOR_OR_EOL_ERR(str)                                         \
   fprintf(stderr,                                                              \
-          "anshell: expected '&' or ';' or end of line, instead got '%s'\n",   \
-          str)
+          "ashe: expected '&' or ';' or end of line, instead got '%s'\n", str)
 #define CMDLINE_READ_ERR                                                       \
-  fprintf(stderr, "anshell: read error occured while reading the line\n")
+  fprintf(stderr, "ashe: read error occured while reading the line\n")
 #define CMDLINE_ARGSIZE_ERR(size)                                              \
-  fprintf(stderr,                                                              \
-          "anshell: maximum argument size limit of %d bytes exceeded\n", size)
+  fprintf(stderr, "ashe: maximum argument size limit of %d bytes exceeded\n",  \
+          size)
 #define FILE_OPEN_ERR(filename)                                                \
-  fprintf(stderr, "anshell: errored while trying to open file '%s'\n", filename)
-#define FORK_ERR fprintf(stderr, "anshell: errored while forking\n")
-#define FILE_CLOSE_ERR                                                         \
-  fprintf(stderr, "anshell: errored while closing the file\n")
-#define EXEC_ERR(prog) fprintf(stderr, "anshell: failed executing '%s'\n", prog)
-#define REDIRECT_ERR fprintf(stderr, "anshell: errored trying to redirect\n")
+  fprintf(stderr, "ashe: errored while trying to open file '%s'\n", filename)
+#define FORK_ERR fprintf(stderr, "ashe: errored while forking\n")
+#define FILE_CLOSE_ERR fprintf(stderr, "ashe: errored while closing the file\n")
+#define EXEC_ERR(prog) fprintf(stderr, "ashe: failed executing '%s'\n", prog)
+#define REDIRECT_ERR fprintf(stderr, "ashe: errored trying to redirect\n")
 #define WAIT_ERR(pid)                                                          \
-  fprintf(stderr,                                                              \
-          "anshell: errored while trying to wait for process id:'%d'\n", pid)
-#define PIPE_ERR fprintf(stderr, "anshell: errored while trying to pipe\n")
+  fprintf(stderr, "ashe: errored while trying to wait for process id:'%d'\n",  \
+          pid)
+#define PIPE_OPEN_ERR fprintf(stderr, "ashe: errored while creating a pipe\n")
+#define PIPE_CLOSE_ERR fprintf(stderr, "ashe: errored while closing the pipe\n")
 #define FAILED_SETTING_ENVVAR(var)                                             \
-  fprintf(stderr, "anshell: errored while setting env var '%s'\n", var)
+  fprintf(stderr, "ashe: errored while setting env var '%s'\n", var)
 
 /// Exit codes
-#define FAILURE 1
+#define FAILURE -1
 #define SUCCESS 0
 
 #endif

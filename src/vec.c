@@ -96,7 +96,7 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
     void *new_alloc = NULL;
 
     if(is_null(self->allocation)) {
-        new_alloc = calloc(required, sizeof(byte));
+        new_alloc = calloc(required, self->ele_size);
     } else if(required > self->capacity) {
         if(required > MAX_VEC_SIZE) {
             fprintf(stderr, "%s:%d - allocation too big\n", __FILE__, __LINE__);
@@ -107,8 +107,9 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
             required *= 2;
         }
 
-        new_alloc = realloc(self->allocation, required);
+        new_alloc = realloc(self->allocation, required * self->ele_size);
     } else {
+        printf("Ensured\n");
         return 0;
     }
 
@@ -120,6 +121,7 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
     self->allocation = new_alloc;
     self->capacity = required;
 
+    printf("Ensured\n");
     return 0;
 }
 

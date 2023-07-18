@@ -8,45 +8,30 @@
 #define PROMPT "/ashe/::> "
 #define INSIZE 200
 
-static void unescape(string_t *string, byte *start);
-
 int rcmdline(string_t *buffer)
 {
     byte input[INSIZE];
     byte *ptr;
-    byte *lastparen;
-
-    ptr = lastparen = string_slice(buffer, 0);
-    bool parens = false;
+    size_t appended;
+    bool dq = false;
 
     while(fgets(input, INSIZE, stdin) != NULL) {
         if(string_len(buffer) + strlen(input) >= ARG_MAX) {
             CMDLINE_ARGSIZE_ERR(ARG_MAX);
             return FAILURE;
-        } else if(!string_append(buffer, input, strlen(input))) {
+        } else if(!string_append(buffer, input, (appended = strlen(input)))) {
             return FAILURE;
         } else {
+            ptr = string_slice(buffer, string_len(buffer) - appended);
             while(is_some((ptr = strchr(ptr, '"')))) {
-                if(!parens) {
-                    *ptr = NULL_TERM;
-                    unescape(buffer, lastparen + 1);
-                    *--ptr = '"';
-                    parens ^= true;
-                    lastparen = ptr++;
-                    assert(*lastparen == '"');
-                } else if(char_before_ptr(ptr) == '\\') {
-                    string_remove_at_ptr(buffer, ptr - 1);
-                    string_set_at_ptr(buffer, ptr - 1, '"');
-                    assert(*(ptr - 1) == '"');
-                } else {
-                    parens ^= true;
-                    lastparen = ptr++;
+                if(char_before_ptr(ptr) != '\\') {
+                    dq ^= true;
                 }
+                ptr++;
             }
-            if(!parens && is_some(strchr(lastparen, '\n'))) {
+            if(!dq && string_last(buffer) == '\n') {
                 break;
             }
-            ptr = lastparen + 1;
         }
     }
 
@@ -55,53 +40,7 @@ int rcmdline(string_t *buffer)
         CMDLINE_READ_ERR;
     }
 
-    printf("got input: '%s'\n", input);
     return SUCCESS;
-}
-
-static void unescape(string_t *string, byte *start)
-{
-    byte *escape;
-    int c;
-
-    while(is_some(escape = strchr(start, '\\'))) {
-        c = char_after_ptr(escape);
-        string_remove_at_ptr(string, escape--);
-        switch(c) {
-            case 't':
-                string_set_at_ptr(string, escape, '\t');
-                break;
-            case 'n':
-                string_set_at_ptr(string, escape, '\n');
-                break;
-            case 'r':
-                string_set_at_ptr(string, escape, '\r');
-                break;
-            case 'b':
-                string_set_at_ptr(string, escape, '\b');
-                break;
-            case 'f':
-                string_set_at_ptr(string, escape, '\f');
-                break;
-            case 'v':
-                string_set_at_ptr(string, escape, '\v');
-                break;
-            case '0':
-                string_set_at_ptr(string, escape, '\0');
-                break;
-            case '\'':
-                string_set_at_ptr(string, escape, '\'');
-                break;
-            case '"':
-                string_set_at_ptr(string, escape, '"');
-                break;
-            case '\\':
-                string_set_at_ptr(string, escape, '\\');
-                break;
-            default:
-                break;
-        }
-    }
 }
 
 int main()
