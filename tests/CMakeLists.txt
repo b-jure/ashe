@@ -15,6 +15,7 @@ add_executable(
     ash_string_test
     ash_string.cpp
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/string.c
+    ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
 
@@ -23,6 +24,7 @@ add_executable(
     ash_chiter.cpp
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/string.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/chiter.c
+    ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
 
@@ -33,6 +35,7 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/token.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/string.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/chiter.c
+    ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
 

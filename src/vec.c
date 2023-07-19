@@ -25,7 +25,7 @@ vec_t *vec_new(const size_t ele_size)
     vec_t *vec = malloc(sizeof(vec_t));
 
     if(is_null(vec)) {
-        OOM_ERR(sizeof(vec_t));
+        pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
         return NULL;
     }
 
@@ -45,7 +45,8 @@ vec_t *vec_with_capacity(const size_t ele_size, const size_t capacity)
     if(is_null(vec = vec_new(ele_size))) {
         return NULL;
     } else if(is_null(allocation = calloc(capacity, ele_size))) {
-        OOM_ERR(capacity * ele_size);
+        pwarn(
+            "ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
         return NULL;
     }
 
@@ -70,12 +71,6 @@ bool vec_splice(
     if(is_null(self) || is_null(array) || self->len <= index + remove_n
        || (_an_vec_ensure(self, insert_n - remove_n) == -1))
     {
-        printf(
-            "SELF LEN -> %ld, index -> %ld, remove_n -> %ld\n",
-            self->len,
-            index,
-            remove_n);
-        printf("vec splice: Precondition not satisfied returning false\n");
         return false;
     }
 
@@ -99,7 +94,6 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
         new_alloc = calloc(required, self->ele_size);
     } else if(required > self->capacity) {
         if(required > MAX_VEC_SIZE) {
-            fprintf(stderr, "%s:%d - allocation too big\n", __FILE__, __LINE__);
             return -1;
         } else if(required > (MAX_VEC_SIZE / 2)) {
             required = MAX_VEC_SIZE;
@@ -109,19 +103,16 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
 
         new_alloc = realloc(self->allocation, required * self->ele_size);
     } else {
-        printf("Ensured\n");
         return 0;
     }
 
     if(is_null(new_alloc)) {
-        fprintf(stderr, "%s:%d - out of memory\n", __FILE__, __LINE__);
         return -1;
     }
 
     self->allocation = new_alloc;
     self->capacity = required;
 
-    printf("Ensured\n");
     return 0;
 }
 
@@ -383,15 +374,12 @@ bool vec_remove(vec_t *self, const size_t index, FreeFn free_fn)
 static void vec_drop_elements(vec_t *self, FreeFn free_fn)
 {
     for(size_t size = self->len; size > 0; size--) {
-        printf("Dropping element at %ld...\n", size - 1);
         free_fn(_an_vec_get(self, size - 1));
-        printf("done! [element at %ld]\n", size - 1);
     }
 }
 
 void vec_drop(vec_t **vecp, FreeFn free_fn)
 {
-    printf("Dropping vec\n");
     vec_t *self;
     if(is_null(vecp) || is_null((self = *vecp))) {
         return;
@@ -399,13 +387,9 @@ void vec_drop(vec_t **vecp, FreeFn free_fn)
 
     if(is_some(self->allocation)) {
         if(is_some(free_fn)) {
-            printf("Dropping vec elements...\n");
             vec_drop_elements(self, free_fn);
-            printf("done! [vec elements]\n");
         }
-        printf("Dropping vec allocation...\n");
         free(self->allocation);
-        printf("done! [vec allocation]\n");
     }
 
     self->allocation = NULL;
@@ -414,5 +398,4 @@ void vec_drop(vec_t **vecp, FreeFn free_fn)
     self->len = 0;
     free(self);
     *vecp = NULL;
-    printf("done! [vec]\n");
 }

@@ -11,7 +11,7 @@ token_t token_new(tokentype_t ttype, const byte *str)
     if(is_some(str)) {
         string = string_from(str);
         if(is_null(string)) {
-            OOM_ERR(strlen(str));
+            pwarn("ran out of memory trying to allocate '%ld' bytes", strlen(str));
             return (token_t){.type = OOM_TOKEN, .contents = NULL};
         }
     }

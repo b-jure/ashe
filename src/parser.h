@@ -16,7 +16,7 @@ typedef struct {
 void conditional_drop(conditional_t *cond);
 
 typedef struct {
-  vec_t *args; /* Command name and arguments */
+  vec_t *argv; /* Command name and arguments */
   vec_t *env;  /* Program environmental variables */
 } command_t;
 

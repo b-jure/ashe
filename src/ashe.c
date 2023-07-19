@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PROMPT "/ashe/::> "
+#define PROMPT "\n[-ASHE-]: "
 #define INSIZE 200
 
 int rcmdline(string_t *buffer)
@@ -17,7 +17,7 @@ int rcmdline(string_t *buffer)
 
     while(fgets(input, INSIZE, stdin) != NULL) {
         if(string_len(buffer) + strlen(input) >= ARG_MAX) {
-            CMDLINE_ARGSIZE_ERR(ARG_MAX);
+            pwarn("commandline argument size %d exceeded", ARG_MAX);
             return FAILURE;
         } else if(!string_append(buffer, input, (appended = strlen(input)))) {
             return FAILURE;
@@ -37,7 +37,7 @@ int rcmdline(string_t *buffer)
 
     if(ferror(stdin) != 0) {
         /// Don't exit with failure just warn
-        CMDLINE_READ_ERR;
+        pwarn("error occured while reading the command line");
     }
 
     return SUCCESS;
@@ -69,17 +69,14 @@ int main()
             exit(EXIT_FAILURE);
         }
 
-        printf("Got commandline ---> '%s'\n", string_ref(line));
-
         if(string_len(line) == 1
            || parse_commandline(string_ref(line), &cmdline, &set_env) == FAILURE)
         {
-            printf("\nErrored while parsing commandline\n");
+            commandline_clear(&cmdline);
             continue;
         }
 
         if(!set_env) {
-            printf("THERE ARE COMMANDS TO BE EXECUTED\n");
             commandline_execute(&cmdline, &status);
         }
         printf("Finished executing commandline with status: %d\n", status);
