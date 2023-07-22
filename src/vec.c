@@ -26,6 +26,7 @@ vec_t *vec_new(const size_t ele_size)
 
     if(is_null(vec)) {
         pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
+        perr();
         return NULL;
     }
 
@@ -47,6 +48,7 @@ vec_t *vec_with_capacity(const size_t ele_size, const size_t capacity)
     } else if(is_null(allocation = calloc(capacity, ele_size))) {
         pwarn(
             "ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
+        perr();
         return NULL;
     }
 

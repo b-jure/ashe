@@ -1,16 +1,15 @@
-#define _DEFAULT_SOURCE
 #include "ashe_string.h"
 #include "ashe_utils.h"
 #include "cmdline.h"
+#include "job.h"
 #include "parser.h"
 #include "vec.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
 #include <stdlib.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #define PIPE_R 0                            /* Read  end of a pipe */
 #define PIPE_W 1                            /* Write end of a pipe */
@@ -28,8 +27,6 @@
 #define P_ENV 3   /* Print env var */
 #define P_ALL 4   /* Print all environ */
 
-#define NO_RUN 1 /* ret value if command_execute_no_fork didn't execute the cmd */
-
 /// Generic too many or too few arguments warning for program 'prog'
 #define PW_TOO_MANY(prog) pwarn("too many arguments provided for command '%s'", prog)
 #define PW_TOO_FEW(prog) pwarn("missing argument/s for command '%s'", prog);
@@ -42,22 +39,16 @@
 byte *builtin[] = {"exit", "pwd", "clear", "cd", "penv", "senv", "renv", "builtin"};
 #define BUILTINN sizeof(builtin) / sizeof(builtin[0])
 
-/// Stores context required for each proccess/built-in command
-/// to correctly dup2 the correct pipe fd and close the redundant one.
 typedef struct {
     int pipefd[2];
     int closefd;
 } context_t;
 
-/// Holds the env vars for this process
-extern byte **environ;
-
 /// Internal functions
 static context_t context_new(void);
 static int conditional_execute(conditional_t *cond);
 static int pipeline_execute(pipeline_t *pipeline, bool bg);
-static int run_forked(byte *const *argv, context_t *ctx);
-static int run_builtin(byte *const *argv, context_t *ctx);
+static int run_cmd(command_t *cmd, context_t *ctx, pid_t gpid, bool bg);
 static int envcmd(byte *const *argv, int option);
 static void penviron(void);
 static void pbuiltin(void);
@@ -66,6 +57,10 @@ static void command_get_env(command_t *cmd, byte *out[], size_t len);
 static int close_pipe(int *pp);
 static int add_envs_to_environ(byte *const *envp);
 static int rm_envs_from_environ(byte *const *envp);
+static void reset_signal_handling(void);
+static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx);
+static void exec_builtin(const byte *command, byte *const *argv);
+static void resolve_redirections(byte *const *argvp, context_t *ctx);
 
 static context_t context_new(void)
 {
@@ -127,6 +122,16 @@ static int conditional_execute(conditional_t *cond)
     return ctn;
 }
 
+static void reset_signal_handling(void)
+{
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
+    signal(SIGTTIN, SIG_DFL);
+    signal(SIGTTOU, SIG_DFL);
+    signal(SIGCHLD, SIG_DFL);
+}
+
 static int envcmd(byte *const *argv, int option)
 {
     const byte *temp = NULL;
@@ -171,118 +176,30 @@ static void penviron(void)
 
 static void command_get_argv(command_t *cmd, byte *out[], size_t len)
 {
+    size_t i;
     vec_t *argv = cmd->argv;
-    for(size_t i = 0; i < len; i++) out[i] = string_slice(vec_index(argv, i), 0);
+    for(i = 0; i < len; i++) out[i] = string_slice(vec_index(argv, i), 0);
+    out[i] = NULL;
 }
 
 static void command_get_env(command_t *cmd, byte *out[], size_t len)
 {
+    size_t i;
     vec_t *env = cmd->env;
-    for(size_t i = 0; i < len; i++) out[i] = string_slice(vec_index(env, i), 0);
+    for(i = 0; i < len; i++) out[i] = string_slice(vec_index(env, i), 0);
+    out[i] = NULL;
 }
 
-static int run_builtin(byte *const *argv, context_t *ctx)
+static byte *format_argv(byte *const *argv)
 {
-    int status = NO_RUN;
-    byte buff[PATH_MAX];
-    int oldin;
-    int oldout;
-
-    const byte *command = argv[0];
-
-    /// Save old input and output
-    if((oldin = dup(STDIN_FILENO)) < 0 || (oldout = dup(STDOUT_FILENO)) < 0) {
-        perr();
-        exit(EXIT_FAILURE);
+    byte commandline[ARG_MAX];
+    commandline[0] = NULL_TERM;
+    while(is_some(*argv)) {
+        strcat(commandline, *argv++);
+        if(is_some(*argv))
+            strcat(commandline, " ");
     }
-
-    /// Overwrite standard input and output with pipe
-    if(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
-       || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0)
-    {
-        perr();
-        exit(EXIT_FAILURE);
-    }
-
-    if(strcmp(command, "exit") == 0) {
-        exit(EXIT_SUCCESS);
-    } else if(strcmp(command, "cd") == 0) {
-        if(is_null(argv[1])) {
-            if((status = chdir(getenv(HOME))) == -1) {
-                perr();
-                status = FAILURE;
-            }
-        } else if(is_some(argv[2])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("cd [DIRNAME]");
-            status = FAILURE;
-        } else if((status = chdir(argv[1])) < 0) {
-            perr();
-            status = FAILURE;
-        }
-    } else if(strcmp(command, "penv") == 0) {
-        if(is_null(argv[1])) {
-            status = envcmd(NULL, P_ALL);
-        } else if(is_some(argv[1]) && is_null(argv[2])) {
-            status = envcmd(argv, P_ENV);
-        } else {
-            PW_TOO_MANY(argv[0]);
-            pusage("penv [VARNAME]");
-            status = FAILURE;
-        }
-    } else if(strcmp(command, "senv") == 0) {
-        if(is_null(argv[1]) || is_null(argv[2])) {
-            PW_TOO_FEW(argv[0]);
-            pusage("senv [VARNAME] [VARVALUE]");
-            status = FAILURE;
-        } else if(is_some(argv[3])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("senv [VARNAME] [VARVALUE]");
-            status = FAILURE;
-        } else {
-            status = envcmd(argv, SET_ENV);
-        }
-    } else if(strcmp(command, "renv") == 0) {
-        if(is_null(argv[1])) {
-            PW_TOO_FEW(argv[0]);
-            pusage("renv [VARNAME] [VARVALUE]");
-            status = FAILURE;
-        } else if(is_some(argv[2])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("renv [VARNAME] [VARVALUE]");
-            status = FAILURE;
-        } else {
-            status = envcmd(argv, RM_ENV);
-        }
-    } else if(strcmp(command, "pwd") == 0) {
-        if(is_null(getcwd(buff, PATH_MAX))) {
-            perr();
-            status = FAILURE;
-        } else {
-            printf("%s\n", buff);
-            status = SUCCESS;
-        }
-    } else if(strcmp(command, "clear") == 0 && (status = system("clear")) != 0) {
-        perr();
-        status = FAILURE;
-    } else if(strcmp(command, "builtin") == 0) {
-        if(is_some(argv[1])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("builtin");
-            status = FAILURE;
-        } else {
-            pbuiltin();
-            status = SUCCESS;
-        }
-    }
-
-    /// Restore old input and output
-    if(dup2(oldin, STDIN_FILENO) < 0 || dup2(oldout, STDOUT_FILENO) < 0) {
-        perr();
-        exit(EXIT_FAILURE);
-    }
-
-    return status;
+    return strdup(commandline);
 }
 
 static int close_pipe(int *pp)
@@ -319,205 +236,168 @@ static int rm_envs_from_environ(byte *const *envp)
     return SUCCESS;
 }
 
-static int pipeline_execute(pipeline_t *pipeline, bool bg)
+static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx)
 {
-    context_t ctx; /* Context, instructs child proc which stream to dup */
-    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
-    size_t cmd_n = vec_len(commands);     /* Amount of commands in this pipeline */
-    size_t cproc; /* Number of successfully forked proccesses to wait for */
-    size_t i;
-    int ctl;            /* Control flag storage for waitpid */
-    int status;         /* Return status of this pipeline */
-    pid_t cPID;         /* child Process ID */
-    pid_t cPIDs[cmd_n]; /* All successfully forked child Process ID's */
-    pid_t *cPIDp = cPIDs;
-
-    assert(cmd_n > 0);
-    unsigned pn = ((cmd_n - 1) * 2); /* Size of pipe array */
-    int pipes[pn + 1];               /* Pipe storage */
-    pipes[pn] = -1;                  /* Set end */
-
-    for(i = cproc = 0; i < cmd_n; i++) {
-        ctx = context_new();
-
-        if(cmd_n > 1) {
-            if(first(i)) {
-                if(pipe(pipes) < 0) {
-                    perr();
-                    exit(EXIT_FAILURE);
-                }
-                ctx.pipefd[PIPE_W] = pipes[PIPE_W];
-                ctx.closefd = pipes[PIPE_R];
-            } else if(not_first(i) && not_last(i, cmd_n)) {
-                if(pipe(pipe_at(CURR(i), pipes)) < 0) {
-                    perr();
-                    exit(EXIT_FAILURE);
-                }
-                ctx.pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
-                ctx.pipefd[PIPE_W] = *(pipe_at(CURR(i), pipes) + PIPE_W);
-                ctx.closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
-            } else {
-                ctx.pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
-                ctx.closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
-            }
+    if(first(i)) {
+        if(pipe(pipes) < 0) {
+            perr();
+            exit(EXIT_FAILURE);
         }
+        ctx->pipefd[PIPE_W] = pipes[PIPE_W];
+        ctx->closefd = pipes[PIPE_R];
+    } else if(not_first(i) && not_last(i, cmdn)) {
+        if(pipe(pipe_at(CURR(i), pipes)) < 0) {
+            perr();
+            exit(EXIT_FAILURE);
+        }
+        ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
+        ctx->pipefd[PIPE_W] = *(pipe_at(CURR(i), pipes) + PIPE_W);
+        ctx->closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
+    } else {
+        ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
+        ctx->closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
+    }
+}
 
-        int builtin;
-        command_t *cmd = vec_index(commands, i);
-        size_t argc = vec_len(cmd->argv);
-        size_t envc = vec_len(cmd->env);
-        byte *argv[argc + 1];
-        byte *env[envc + 1];
+static void fargvs(vec_t *argv, byte **out)
+{
+    size_t len = vec_len(argv);
+    byte commandline[ARG_MAX];
+    commandline[0] = NULL_TERM;
 
-        command_get_argv(cmd, argv, argc);
-        argv[argc] = NULL;
-        command_get_env(cmd, env, envc);
-        env[envc] = NULL;
-
-        byte *const *envp = env;
-        if(add_envs_to_environ(envp) < 0) exit(EXIT_FAILURE);
-
-        if((builtin = run_builtin(argv, &ctx)) == NO_RUN) {
-            if((cPID = run_forked(argv, &ctx)) != FAILURE) {
-                cproc++;
-                *cPIDp++ = cPID;
-                status = SUCCESS;
-            } else
-                status = FAILURE;
-        } else
-            status = builtin;
-
-        if(rm_envs_from_environ(envp) < 0) exit(EXIT_FAILURE);
-
-        /// Close the last pipe
-        if(not_first(i) && close_pipe(pipe_at(PREV(i), pipes)) < 0) exit(EXIT_FAILURE);
+    for(size_t i = 0; i < len; i++) {
+        strcat(commandline, vec_index(argv, i));
+        if(i + 1 != len)
+            strcat(commandline, " ");
     }
 
-    if(bg && IS_NONE(pipeline->connection)) {
-        return status;
-    } else {
-        for(i = 0; cproc--; i++) {
-        try_again:
-            if(waitpid(cPIDs[i], &ctl, 0) < 0) {
-                perr();
-                sleep(1);
-                goto try_again;
-            } else if(
-                status != FAILURE && cproc == 0
-                && (!WIFEXITED(ctl) || WEXITSTATUS(ctl) != 0))
-            {
-                status = FAILURE;
+    *out = strdup(commandline);
+
+    if(is_null(*out)) {
+        pwarn("failed to copy over the user input: %s", commandline);
+        perr();
+    }
+}
+
+static int pipeline_execute(pipeline_t *pipeline, bool bg)
+{
+    context_t ctx; /* Context, instructs forked proc which pipe stream to dup and close */
+    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
+    size_t cmdn = vec_len(commands);      /* Amount of commands in this pipeline */
+    int status;                           /* Return status of this pipeline */
+    pid_t spgid = getpid();               /* shell process group ID */
+    pid_t cpid;                           /* child Process ID */
+
+    job_t job = job_new(pipeline->connection, bg); /* New job for this pipeline */
+    if(is_null(job.processes))
+        return FAILURE;
+
+    unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
+    int pipes[pn];                  /* Pipe storage */
+
+    /// Run the entire pipeline
+    for(int i = 0; i < cmdn; i++) {
+        ctx = context_new();
+        /// If we have more than 1 command in the pipeline
+        /// they must be connected with pipes, create and configure their pipes
+        if(cmdn > 1)
+            configure_pipes(i, pipes, cmdn, &ctx);
+
+        /// Fetch the next command and run it
+        command_t *cmd = vec_index(commands, i);
+        if((cpid = run_cmd(cmd, &ctx, job.pgid, bg)) != FAILURE) {
+            if(job.pgid == 0)
+                job.pgid = cpid;
+            /// Create a new process with the pid 'cpid'
+            process_t temp_proc = process_new(cpid);
+            /// Format the argv array into 'process.comandline' cstring and
+            /// insert the process into the current job
+            fargvs(cmd->argv, &temp_proc.commandline);
+            /// If out of memory exit
+            if(is_null(temp_proc.commandline) || !job_add_process(&job, &temp_proc)) {
+                joblist_cleanup();
+                exit(EXIT_FAILURE);
             }
+        } else {
+            /// If fork failed just exit
+            joblist_cleanup();
+            exit(EXIT_FAILURE);
         }
+
+        /// Close the last pipe if it fails exit
+        if(not_first(i) && close_pipe(pipe_at(PREV(i), pipes)) < 0) {
+            joblist_cleanup();
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if(job.foreground)
+        /// Move process into foreground and wait for its children
+        job_move_to_fg(&job, false);
+    else {
+        job_print_launch(&job, joblist_len());
+        /// Otherwise add the job to joblist and return
+        if(!vec_push(joblist.jobs, &job)) {
+            joblist_cleanup();
+            exit(EXIT_FAILURE);
+        }
+        /// This is no-op
+        job_move_to_bg(&job, false);
     }
 
     return status;
 }
 
-static int run_forked(byte *const *argv, context_t *ctx)
+static int run_cmd(command_t *cmd, context_t *ctx, pid_t gpid, bool bg)
 {
     pid_t childPID = fork();
 
     if(childPID == -1) {
-        pwarn("failed forking parent process [PID:%d]", getpid());
+        pwarn("failed forking parent process [ID:%d]", getpid());
         perr();
         return FAILURE;
     } else if(childPID == 0) {
-        byte *const *argvp = argv;                  /* Pointer for looping cmd args */
-        const byte **pargvp = (const byte **) argv; /* Pointer for pruning argv array */
-
-        /// Configure pipe streams and close unnecessary ones
-        if(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
-           || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0)
-        {
-            perr();
+        /// Extract command and its arguments
+        size_t argc = vec_len(cmd->argv);
+        byte *argv[argc + 1];
+        command_get_argv(cmd, argv, argc);
+        /// Extract environment variables
+        size_t envc = vec_len(cmd->env);
+        byte *env[envc + 1];
+        command_get_env(cmd, env, envc);
+        /// Add environment variables to environ
+        if(add_envs_to_environ(env) < 0)
             exit(EXIT_FAILURE);
-        }
 
-        /// Close the redundant pipe end if any
-        if(ctx->closefd != -1 && close(ctx->closefd) < 0) {
-            perr();
-            exit(EXIT_FAILURE);
-        }
+        pid_t pid = getpid(); /* Current process ID */
 
-        /// Default streams for this fork
-        int infd = PIPE_R;         /* Default input stream */
-        int outfd = PIPE_W;        /* Default output stream */
-        int errfd = STDERR_FILENO; /* Default err stream */
-        int redfd = -1;            /* Redirections fd */
-
-        /// Parse redirections and also prune out argv leaving
-        /// only command and its arguments without redirections
-        bool append = false;
-        for(; is_some(*argvp); argvp++) {
-            switch(**argvp) {
-                case '>':
-                    if(*(*argvp + 1) == '>') {
-                        append = true;
-                    }
-
-                    if((redfd = openf(*(++argvp), append)) < 0) {
-                        pwarn("failed to open a file '%s'", *argvp);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else if(close(outfd) == -1) {
-                        pwarn("failed to close fd '%d'", outfd);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else {
-                        outfd = redfd;
-                    }
-
-                    break;
-                case '2':
-                    if(*(*argvp + 2) == '>') {
-                        append = true;
-                    }
-
-                    if((redfd = openf(*(++argvp), append)) < 0) {
-                        pwarn("failed to open a file '%s'", *argvp);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else if(close(errfd) == -1) {
-                        pwarn("failed to close fd '%d'", errfd);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else {
-                        errfd = redfd;
-                    }
-
-                    break;
-                case '<':
-                    if((redfd = open(*(++argvp), O_RDONLY)) < 0) {
-                        pwarn("failed to open a file '%s'", *argvp);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else if(close(infd) < 0) {
-                        pwarn("failed to close fd '%d'", infd);
-                        perr();
-                        exit(EXIT_FAILURE);
-                    } else {
-                        infd = redfd;
-                    }
-
-                    break;
-                default:
-                    *pargvp++ = *argvp;
-                    break;
+        /// If this is the first command set the gpid as pid
+        /// and give it the terminal
+        if(gpid == 0) {
+            gpid = pid;
+            if(!bg && tcsetpgrp(TERMINAL_FD, gpid) < 0) {
+                pwarn("failed giving terminal to process group [ID:%d]", gpid);
+                perr();
+                exit(EXIT_FAILURE);
             }
-            append = false;
         }
-        *pargvp = NULL; /* Null out the pruned argv */
-
-        /// Ensure all the redirections are taken care of
-        if(dup2(infd, STDIN_FILENO) == -1 || dup2(outfd, STDOUT_FILENO) == -1
-           || dup2(errfd, STDERR_FILENO) == -1)
-        {
+        /// Move this process into the new process group
+        if(setpgid(pid, gpid) < 0) {
+            pwarn(
+                "process [ID:%d] failed setting itself into process group [ID:%d]",
+                pid,
+                gpid);
             perr();
             exit(EXIT_FAILURE);
         }
 
-        /// Execute the program
+        /// Reset signal handling to default
+        reset_signal_handling();
+        /// Parse and configure all the redirections
+        resolve_redirections(argv, ctx);
+        /// Try execute builtin command
+        exec_builtin(argv[0], argv);
+        /// Execute the non-builtin command
         if(execvp(argv[0], argv) < 0) {
             pwarn("failed to run the command '%s'", argv[0]);
             perr();
@@ -526,4 +406,169 @@ static int run_forked(byte *const *argv, context_t *ctx)
     }
 
     return childPID;
+}
+
+static void resolve_redirections(byte *const *argvp, context_t *ctx)
+{
+    /// Configure pipe streams and close unnecessary ones
+    if(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
+       || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0)
+    {
+        perr();
+        exit(EXIT_FAILURE);
+    }
+    /// Close the redundant pipe end, if any...
+    if(ctx->closefd != -1 && close(ctx->closefd) < 0) {
+        perr();
+        exit(EXIT_FAILURE);
+    }
+
+    /// Default streams for this fork
+    int infd = PIPE_R;         /* Default input stream */
+    int outfd = PIPE_W;        /* Default output stream */
+    int errfd = STDERR_FILENO; /* Default err stream */
+    int redfd = -1;            /* Redirections fd */
+
+    /// Parse redirections and also prune out argv leaving
+    /// only command and its arguments without redirections
+    bool append = false;
+    const byte **pargvp = (const byte **) argvp;
+
+    for(; is_some(*argvp); argvp++) {
+        switch(**argvp) {
+            case '>':
+                if(*(*argvp + 1) == '>')
+                    append = true;
+
+                if((redfd = openf(*(++argvp), append)) < 0) {
+                    pwarn("failed to open a file '%s'", *argvp);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else if(close(outfd) == -1) {
+                    pwarn("failed to close fd '%d'", outfd);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else
+                    outfd = redfd;
+                break;
+            case '2':
+                if(*(*argvp + 2) == '>')
+                    append = true;
+
+                if((redfd = openf(*(++argvp), append)) < 0) {
+                    pwarn("failed to open a file '%s'", *argvp);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else if(close(errfd) == -1) {
+                    pwarn("failed to close fd '%d'", errfd);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else
+                    errfd = redfd;
+                break;
+            case '<':
+                if((redfd = open(*(++argvp), O_RDONLY)) < 0) {
+                    pwarn("failed to open a file '%s'", *argvp);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else if(close(infd) < 0) {
+                    pwarn("failed to close fd '%d'", infd);
+                    perr();
+                    exit(EXIT_FAILURE);
+                } else
+                    infd = redfd;
+                break;
+            default:
+                *pargvp++ = *argvp;
+                break;
+        }
+        append = false;
+    }
+    *pargvp = NULL; /* Null out the pruned argv */
+
+    /// Ensure all the redirections are taken care of
+    if(dup2(infd, STDIN_FILENO) == -1 || dup2(outfd, STDOUT_FILENO) == -1
+       || dup2(errfd, STDERR_FILENO) == -1)
+    {
+        perr();
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void exec_builtin(const byte *command, byte *const *argv)
+{
+    if(strcmp(command, "exit") == 0) {
+        exit(EXIT_SUCCESS);
+    } else if(strcmp(command, "cd") == 0) {
+        if(is_null(argv[1])) {
+            if(chdir(getenv(HOME)) == -1) {
+                perr();
+                exit(EXIT_FAILURE);
+            }
+            exit(SUCCESS);
+        } else if(is_some(argv[2])) {
+            PW_TOO_MANY(argv[0]);
+            pusage("cd [DIRNAME]");
+            exit(EXIT_FAILURE);
+        } else if(chdir(argv[1]) < 0) {
+            perr();
+            exit(EXIT_FAILURE);
+        } else {
+            exit(EXIT_SUCCESS);
+        }
+    } else if(strcmp(command, "penv") == 0) {
+        if(is_null(argv[1])) {
+            exit(envcmd(NULL, P_ALL));
+        } else if(is_some(argv[1]) && is_null(argv[2])) {
+            exit(envcmd(argv, P_ENV));
+        } else {
+            PW_TOO_MANY(argv[0]);
+            pusage("penv [VARNAME]");
+            exit(EXIT_FAILURE);
+        }
+    } else if(strcmp(command, "senv") == 0) {
+        if(is_null(argv[1]) || is_null(argv[2])) {
+            PW_TOO_FEW(argv[0]);
+            pusage("senv [VARNAME] [VARVALUE]");
+            exit(EXIT_FAILURE);
+        } else if(is_some(argv[3])) {
+            PW_TOO_MANY(argv[0]);
+            pusage("senv [VARNAME] [VARVALUE]");
+            exit(EXIT_FAILURE);
+        } else {
+            exit(envcmd(argv, SET_ENV));
+        }
+    } else if(strcmp(command, "renv") == 0) {
+        if(is_null(argv[1])) {
+            PW_TOO_FEW(argv[0]);
+            pusage("renv [VARNAME] [VARVALUE]");
+            exit(EXIT_FAILURE);
+        } else if(is_some(argv[2])) {
+            PW_TOO_MANY(argv[0]);
+            pusage("renv [VARNAME] [VARVALUE]");
+            exit(EXIT_FAILURE);
+        } else {
+            exit(envcmd(argv, RM_ENV));
+        }
+    } else if(strcmp(command, "pwd") == 0) {
+        byte buff[PATH_MAX];
+        if(is_null(getcwd(buff, PATH_MAX))) {
+            perr();
+            exit(EXIT_FAILURE);
+        } else {
+            printf("%s\n", buff);
+            exit(EXIT_SUCCESS);
+        }
+    } else if(strcmp(command, "clear") == 0) {
+        exit(system("clear"));
+    } else if(strcmp(command, "builtin") == 0) {
+        if(is_some(argv[1])) {
+            PW_TOO_MANY(argv[0]);
+            pusage("builtin");
+            exit(EXIT_FAILURE);
+        } else {
+            pbuiltin();
+            exit(EXIT_SUCCESS);
+        }
+    }
 }

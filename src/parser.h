@@ -25,9 +25,9 @@ typedef struct {
   int connection; /* Pipeline is connected with '&&' */
 } pipeline_t;
 
-#define ASH_NONE (int)-1
-#define ASH_OR (int)0
 #define ASH_AND (int)1
+#define ASH_OR (int)2
+#define ASH_NONE (int)4
 
 #define IS_AND(connection) ((connection) == ASH_AND)
 #define IS_OR(connection) ((connection) == ASH_OR)

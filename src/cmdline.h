@@ -1,6 +1,7 @@
 #ifndef __ASH_CMDLINE_H__
 #define __ASH_CMDLINE_H__
 
+#define _DEFAULT_SOURCE
 #include "vec.h"
 
 typedef struct {

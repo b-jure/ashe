@@ -2,26 +2,37 @@
 #ifndef __ASH_UTILS_H__
 #define __ASH_UTILS_H__
 
+#include <stdio.h>
+#include <unistd.h>
+
 typedef char byte;
 
-#include <stdio.h>
+extern struct termios shell_tmodes;
 
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)
 #define char_before_ptr(ptr) *((ptr) -1)
 #define char_after_ptr(ptr) *((ptr) +1)
-#define EOL '\0'
 #define NULL_TERM '\0'
+#define EOL NULL_TERM
+
+#define TERMINAL_FD STDIN_FILENO
+
+#define ASHE_PREFIX "ashe"
+#define ASHE_WARN_PREFIX ASHE_PREFIX "<warning>: "
+#define ASHE_ERR_PREFIX ASHE_PREFIX "<error>"
+
+/// Exit codes
+#define FAILURE -1
+#define SUCCESS 0
+
+void pwarn(const byte *fmt, ...);
+void pusage(const byte *fmt, ...);
+void perr(void);
 
 #define PCS_EXTRA "/.-"
 #define PORTABLE_CHARACTER_SET \
     "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
-
-#if defined(__unix__) || defined(__linux__)
-    #define PATH_DELIM ':'
-#elif defined(_WIN32) || defined(_WIN64) || defined(__WINDOWS__)
-    #define PATH_DELIM ';'
-#endif
 
 #if defined(_WIN32) || defined(_WIN64)
     #define ARG_MAX 32767 // Windows
@@ -62,17 +73,5 @@ typedef char byte;
 // clang-format on
 
 /// ERRORS
-
-void pwarn(const byte *fmt, ...);
-void pusage(const byte *fmt, ...);
-void perr(void);
-
-#define ASHE_PREFIX "ashe"
-#define ASHE_WARN_PREFIX ASHE_PREFIX "<warning>: "
-#define ASHE_ERR_PREFIX ASHE_PREFIX "<error>"
-
-/// Exit codes
-#define FAILURE -1
-#define SUCCESS 0
 
 #endif
