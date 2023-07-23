@@ -7,7 +7,7 @@ void pwarn(const byte *fmt, ...)
     va_list argp;
     va_start(argp, fmt);
     fprintf(stderr, ASHE_WARN_PREFIX);
-    vprintf(fmt, argp);
+    vfprintf(stderr, fmt, argp);
     fprintf(stderr, "\n");
     va_end(argp);
 }
@@ -17,7 +17,7 @@ void pusage(const byte *fmt, ...)
     va_list argp;
     va_start(argp, fmt);
     fprintf(stderr, "Usage: ");
-    vprintf(fmt, argp);
+    vfprintf(stderr, fmt, argp);
     fprintf(stderr, "\n");
     va_end(argp);
 }

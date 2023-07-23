@@ -47,7 +47,8 @@ static void lexer_get_string(lexer_t *lexer)
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
         old = *ptr;
         *ptr = NULL_TERM;
-        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word)) ttype = KVPAIR_TOKEN;
+        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word))
+            ttype = KVPAIR_TOKEN;
         *ptr = old;
     }
 
@@ -60,19 +61,17 @@ static token_t token_without_quotes(tokentype_t ttype, byte *word)
     string_t *string = string_from(word);
     byte *ptr = string_slice(string, 0);
 
-    if(is_null(string)) {
+    if(__glibc_unlikely(is_null(string)))
         return token_new(OOM_TOKEN, NULL);
-    }
 
     token.type = ttype;
     token.contents = string;
 
     while(is_some(ptr = strchr(ptr, '"'))) {
-        if(char_before_ptr(ptr) != '\\') {
+        if(char_before_ptr(ptr) != '\\')
             string_remove_at_ptr(string, ptr);
-        } else {
+        else
             ptr++;
-        }
     }
 
     return token;
@@ -82,7 +81,8 @@ static void lexer_skip_ws(lexer_t *lexer)
 {
     int c;
     chariter_t *iter = &lexer->iter;
-    while(isspace((c = chariter_peek(iter)))) chariter_next(iter);
+    while(isspace((c = chariter_peek(iter))))
+        chariter_next(iter);
 }
 
 static void print_token(token_t *token)

@@ -2,12 +2,16 @@
 #ifndef __ASH_UTILS_H__
 #define __ASH_UTILS_H__
 
+#define _DEFAULT_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <unistd.h>
 
 typedef char byte;
 
 extern struct termios shell_tmodes;
+extern byte** environ;
 
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)

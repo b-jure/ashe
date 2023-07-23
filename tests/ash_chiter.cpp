@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <string.h>
 
+#undef _DEFAULT_SOURCE
+
 extern "C" {
 #include "../src/chiter.h"
 }

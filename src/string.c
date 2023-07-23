@@ -10,13 +10,13 @@ struct string_t {
 string_t *string_new(void)
 {
     string_t *string = malloc(sizeof(string_t));
-    if(is_null(string)) {
+    if(__glibc_unlikely(is_null(string))) {
         pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(string_t));
     }
 
-    if(is_null(string->vec = vec_with_capacity(sizeof(byte), 1))) {
+    if(__glibc_unlikely(is_null(string->vec = vec_with_capacity(sizeof(byte), 1)))) {
         return NULL;
-    } else if(!vec_push(string->vec, &(char){NULL_TERM})) {
+    } else if(__glibc_unlikely(!vec_push(string->vec, &(char){NULL_TERM}))) {
         string_drop(string);
         return NULL;
     } else {
@@ -31,15 +31,15 @@ string_t *string_with_cap(size_t capacity)
     if(capacity < 2) {
         return string_new();
     } else {
-        if(is_null(string = malloc(sizeof(string_t)))) {
-            pwarn(
-                "ran out of memory trying to allocate '%ld' bytes",
-                sizeof(string_t));
+        if(__glibc_unlikely(is_null(string = malloc(sizeof(string_t))))) {
+            pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(string_t));
             return NULL;
         } else {
             string->vec = vec_with_capacity(sizeof(char), capacity);
 
-            if(is_null(string->vec) || !vec_push(string->vec, &(char){NULL_TERM})) {
+            if(__glibc_unlikely(is_null(string->vec))
+               || __glibc_unlikely(!vec_push(string->vec, &(char){NULL_TERM})))
+            {
                 string_drop(string);
                 return NULL;
             }
@@ -103,7 +103,9 @@ string_t *string_from(const byte *str)
     size_t str_len = strlen(str);
     string_t *string = string_new();
 
-    if(is_null(string) || !vec_splice(string->vec, 0, 0, str, str_len)) {
+    if(__glibc_unlikely(is_null(string))
+       || __glibc_unlikely(!vec_splice(string->vec, 0, 0, str, str_len)))
+    {
         return NULL;
     }
 

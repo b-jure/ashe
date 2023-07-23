@@ -1,9 +1,7 @@
 #ifndef __AN_PARSER_H__
 #define __AN_PARSER_H__
 
-#include "ashe_utils.h"
 #include "cmdline.h"
-#include "vec.h"
 #include <stddef.h>
 
 int parse_commandline(const byte *line, commandline_t *out, bool *set_env);

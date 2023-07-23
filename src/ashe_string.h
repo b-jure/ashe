@@ -1,7 +1,6 @@
 #ifndef __ASH_STRING_H__
 #define __ASH_STRING_H__
 
-#undef _C_POSIX_SOURCE
 #include "ashe_utils.h"
 #include <stdbool.h>
 #include <stddef.h>

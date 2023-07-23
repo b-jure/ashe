@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#undef _DEFAULT_SOURCE
+
 extern "C" {
 #include "../src/lexer.h"
 }

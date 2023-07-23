@@ -5,9 +5,9 @@
 #include <stdlib.h>
 
 #define MAX_VEC_SIZE UINT_MAX
-#define ptr_in_bounds(vec, ptr)                                                     \
-    (is_some((vec)) && is_some((vec)->allocation) && is_some(ptr)                   \
-     && (vec)->allocation + ((vec)->ele_size * (vec)->len) > (ptr)                  \
+#define ptr_in_bounds(vec, ptr)                                                          \
+    (is_some((vec)) && is_some((vec)->allocation) && is_some(ptr)                        \
+     && (vec)->allocation + ((vec)->ele_size * (vec)->len) > (ptr)                       \
      && (ptr) >= (vec)->allocation)
 
 static void *_an_vec_get(const vec_t *self, const size_t index);
@@ -24,7 +24,7 @@ vec_t *vec_new(const size_t ele_size)
 {
     vec_t *vec = malloc(sizeof(vec_t));
 
-    if(is_null(vec)) {
+    if(__glibc_unlikely(is_null(vec))) {
         pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
         perr();
         return NULL;
@@ -43,11 +43,10 @@ vec_t *vec_with_capacity(const size_t ele_size, const size_t capacity)
     vec_t *vec;
     void *allocation;
 
-    if(is_null(vec = vec_new(ele_size))) {
+    if(__glibc_unlikely(is_null(vec = vec_new(ele_size)))) {
         return NULL;
-    } else if(is_null(allocation = calloc(capacity, ele_size))) {
-        pwarn(
-            "ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
+    } else if(__glibc_unlikely(is_null(allocation = calloc(capacity, ele_size)))) {
+        pwarn("ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
         perr();
         return NULL;
     }
@@ -71,7 +70,7 @@ bool vec_splice(
     size_t insert_n)
 {
     if(is_null(self) || is_null(array) || self->len <= index + remove_n
-       || (_an_vec_ensure(self, insert_n - remove_n) == -1))
+       || __glibc_unlikely((_an_vec_ensure(self, insert_n - remove_n) == -1)))
     {
         return false;
     }
@@ -95,22 +94,20 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
     if(is_null(self->allocation)) {
         new_alloc = calloc(required, self->ele_size);
     } else if(required > self->capacity) {
-        if(required > MAX_VEC_SIZE) {
+        if(__glibc_unlikely(required > MAX_VEC_SIZE)) {
             return -1;
-        } else if(required > (MAX_VEC_SIZE / 2)) {
+        } else if(__glibc_unlikely(required > (MAX_VEC_SIZE / 2))) {
             required = MAX_VEC_SIZE;
         } else {
             required *= 2;
         }
 
         new_alloc = realloc(self->allocation, required * self->ele_size);
-    } else {
+    } else
         return 0;
-    }
 
-    if(is_null(new_alloc)) {
+    if(__glibc_unlikely(is_null(new_alloc)))
         return -1;
-    }
 
     self->allocation = new_alloc;
     self->capacity = required;
@@ -171,7 +168,7 @@ void *vec_back(const vec_t *self)
 
 bool vec_push(vec_t *self, const void *element)
 {
-    if(is_null(self) || _an_vec_ensure(self, 1) == -1) {
+    if(is_null(self) || __glibc_unlikely(_an_vec_ensure(self, 1) == -1)) {
         return false;
     }
 
@@ -339,7 +336,7 @@ bool vec_get(vec_t *self, size_t index, void *out)
 bool vec_insert(vec_t *self, const void *element, const size_t index)
 {
     if(is_null(self) | is_null(element) | (index > self->len)
-       | (_an_vec_ensure(self, 1) == -1))
+       | __glibc_unlikely((_an_vec_ensure(self, 1) == -1)))
     {
         return false;
     } else if(index == self->len) {

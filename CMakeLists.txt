@@ -18,6 +18,7 @@ set(SRCFILES
     ${SRCDIR}/string.c
     ${SRCDIR}/token.c
     ${SRCDIR}/utils.c
+    ${SRCDIR}/jobctl.c
     ${SRCDIR}/vec.c)
 
 set(WARNING_FLAGS -Wall -Werror -Wextra -Wpedantic)

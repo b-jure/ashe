@@ -1,7 +1,8 @@
-#define _XOPEN_SOURCE
 #include "ashe_string.h"
 #include "ashe_utils.h"
+#include "jobctl.h"
 #include "parser.h"
+
 #include <assert.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -9,13 +10,12 @@
 #include <termios.h>
 #include <unistd.h>
 
-/// Global joblist
-extern joblist_t joblist;
 /// Global shell terminal modes
 struct termios shell_tmodes;
 
 #define PROMPT "\n[-ASHE-]: "
 #define INSIZE 200
+#define INT_DIGITS 10
 
 static void init_shell(void)
 {
@@ -23,7 +23,15 @@ static void init_shell(void)
     int terminal_fd = STDIN_FILENO;
     int shell_is_interactive = isatty(terminal_fd);
 
-    if(is_null(joblist.jobs = vec_new(sizeof(job_t)))) {
+    if(__glibc_unlikely(!joblist_init())) {
+        pwarn("failed creating a joblist");
+        exit(EXIT_FAILURE);
+    }
+
+    if(__glibc_unlikely(setenv("?", "0", 1) < 0)) {
+        pwarn("failed creating status environment variable '?'");
+        perr();
+        exit(EXIT_FAILURE);
     }
 
     if(shell_is_interactive) {
@@ -38,14 +46,19 @@ static void init_shell(void)
         signal(SIGCHLD, SIG_IGN);
 
         shell_pgid = getpid();
-        if(setpgid(shell_pgid, shell_pgid) < 0) {
+        if(__glibc_unlikely(setpgid(shell_pgid, shell_pgid) < 0)) {
             pwarn("Couldn't put the shell in its own process group");
             perr();
             exit(EXIT_FAILURE);
         }
 
-        tcsetpgrp(terminal_fd, shell_pgid);
-        tcgetattr(terminal_fd, &shell_tmodes);
+        if(__glibc_unlikely(
+               tcsetpgrp(terminal_fd, shell_pgid) < 0
+               || tcgetattr(terminal_fd, &shell_tmodes) < 0))
+        {
+            perr();
+            exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -57,29 +70,27 @@ int rcmdline(string_t *buffer)
     bool dq = false;
 
     while(fgets(input, INSIZE, stdin) != NULL) {
-        if(string_len(buffer) + strlen(input) >= ARG_MAX) {
+        if(__glibc_unlikely(string_len(buffer) + strlen(input) >= ARG_MAX)) {
             pwarn("commandline argument size %d exceeded", ARG_MAX);
             return FAILURE;
-        } else if(!string_append(buffer, input, (appended = strlen(input)))) {
+        } else if(__glibc_unlikely(
+                      !string_append(buffer, input, (appended = strlen(input)))))
+        {
             return FAILURE;
         } else {
             ptr = string_slice(buffer, string_len(buffer) - appended);
             while(is_some((ptr = strchr(ptr, '"')))) {
-                if(char_before_ptr(ptr) != '\\') {
+                if(char_before_ptr(ptr) != '\\')
                     dq ^= true;
-                }
                 ptr++;
             }
-            if(!dq && string_last(buffer) == '\n') {
+            if(!dq && string_last(buffer) == '\n')
                 break;
-            }
         }
     }
 
-    if(ferror(stdin) != 0) {
-        /// Don't exit with failure just warn
-        pwarn("error occured while reading the command line");
-    }
+    if(__glibc_unlikely(ferror(stdin) != 0))
+        perr();
 
     return SUCCESS;
 }
@@ -93,11 +104,11 @@ int main()
 
     init_shell();
 
-    if(is_null(line = string_with_cap(INSIZE))) {
+    if(__glibc_unlikely(is_null(line = string_with_cap(INSIZE)))) {
+        pwarn("couldn't allocate input buffer");
         exit(EXIT_FAILURE);
-    }
-
-    if(is_null((cmdline = commandline_new()).conditionals)) {
+    } else if(__glibc_unlikely(is_null((cmdline = commandline_new()).conditionals))) {
+        printf("couldn't allocate internal input storage");
         string_drop(line);
         exit(EXIT_FAILURE);
     }
@@ -106,7 +117,9 @@ int main()
         printf("%s", PROMPT);
         string_clear(line);
 
-        if(rcmdline(line) == FAILURE) {
+        signal(SIGCHLD, joblist_update_and_notify); /// Enable async joblist updates
+
+        if(__glibc_unlikely(rcmdline(line) == FAILURE)) {
             string_drop(line);
             commandline_drop(&cmdline);
             exit(EXIT_FAILURE);
@@ -120,8 +133,16 @@ int main()
         }
 
         if(!set_env) {
+            signal(SIGCHLD, SIG_DFL); // Disable async joblist updating
             commandline_execute(&cmdline, &status);
+            /// Max amount of digits in int on x86_64 bit machine
+            /// including sign + null terminator space
+            byte retstat[INT_DIGITS + 2];
+            sprintf(retstat, "%d", status);
+            /// Can't fail we already created the var in shell_init
+            setenv("?", retstat, 1);
         }
+
         printf("Finished executing commandline with status: %d\n", status);
         commandline_clear(&cmdline);
     }

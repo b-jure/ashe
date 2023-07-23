@@ -10,7 +10,7 @@ token_t token_new(tokentype_t ttype, const byte *str)
 
     if(is_some(str)) {
         string = string_from(str);
-        if(is_null(string)) {
+        if(__glibc_unlikely(is_null(string))) {
             pwarn("ran out of memory trying to allocate '%ld' bytes", strlen(str));
             return (token_t){.type = OOM_TOKEN, .contents = NULL};
         }
