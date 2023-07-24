@@ -126,13 +126,14 @@ static int parse_command(lexer_t *lexer, command_t *command, bool *set_env)
                            putenv((var = string_slice(vec_index(vars, len), 0)))
                            != SUCCESS))
                     {
-                        pwarn("failed setting env var '%s'", var);
-                        perror("putenv");
+                        ATOMIC_PRINT({
+                            pwarn("failed setting env var '%s'", var);
+                            perr();
+                        });
                         return FAILURE;
                     }
                 }
             }
-            printf("Breaking out of command parser\n");
             break;
         }
     }
@@ -163,7 +164,6 @@ static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline, bool *set_env)
             free(token.contents);
             token = lexer_next(lexer);
         } else {
-            printf("Breaking out of pipeline parser\n");
             break;
         }
     }
@@ -200,7 +200,6 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond, bool *set_env)
             free(token.contents);
             token = lexer_next(lexer);
         } else {
-            printf("Breaking out of conditional parser\n");
             break;
         }
     }

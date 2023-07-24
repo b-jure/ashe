@@ -2,6 +2,11 @@
 
 #include <stdarg.h>
 
+void pprompt(void)
+{
+    fprintf(stderr, "%s", PROMPT);
+}
+
 void pwarn(const byte *fmt, ...)
 {
     va_list argp;

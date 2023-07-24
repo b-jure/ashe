@@ -6,7 +6,6 @@
 #include "vec.h"
 
 #include <signal.h>
-#include <sys/types.h>
 #include <termios.h>
 
 typedef struct _process_t {
@@ -17,7 +16,10 @@ typedef struct _process_t {
   byte *commandline;
 } process_t;
 
-typedef struct joblist_t joblist_t;
+typedef struct joblist_t {
+  vec_t *jobs;
+  size_t next_id;
+} joblist_t;
 
 extern joblist_t joblist;
 
@@ -37,6 +39,7 @@ typedef struct {
 #define JC_NONE ASH_NONE
 
 /// JOBLIST
+size_t joblist_len(void);
 bool joblist_init();
 void joblist_drop(void);
 void joblist_update_and_notify(int signum);

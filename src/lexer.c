@@ -89,37 +89,37 @@ static void print_token(token_t *token)
 {
     switch(token->type) {
         case REDIROP_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "REDIRECTION", string_ref(token->contents));
+            fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
             break;
         case WORD_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "WORD", string_ref(token->contents));
+            fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
             break;
         case KVPAIR_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "K/V PAIR", string_ref(token->contents));
+            fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
             break;
         case PIPE_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "PIPE", string_ref(token->contents));
+            fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
             break;
         case AND_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "AND", string_ref(token->contents));
+            fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
             break;
         case OR_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "OR", string_ref(token->contents));
+            fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
             break;
         case BG_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "BACKGROUND", string_ref(token->contents));
+            fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
             break;
         case FG_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "FOREGROUND", string_ref(token->contents));
+            fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
             break;
         case NAT_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "NAT", "NULL");
+            fprintf(stderr, "NAT : 'NULL'\n");
             break;
         case EOL_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "EOL", "NULL");
+            fprintf(stderr, "EOL : 'NULL'\n");
             break;
         case OOM_TOKEN:
-            printf("TOKEN: %s <> '%s'\n", "OOM", "NULL");
+            fprintf(stderr, "OOM : 'NULL'\n");
             break;
     }
 }
@@ -133,8 +133,8 @@ token_t lexer_next(lexer_t *lexer)
 
     switch((c = chariter_peek(iter))) {
         case '2':
-            chariter_next(iter);
-            if(chariter_peek(iter) == '>') {
+            if(*(iter->next + 1) == '>') {
+                chariter_next(iter);
                 if(*(iter->next + 1) == '>') {
                     chariter_next(iter);
                     lexer->token = token_new(REDIROP_TOKEN, "2>>");
@@ -142,7 +142,9 @@ token_t lexer_next(lexer_t *lexer)
                     lexer->token = token_new(REDIROP_TOKEN, "2>");
                 }
             } else {
-                lexer->token = token_new(NAT_TOKEN, NULL);
+                lexer_get_string(lexer);
+                print_token(&lexer->token);
+                return lexer->token;
             }
             break;
         case '>':

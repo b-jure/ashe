@@ -38,6 +38,8 @@
 byte *builtin[] = {"exit", "pwd", "clear", "cd", "penv", "senv", "renv", "builtin"};
 #define BUILTINN sizeof(builtin) / sizeof(builtin[0])
 
+bool exit_warning = false;
+
 typedef struct {
     int pipefd[2];
     int closefd;
@@ -51,7 +53,7 @@ static int run_cmd(
     byte *const *argv,
     byte *const *env,
     context_t *ctx,
-    pid_t gpid,
+    job_t *job,
     bool bg);
 static int envcmd(byte *const *argv, int option);
 static void penviron(void);
@@ -64,7 +66,7 @@ static void reset_signal_handling(void);
 static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx);
 static void resolve_redirections(byte *const *argvp);
 static void connect_io_with_pipe(context_t *ctx);
-static int run_builtin(const byte *command, byte *const *argv);
+static int run_builtin(const byte *command, byte *const *argv, bool shell);
 
 static context_t context_new(void)
 {
@@ -148,7 +150,7 @@ static int envcmd(byte *const *argv, int option)
         case SET_ENV:
             if(__glibc_unlikely(
                    (status = setenv(argv[1], argv[2], (option == ADD_ENV ? 0 : 1))) < 0))
-                perr();
+                ATOMIC_PRINT({ perr(); });
             break;
         case RM_ENV:
             status = unsetenv(argv[1]);
@@ -172,15 +174,19 @@ static int envcmd(byte *const *argv, int option)
 
 static void pbuiltin(void)
 {
-    for(size_t i = 0; i < BUILTINN; i++)
-        printf("%s\n", builtin[i]);
+    ATOMIC_PRINT({
+        for(size_t i = 0; i < BUILTINN; i++)
+            printf("%s\n", builtin[i]);
+    });
 }
 
 static void penviron(void)
 {
-    int i = 0;
-    while(is_some(environ[i]))
-        printf("%s\n", environ[i++]);
+    ATOMIC_PRINT({
+        int i = 0;
+        while(is_some(environ[i]))
+            printf("%s\n", environ[i++]);
+    });
 }
 
 static void command_get_argv(command_t *cmd, byte *out[], size_t len)
@@ -204,8 +210,10 @@ static void command_get_env(command_t *cmd, byte *out[], size_t len)
 static int close_pipe(int *pp)
 {
     if(__glibc_unlikely(close(*pp) < 0 || close(*(pp + 1)) < 0)) {
-        pwarn("failed to close pipe [Wfd:%d|Rfd:%d]", *pp, *(pp + 1));
-        perr();
+        ATOMIC_PRINT({
+            pwarn("failed to close pipe [Wfd:%d|Rfd:%d]", *pp, *(pp + 1));
+            perr();
+        });
         return FAILURE;
     }
     return SUCCESS;
@@ -215,8 +223,10 @@ static int add_envs_to_environ(byte *const *envp)
 {
     while(is_some(*envp))
         if(__glibc_unlikely(putenv(*envp++) < 0)) {
-            pwarn("failed adding env var to environ '%s'", *(envp - 1));
-            perr();
+            ATOMIC_PRINT({
+                pwarn("failed adding env var to environ '%s'", *(envp - 1));
+                perr();
+            });
             return FAILURE;
         }
 
@@ -231,8 +241,10 @@ static int rm_envs_from_environ(byte *const *envp)
         *temp = NULL_TERM;
         if(__glibc_unlikely(unsetenv(*envp) < 0)) {
             *temp = c;
-            pwarn("failed removing env var from environ '%s'", *envp);
-            perr();
+            ATOMIC_PRINT({
+                pwarn("failed removing env var from environ '%s'", *envp);
+                perr();
+            });
             return FAILURE;
         }
         *temp = c;
@@ -246,14 +258,14 @@ static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx)
 {
     if(first(i)) {
         if(__glibc_unlikely(pipe(pipes) < 0)) {
-            perr();
+            ATOMIC_PRINT({ perr(); });
             exit(EXIT_FAILURE);
         }
         ctx->pipefd[PIPE_W] = pipes[PIPE_W];
         ctx->closefd = pipes[PIPE_R];
     } else if(not_first(i) && not_last(i, cmdn)) {
         if(__glibc_unlikely(pipe(pipe_at(CURR(i), pipes)) < 0)) {
-            perr();
+            ATOMIC_PRINT({ perr(); });
             exit(EXIT_FAILURE);
         }
         ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
@@ -272,7 +284,7 @@ static void fargvs(vec_t *argv, byte **out)
     commandline[0] = NULL_TERM;
 
     for(size_t i = 0; i < len; i++) {
-        strcat(commandline, vec_index(argv, i));
+        strcat(commandline, string_ref(vec_index(argv, i)));
         if(i + 1 != len)
             strcat(commandline, " ");
     }
@@ -280,8 +292,10 @@ static void fargvs(vec_t *argv, byte **out)
     *out = strdup(commandline);
 
     if(__glibc_unlikely(is_null(*out))) {
-        pwarn("failed to copy over the user input: %s", commandline);
-        perr();
+        ATOMIC_PRINT({
+            pwarn("failed copying over the user input: %s", commandline);
+            perr();
+        });
     }
 }
 
@@ -296,12 +310,19 @@ bool is_builtin(const byte *command)
 static int run_cmd_nofork(byte **argv, byte **env)
 {
     int status;
-    if(__glibc_unlikely(add_envs_to_environ(env) == FAILURE))
+
+    if(__glibc_unlikely(add_envs_to_environ(env) < 0))
         exit(EXIT_FAILURE);
+
     resolve_redirections(argv);
-    status = run_builtin(argv[0], argv);
-    if(__glibc_unlikely(rm_envs_from_environ(env) == FAILURE))
+    status = run_builtin(argv[0], argv, true);
+
+    if(strcmp(argv[0], "exit") != 0 && exit_warning)
+        exit_warning = false;
+
+    if(__glibc_unlikely(rm_envs_from_environ(env) < 0))
         exit(EXIT_FAILURE);
+
     return status;
 }
 
@@ -336,16 +357,14 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
         command_get_env(cmd, env, envc);
 
         if(cmdn > 1) {
+            exit_warning = false; /* User is not exiting the shell */
             configure_pipes(i, pipes, cmdn, &ctx);
         } else if(job.foreground && is_builtin(argv[0])) {
             job_drop(&job);
             return run_cmd_nofork(argv, env);
         }
 
-        if(__glibc_likely((cpid = run_cmd(argv, env, &ctx, job.pgid, bg)) != FAILURE)) {
-            if(job.pgid == 0)
-                job.pgid = cpid;
-
+        if(__glibc_likely((cpid = run_cmd(argv, env, &ctx, &job, bg)) != FAILURE)) {
             process_t temp_proc = process_new(cpid, NULL);
             fargvs(cmd->argv, &temp_proc.commandline);
 
@@ -367,14 +386,13 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     }
 
     if(job.foreground)
-        /// Move process into foreground and wait for its children
+        /// Move process into foreground and wait for its
+        /// processes to finish or get stopped
         status = job_move_to_fg(&job, false);
     else {
-        job_format(&job, "STARTED");
-        /// Otherwise add the job to joblist and return
         if(__glibc_unlikely(!joblist_push(&job))) {
-            pwarn("failed adding a job [PGID:%d] to joblist", job.pgid);
-            job_drop(&job);
+            ATOMIC_PRINT(
+                { pwarn("failed adding a job [PGID:%d] to the joblist", job.pgid); });
             exit(EXIT_FAILURE);
         }
         /// This is no-op, only for clarity
@@ -388,14 +406,16 @@ static int run_cmd(
     byte *const *argv,
     byte *const *env,
     context_t *ctx,
-    pid_t gpid,
+    job_t *job,
     bool bg)
 {
     pid_t childPID = fork();
 
     if(__glibc_unlikely(childPID == -1)) {
-        pwarn("failed forking parent process [ID:%d]", getpid());
-        perr();
+        ATOMIC_PRINT({
+            pwarn("failed forking parent process [ID:%d]", getpid());
+            perr();
+        });
         return FAILURE;
     } else if(childPID == 0) {
         /// Add environment variables to environ
@@ -406,21 +426,25 @@ static int run_cmd(
 
         /// If this is the first command set the gpid as pid
         /// and give it the terminal
-        if(gpid == 0) {
-            gpid = pid;
-            if(!bg && __glibc_unlikely(tcsetpgrp(TERMINAL_FD, gpid) < 0)) {
-                pwarn("failed giving terminal to process group [ID:%d]", gpid);
-                perr();
+        if(job->pgid == 0) {
+            job->pgid = pid;
+            if(!bg && __glibc_unlikely(tcsetpgrp(TERMINAL_FD, job->pgid) < 0)) {
+                ATOMIC_PRINT({
+                    pwarn("failed giving terminal to process group [ID:%d]", job->pgid);
+                    perr();
+                });
                 exit(EXIT_FAILURE);
             }
         }
         /// Move this process into the new process group
-        if(__glibc_unlikely(setpgid(pid, gpid) < 0)) {
-            pwarn(
-                "process [ID:%d] failed setting itself into process group [ID:%d]",
-                pid,
-                gpid);
-            perr();
+        if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
+            ATOMIC_PRINT({
+                pwarn(
+                    "process [ID:%d] failed setting itself into process group [ID:%d]",
+                    pid,
+                    job->pgid);
+                perr();
+            });
             exit(EXIT_FAILURE);
         }
 
@@ -431,15 +455,26 @@ static int run_cmd(
         /// Parse and configure all the redirections (<, >, >>, 2>)
         resolve_redirections(argv);
         /// Try execute builtin command
-        if(is_builtin(argv[0]))
-            exit(run_builtin(argv[0], argv));
+        if(is_builtin(argv[0])) {
+            _exit(run_builtin(argv[0], argv, false));
+        }
         /// Execute the non-builtin command
         if(execvp(argv[0], argv) < 0) {
-            pwarn("failed to run the command '%s'", argv[0]);
-            perr();
+            ATOMIC_PRINT({
+                pwarn("failed to run the command '%s'", argv[0]);
+                if(errno == ENOENT)
+                    ATOMIC_PRINT({
+                        pwarn("couldn't find file '%s' to execute the command", argv[0]);
+                    });
+                else
+                    ATOMIC_PRINT({ perr(); });
+            });
             exit(EXIT_FAILURE);
         }
     }
+
+    if(job->pgid == 0)
+        job->pgid = childPID;
 
     return childPID;
 }
@@ -453,14 +488,14 @@ static void connect_io_with_pipe(context_t *ctx)
            || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
            || (ctx->closefd != -1 && close(ctx->closefd) < 0)))
     {
-        perr();
+        ATOMIC_PRINT({ perr(); });
         exit(EXIT_FAILURE);
     }
 }
 
 static void resolve_redirections(byte *const *argvp)
 {
-    /// Default streams for this fork
+    /// Default streams
     int infd = STDIN_FILENO;   /* Default input stream */
     int outfd = STDOUT_FILENO; /* Default output stream */
     int errfd = STDERR_FILENO; /* Default err stream */
@@ -478,43 +513,58 @@ static void resolve_redirections(byte *const *argvp)
                     append = true;
 
                 if(__glibc_unlikely((redfd = openf(*(++argvp), append)) < 0)) {
-                    pwarn("failed to open a file '%s'", *argvp);
-                    perr();
+                    ATOMIC_PRINT({
+                        pwarn("failed to open a file '%s'", *argvp);
+                        perr();
+                    });
                     exit(EXIT_FAILURE);
                 } else if(__glibc_unlikely(close(outfd) < -1)) {
-                    pwarn("failed to close fd '%d'", outfd);
-                    perr();
+                    ATOMIC_PRINT({
+                        pwarn("failed to close fd '%d'", outfd);
+                        perr();
+                    });
                     exit(EXIT_FAILURE);
                 } else
                     outfd = redfd;
                 break;
-            case '2':
-                if(*(*argvp + 2) == '>')
-                    append = true;
-
-                if(__glibc_unlikely((redfd = openf(*(++argvp), append)) < 0)) {
-                    pwarn("failed to open a file '%s'", *argvp);
-                    perr();
-                    exit(EXIT_FAILURE);
-                } else if(__glibc_unlikely(close(errfd) == -1)) {
-                    pwarn("failed to close fd '%d'", errfd);
-                    perr();
-                    exit(EXIT_FAILURE);
-                } else
-                    errfd = redfd;
-                break;
             case '<':
                 if(__glibc_unlikely((redfd = open(*(++argvp), O_RDONLY)) < 0)) {
-                    pwarn("failed to open a file '%s'", *argvp);
-                    perr();
+                    ATOMIC_PRINT({
+                        pwarn("failed to open a file '%s'", *argvp);
+                        perr();
+                    });
                     exit(EXIT_FAILURE);
                 } else if(__glibc_unlikely(close(infd) < 0)) {
-                    pwarn("failed to close fd '%d'", infd);
-                    perr();
+                    ATOMIC_PRINT({
+                        pwarn("failed to close fd '%d'", infd);
+                        perr();
+                    });
                     exit(EXIT_FAILURE);
                 } else
                     infd = redfd;
                 break;
+            case '2':
+                if(*(*argvp + 1) == '>') {
+                    if(*(*argvp + 2) == '>')
+                        append = true;
+
+                    if(__glibc_unlikely((redfd = openf(*(++argvp), append)) < 0)) {
+                        ATOMIC_PRINT({
+                            pwarn("failed to open a file '%s'", *argvp);
+                            perr();
+                        });
+                        exit(EXIT_FAILURE);
+                    } else if(__glibc_unlikely(close(errfd) == -1)) {
+                        ATOMIC_PRINT({
+                            pwarn("failed to close fd '%d'", errfd);
+                            perr();
+                        });
+                        exit(EXIT_FAILURE);
+                    } else
+                        errfd = redfd;
+                    break;
+                }
+                // FALLTHRU
             default:
                 *pargvp++ = *argvp;
                 break;
@@ -528,29 +578,98 @@ static void resolve_redirections(byte *const *argvp)
            dup2(infd, STDIN_FILENO) == -1 || dup2(outfd, STDOUT_FILENO) == -1
            || dup2(errfd, STDERR_FILENO) == -1))
     {
-        perr();
+        ATOMIC_PRINT({ perr(); });
         exit(EXIT_FAILURE);
     }
 }
 
-static int run_builtin(const byte *command, byte *const *argv)
+static int run_builtin(const byte *command, byte *const *argv, bool shell)
 {
     int status = FAILURE;
     if(strcmp(command, "exit") == 0) {
-        status = SUCCESS;
+        if(is_null(argv[1])) {
+            if(shell) {
+                if(joblist_len() != 0 && !exit_warning) {
+                    exit_warning = true;
+                    ATOMIC_PRINT({
+                        pwarn("There are still background jobs running!\nRun "
+                              "\x1B[32mexit\x1b[0m again to exit, this will result in "
+                              "orphaned child processes.");
+                    });
+                } else
+                    exit(SUCCESS);
+            }
+            status = SUCCESS;
+        } else if(is_some(argv[1]) && is_null(argv[2])) {
+            int exit_status;
+            if(strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+                ATOMIC_PRINT({
+                    fprintf(stderr, "exit - exits the shell");
+                    pusage("error [CODE]");
+                    fprintf(
+                        stderr,
+                        "\n\x1B[32mexit\x1B[0m is a builtin command that exits the shell "
+                        "with the CODE if "
+                        "supplied or 0 in case CODE is not supplied. In case there are "
+                        "background "
+                        "jobs running when exit is called, shell will not exit "
+                        "instantly, "
+                        "instead it will print additional information and then the user "
+                        "can "
+                        "exit by calling exit again.");
+                });
+            } else {
+                exit_status = strtol(argv[1], NULL, 10);
+                if(errno == EINVAL || errno == ERANGE) {
+                    ATOMIC_PRINT({
+                        pwarn("invalid exit status integer");
+                        pusage("error [CODE]");
+                        fprintf(
+                            stderr,
+                            "\nThe -h or --help options display help information this "
+                            "command\n");
+                    });
+                } else {
+                    status = exit_status;
+                    if(shell) {
+                        if(joblist_len() != 0 && !exit_warning) {
+                            exit_warning = true;
+                            ATOMIC_PRINT({
+                                pwarn("There are still background jobs running!\nRun "
+                                      "\x1B[32mexit\x1b[0m again to exit, this will "
+                                      "result in orphaned child processes.");
+                            });
+                        } else
+                            exit(exit_status);
+                    }
+                }
+            }
+        } else {
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("exit [CODE]");
+            });
+            status = FAILURE;
+        }
     } else if(strcmp(command, "cd") == 0) {
         if(is_null(argv[1])) {
             if(__glibc_unlikely(chdir(getenv(HOME)) == -1)) {
-                perr();
+                ATOMIC_PRINT({ perr(); });
                 status = FAILURE;
             } else
                 status = SUCCESS;
         } else if(is_some(argv[2])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("cd [DIRNAME]");
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("cd [DIRNAME]");
+            });
             status = FAILURE;
         } else if(chdir(argv[1]) < 0) {
-            perr();
+            ATOMIC_PRINT({
+                if(errno == ENOENT)
+                    pwarn("couldn't find path '%s'", argv[1]);
+                perr();
+            });
             status = FAILURE;
         } else
             status = SUCCESS;
@@ -560,36 +679,46 @@ static int run_builtin(const byte *command, byte *const *argv)
         } else if(is_some(argv[1]) && is_null(argv[2])) {
             status = envcmd(argv, P_ENV);
         } else {
-            PW_TOO_MANY(argv[0]);
-            pusage("penv [VARNAME]");
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("penv [VARNAME]");
+            });
             status = FAILURE;
         }
     } else if(strcmp(command, "senv") == 0) {
         if(is_null(argv[1]) || is_null(argv[2])) {
-            PW_TOO_FEW(argv[0]);
-            pusage("senv [VARNAME] [VARVALUE]");
+            ATOMIC_PRINT({
+                PW_TOO_FEW(argv[0]);
+                pusage("senv [VARNAME] [VARVALUE]");
+            });
             status = FAILURE;
         } else if(is_some(argv[3])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("senv [VARNAME] [VARVALUE]");
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("senv [VARNAME] [VARVALUE]");
+            });
             status = FAILURE;
         } else
             status = envcmd(argv, SET_ENV);
     } else if(strcmp(command, "renv") == 0) {
         if(is_null(argv[1])) {
-            PW_TOO_FEW(argv[0]);
-            pusage("renv [VARNAME] [VARVALUE]");
+            ATOMIC_PRINT({
+                PW_TOO_FEW(argv[0]);
+                pusage("renv [VARNAME] [VARVALUE]");
+            });
             status = FAILURE;
         } else if(is_some(argv[2])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("renv [VARNAME] [VARVALUE]");
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("renv [VARNAME] [VARVALUE]");
+            });
             status = FAILURE;
         } else
             status = envcmd(argv, RM_ENV);
     } else if(strcmp(command, "pwd") == 0) {
         byte buff[PATH_MAX];
         if(__glibc_unlikely(is_null(getcwd(buff, PATH_MAX)))) {
-            perr();
+            ATOMIC_PRINT({ perr(); });
             status = FAILURE;
         } else {
             printf("%s\n", buff);
@@ -599,8 +728,10 @@ static int run_builtin(const byte *command, byte *const *argv)
         status = system("clear");
     } else if(strcmp(command, "builtin") == 0) {
         if(is_some(argv[1])) {
-            PW_TOO_MANY(argv[0]);
-            pusage("builtin");
+            ATOMIC_PRINT({
+                PW_TOO_MANY(argv[0]);
+                pusage("builtin");
+            });
             status = FAILURE;
         } else {
             pbuiltin();

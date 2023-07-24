@@ -25,8 +25,10 @@ vec_t *vec_new(const size_t ele_size)
     vec_t *vec = malloc(sizeof(vec_t));
 
     if(__glibc_unlikely(is_null(vec))) {
-        pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
-        perr();
+        ATOMIC_PRINT({
+            pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
+            perr();
+        });
         return NULL;
     }
 
@@ -46,8 +48,11 @@ vec_t *vec_with_capacity(const size_t ele_size, const size_t capacity)
     if(__glibc_unlikely(is_null(vec = vec_new(ele_size)))) {
         return NULL;
     } else if(__glibc_unlikely(is_null(allocation = calloc(capacity, ele_size)))) {
-        pwarn("ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
-        perr();
+        ATOMIC_PRINT({
+            pwarn(
+                "ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
+            perr();
+        });
         return NULL;
     }
 

@@ -1,4 +1,3 @@
-// clang-format off
 #ifndef __ASH_UTILS_H__
 #define __ASH_UTILS_H__
 
@@ -6,17 +5,29 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/file.h>
+#include <sys/types.h>
 #include <unistd.h>
+#ifdef __cplusplus /* For gtest */
+#include <atomic>
+extern volatile std::atomic_bool sigchld_recv;
+#else
+#include <stdatomic.h>
+extern volatile atomic_bool sigchld_recv;
+#endif
 
 typedef char byte;
 
 extern struct termios shell_tmodes;
-extern byte** environ;
+extern byte **environ;
+
+#define PROMPT "\n[-ASHE-]: "
 
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)
-#define char_before_ptr(ptr) *((ptr) -1)
-#define char_after_ptr(ptr) *((ptr) +1)
+#define char_before_ptr(ptr) *((ptr)-1)
+#define char_after_ptr(ptr) *((ptr) + 1)
 #define NULL_TERM '\0'
 #define EOL NULL_TERM
 
@@ -26,18 +37,35 @@ extern byte** environ;
 #define ASHE_WARN_PREFIX ASHE_PREFIX "<warning>: "
 #define ASHE_ERR_PREFIX ASHE_PREFIX "<error>"
 
+#define ATOMIC_PRINT(print_block)                                              \
+  do {                                                                         \
+    if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_EX) < 0 ||                   \
+                         flock(STDOUT_FILENO, LOCK_EX) < 0)) {                 \
+      perr();                                                                  \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+    print_block;                                                               \
+    if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_UN) < 0 ||                   \
+                         flock(STDOUT_FILENO, LOCK_UN) < 0)) {                 \
+      perr();                                                                  \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  } while (0)
+
 /// Exit codes
 #define FAILURE -1
 #define SUCCESS 0
 
+void pprompt(void);
 void pwarn(const byte *fmt, ...);
 void pusage(const byte *fmt, ...);
 void perr(void);
 
 #define PCS_EXTRA "/.-"
-#define PORTABLE_CHARACTER_SET \
-    "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+#define PORTABLE_CHARACTER_SET                                                 \
+  "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
 
+// clang-format off
 #if defined(_WIN32) || defined(_WIN64)
     #define ARG_MAX 32767 // Windows
     #define HOME "HOMEPATH"
@@ -73,9 +101,4 @@ void perr(void);
         #define PATH_MAX _POSIX_PATH_MAX
     #endif
 #endif
-
-// clang-format on
-
-/// ERRORS
-
 #endif
