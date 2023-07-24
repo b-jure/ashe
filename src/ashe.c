@@ -173,6 +173,7 @@ int main()
     }
 
     while(true) {
+        // joblist_update_and_notify(0);
         string_clear(line);
         ATOMIC_PRINT({ pprompt(); });
 

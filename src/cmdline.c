@@ -49,12 +49,7 @@ typedef struct {
 static context_t context_new(void);
 static int conditional_execute(conditional_t *cond);
 static int pipeline_execute(pipeline_t *pipeline, bool bg);
-static int run_cmd(
-    byte *const *argv,
-    byte *const *env,
-    context_t *ctx,
-    job_t *job,
-    bool bg);
+static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *job);
 static int envcmd(byte *const *argv, int option);
 static void penviron(void);
 static void pbuiltin(void);
@@ -67,6 +62,9 @@ static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx);
 static void resolve_redirections(byte *const *argvp);
 static void connect_io_with_pipe(context_t *ctx);
 static int run_builtin(const byte *command, byte *const *argv, bool shell);
+bool is_builtin(const byte *command);
+static int run_cmd_nofork(byte **argv, byte **env);
+static void fargvs(vec_t *argv, byte **out);
 
 static context_t context_new(void)
 {
@@ -104,6 +102,7 @@ void commandline_execute(commandline_t *cmdline, int *status)
     int ret;
 
     for(size_t i = 0; i < cndn; i++) {
+        printf("running conditional [%ld]\n", i);
         ret = conditional_execute(vec_index(cnds, i));
         *status = (ret == FAILURE) ? 1 : ret;
     }
@@ -118,6 +117,7 @@ static int conditional_execute(conditional_t *cond)
 
     for(size_t i = 0; i < pipn; i++) {
         pipeline = vec_index(pips, i);
+        printf("Running pipeline [%ld]\n", i);
         ctn = pipeline_execute(pipeline, cond->is_background);
 
         if(ctn == FAILURE && IS_AND(pipeline->connection)) {
@@ -130,14 +130,91 @@ static int conditional_execute(conditional_t *cond)
     return ctn;
 }
 
+static int pipeline_execute(pipeline_t *pipeline, bool bg)
+{
+    context_t ctx; /* Context, instructs forked proc which pipe stream to dup and close */
+    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
+    size_t cmdn = vec_len(commands);      /* Amount of commands in this pipeline */
+    int status = SUCCESS;                 /* Return status of this pipeline */
+    pid_t cpid;                           /* child Process ID */
+    command_t *cmd = NULL;
+    job_t job = job_new(pipeline->connection, bg); /* New job for this pipeline */
+
+    if(__glibc_unlikely(is_null(job.processes)))
+        return FAILURE;
+
+    unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
+    int pipes[pn];                  /* Pipe storage */
+
+    /// Run the entire pipeline
+    for(size_t i = 0; i < cmdn; i++) {
+
+        ctx = context_new();
+        cmd = vec_index(commands, i);
+
+        size_t argc = vec_len(cmd->argv);
+        byte *argv[argc + 1];
+        command_get_argv(cmd, argv, argc);
+
+        size_t envc = vec_len(cmd->env);
+        byte *env[envc + 1];
+        command_get_env(cmd, env, envc);
+
+        if(cmdn > 1) {
+            exit_warning = false; /* User is not exiting the shell */
+            configure_pipes(i, pipes, cmdn, &ctx);
+        } else if(job.foreground && is_builtin(argv[0])) {
+            job_drop(&job);
+            return run_cmd_nofork(argv, env);
+        }
+
+        if(__glibc_likely((cpid = run_cmd(argv, env, &ctx, &job)) != FAILURE)) {
+            process_t temp_proc = process_new(cpid, NULL);
+            fargvs(cmd->argv, &temp_proc.commandline);
+
+            if(__glibc_unlikely(
+                   is_null(temp_proc.commandline) || !job_add_process(&job, &temp_proc)))
+            {
+                job_drop(&job);
+                exit(EXIT_FAILURE);
+            }
+        } else {
+            job_drop(&job);
+            exit(EXIT_FAILURE);
+        }
+
+        if(not_first(i) && __glibc_unlikely(close_pipe(pipe_at(PREV(i), pipes)) < 0)) {
+            job_drop(&job);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if(job.foreground)
+        status = job_move_to_fg(&job, false);
+    else {
+        if(__glibc_unlikely(!joblist_push(&job))) {
+            ATOMIC_PRINT(
+                { pwarn("failed adding a job [PGID:%d] to the joblist", job.pgid); });
+            exit(EXIT_FAILURE);
+        }
+        job_move_to_bg(&job, false);
+    }
+
+    return status;
+}
+
 static void reset_signal_handling(void)
 {
-    signal(SIGINT, SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
-    signal(SIGTSTP, SIG_DFL);
-    signal(SIGTTIN, SIG_DFL);
-    signal(SIGTTOU, SIG_DFL);
-    signal(SIGCHLD, SIG_DFL);
+    struct sigaction sigdfl_ac;
+    sigemptyset(&sigdfl_ac.sa_mask);
+    sigdfl_ac.sa_flags = 0;
+    sigdfl_ac.sa_handler = SIG_DFL;
+    sigaction(SIGINT, &sigdfl_ac, NULL);
+    sigaction(SIGQUIT, &sigdfl_ac, NULL);
+    sigaction(SIGTSTP, &sigdfl_ac, NULL);
+    sigaction(SIGTTIN, &sigdfl_ac, NULL);
+    sigaction(SIGTTOU, &sigdfl_ac, NULL);
+    sigaction(SIGCHLD, &sigdfl_ac, NULL);
 }
 
 static int envcmd(byte *const *argv, int option)
@@ -326,88 +403,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
     return status;
 }
 
-static int pipeline_execute(pipeline_t *pipeline, bool bg)
-{
-    context_t ctx; /* Context, instructs forked proc which pipe stream to dup and close */
-    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
-    size_t cmdn = vec_len(commands);      /* Amount of commands in this pipeline */
-    int status = SUCCESS;                 /* Return status of this pipeline */
-    pid_t cpid;                           /* child Process ID */
-    command_t *cmd = NULL;
-    job_t job = job_new(pipeline->connection, bg); /* New job for this pipeline */
-
-    if(__glibc_unlikely(is_null(job.processes)))
-        return FAILURE;
-
-    unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
-    int pipes[pn];                  /* Pipe storage */
-
-    /// Run the entire pipeline
-    for(size_t i = 0; i < cmdn; i++) {
-
-        ctx = context_new();
-        cmd = vec_index(commands, i);
-
-        size_t argc = vec_len(cmd->argv);
-        byte *argv[argc + 1];
-        command_get_argv(cmd, argv, argc);
-
-        size_t envc = vec_len(cmd->env);
-        byte *env[envc + 1];
-        command_get_env(cmd, env, envc);
-
-        if(cmdn > 1) {
-            exit_warning = false; /* User is not exiting the shell */
-            configure_pipes(i, pipes, cmdn, &ctx);
-        } else if(job.foreground && is_builtin(argv[0])) {
-            job_drop(&job);
-            return run_cmd_nofork(argv, env);
-        }
-
-        if(__glibc_likely((cpid = run_cmd(argv, env, &ctx, &job, bg)) != FAILURE)) {
-            process_t temp_proc = process_new(cpid, NULL);
-            fargvs(cmd->argv, &temp_proc.commandline);
-
-            if(__glibc_unlikely(
-                   is_null(temp_proc.commandline) || !job_add_process(&job, &temp_proc)))
-            {
-                job_drop(&job);
-                exit(EXIT_FAILURE);
-            }
-        } else {
-            job_drop(&job);
-            exit(EXIT_FAILURE);
-        }
-
-        if(not_first(i) && __glibc_unlikely(close_pipe(pipe_at(PREV(i), pipes)) < 0)) {
-            job_drop(&job);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    if(job.foreground)
-        /// Move process into foreground and wait for its
-        /// processes to finish or get stopped
-        status = job_move_to_fg(&job, false);
-    else {
-        if(__glibc_unlikely(!joblist_push(&job))) {
-            ATOMIC_PRINT(
-                { pwarn("failed adding a job [PGID:%d] to the joblist", job.pgid); });
-            exit(EXIT_FAILURE);
-        }
-        /// This is no-op, only for clarity
-        job_move_to_bg(&job, false);
-    }
-
-    return status;
-}
-
-static int run_cmd(
-    byte *const *argv,
-    byte *const *env,
-    context_t *ctx,
-    job_t *job,
-    bool bg)
+static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *job)
 {
     pid_t childPID = fork();
 
@@ -428,7 +424,8 @@ static int run_cmd(
         /// and give it the terminal
         if(job->pgid == 0) {
             job->pgid = pid;
-            if(!bg && __glibc_unlikely(tcsetpgrp(TERMINAL_FD, job->pgid) < 0)) {
+            if(__glibc_unlikely(job->foreground && tcsetpgrp(TERMINAL_FD, job->pgid) < 0))
+            {
                 ATOMIC_PRINT({
                     pwarn("failed giving terminal to process group [ID:%d]", job->pgid);
                     perr();
@@ -437,6 +434,8 @@ static int run_cmd(
             }
         }
         /// Move this process into the new process group
+        ATOMIC_PRINT(
+            { fprintf(stderr, "setting PID:%d into PGID:%d\n", pid, job->pgid); });
         if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
             ATOMIC_PRINT({
                 pwarn(
@@ -475,6 +474,20 @@ static int run_cmd(
 
     if(job->pgid == 0)
         job->pgid = childPID;
+
+    ATOMIC_PRINT(
+        { fprintf(stderr, "setting PID:%d into PGID:%d\n", childPID, job->pgid); });
+
+    if(__glibc_unlikely(setpgid(childPID, job->pgid) < 0)) {
+        ATOMIC_PRINT({
+            pwarn(
+                "process [ID:%d] failed setting itself into process group [ID:%d]",
+                childPID,
+                job->pgid);
+            perr();
+        });
+        exit(EXIT_FAILURE);
+    }
 
     return childPID;
 }

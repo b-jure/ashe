@@ -95,7 +95,8 @@ void job_format(job_t *job, byte *fmt, ...)
     ATOMIC_PRINT({
         fprintf(stderr, "\nJob [%ld]~[", job->id);
         for(size_t i = 0; i < len; i++)
-            fprintf(stderr, "%s ", job_at(job, i)->commandline);
+            fprintf(
+                stderr, "%s %s", job_at(job, i)->commandline, (i + 1 == len) ? "" : "| ");
         fprintf(stderr, "\b]: ");
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\n");
@@ -137,8 +138,10 @@ bool job_completed(job_t *job)
 {
     size_t len = job_len(job);
     for(size_t i = 0; i < len; i++)
-        if(!job_at(job, i)->completed)
+        if(!job_at(job, i)->completed) {
+            fprintf(stderr, "process at %ld is not completed\n", i);
             return false;
+        }
     return true;
 }
 
@@ -192,6 +195,7 @@ bool update_process(pid_t pid, int status)
         ATOMIC_PRINT({ pwarn("no child process found [pid:%d]", pid); });
         return false;
     } else if(pid == 0 || errno == ECHILD) {
+        ATOMIC_PRINT({ fprintf(stderr, "no more children to wait on\n"); });
         return false;
     } else {
         ATOMIC_PRINT({ perr(); });
@@ -289,14 +293,17 @@ void joblist_update(void)
 
     do {
         pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
+        ATOMIC_PRINT({ printf("Updating process %d\n", pid); });
     } while(update_process(pid, status));
 }
 
 void joblist_update_and_notify(__attribute__((unused)) int signum)
 {
+    ATOMIC_PRINT({ printf("Running update of joblist\n"); });
     sigchld_recv = true;
 
     size_t len = joblist_len();
+    ATOMIC_PRINT({ printf("len is %ld\n", len); });
     job_t *job;
 
     joblist_update();
@@ -305,16 +312,21 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
         job = joblist_at(i);
 
         if(job_completed(job)) {
+            printf("job completed is it foreground\n");
             if(!job->foreground) {
+                printf("it is\n");
                 ATOMIC_PRINT({
                     job_format(job, "\x1B[32mcompleted\x1B[0m");
                     pprompt();
                 });
             }
+            printf("it is not\n");
             joblist_remove(i);
+            printf("removed the job from the joblist\n");
             len--;
             continue;
         } else if(job_stopped(job) && !job->notified) {
+            printf("Job is stoppeeddd\n");
             ATOMIC_PRINT({
                 job_format(job, "\x1B[31mstopped\x1B[0m");
                 pprompt();
@@ -322,7 +334,9 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
             job->notified = true;
         }
         i++;
+        printf("continuing to the next iteration\n");
     }
+    printf("exited the joblist update function\n");
 }
 
 void job_sa_running(job_t *job)
