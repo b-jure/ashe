@@ -17,8 +17,6 @@ void sigint_handler(__attribute__((unused)) int signum)
     //      todo()
     // }
 
-    flock(STDERR_FILENO, LOCK_UN);
-    flock(STDOUT_FILENO, LOCK_UN);
     ATOMIC_PRINT({ pprompt(); });
     unblock_sigchld();
 }
@@ -32,8 +30,6 @@ void sigchld_handler(int signum)
     //      todo()
     // }
 
-    flock(STDERR_FILENO, LOCK_UN);
-    flock(STDOUT_FILENO, LOCK_UN);
     joblist_update_and_notify(signum);
     unblock_sigint();
 }

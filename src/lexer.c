@@ -28,7 +28,7 @@ static void lexer_get_string(lexer_t *lexer)
     tokentype_t ttype;
 
     for(i = 0; ((c = chariter_peek(iter)) != EOL); i++) {
-        if(!dquote && ((isspace(c)) || is_reserved_symbol(c))) {
+        if(!dquote && !escape && ((isspace(c)) || is_reserved_symbol(c))) {
             break;
         }
 

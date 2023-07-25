@@ -9,17 +9,9 @@
 #include <sys/file.h>
 #include <sys/types.h>
 #include <unistd.h>
-#ifdef __cplusplus /* For gtest */
-#include <atomic>
-extern volatile std::atomic_bool sigchld_recv;
-#else
-#include <stdatomic.h>
-extern volatile atomic_bool sigchld_recv;
-#endif
 
 typedef char byte;
 
-extern struct termios shell_tmodes;
 extern byte **environ;
 
 #define PROMPT "\n[-ASHE-]: "
