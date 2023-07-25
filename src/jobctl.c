@@ -1,20 +1,30 @@
+#include "async.h"
 #include "jobctl.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <sys/wait.h>
 
-joblist_t joblist = {0};
+#define yellow(text) "\x1B[33m" text "\x1B[0m"
+#define byellow(text) "\x1B[93m" text "\x1B[0m"
+#define green(text) "\x1B[32m" text "\x1B[0m"
+#define red(text) "\x1B[31m" text "\x1B[0m"
+#define bred(text) "\x1B[91m" text "\x1B[0m"
+#define cyan(text) "\x1B[36m" text "\x1B[0m"
+#define blue(text) "\x1B[34m" text "\x1B[0m"
+#define bwhite(text) "\x1B[97m" text "\x1B[0m"
 
-/// JOBLIST
-size_t joblist_id();
-/// JOB
-size_t job_len(job_t *job);
-bool job_stopped(job_t *job);
-bool job_completed(job_t *job);
-/// PROCESS
-void process_drop(process_t *process);
+#define obrack bwhite("[")
+#define cbrack bwhite("]")
+
+#define job_completed_format green("completed") obrack red("-") cbrack
+#define job_stopped_format red("stopped") obrack blue("/") cbrack
+#define job_started_format yellow("started") obrack green("+") cbrack
+
+joblist_t joblist = {0};
+static size_t joblist_id();
 
 bool joblist_init()
 {
@@ -31,7 +41,7 @@ bool joblist_push(job_t *job)
     return vec_push(joblist.jobs, job);
 }
 
-size_t joblist_id()
+static size_t joblist_id()
 {
     if(joblist_len() == 0)
         joblist.next_id = 1;
@@ -93,11 +103,15 @@ void job_format(job_t *job, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(stderr, "\nJob [%ld]~[", job->id);
+        fprintf(stderr, "\n");
+        fprintf(stderr, obrack cyan("%ld") cbrack obrack blue("\""), job->id);
         for(size_t i = 0; i < len; i++)
             fprintf(
-                stderr, "%s %s", job_at(job, i)->commandline, (i + 1 == len) ? "" : "| ");
-        fprintf(stderr, "\b]: ");
+                stderr,
+                bred("%s %s"),
+                job_at(job, i)->commandline,
+                (i + 1 == len) ? "" : "| ");
+        fprintf(stderr, blue("\b\"") cbrack cyan(" -> "));
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\n");
     });
@@ -138,11 +152,21 @@ bool job_completed(job_t *job)
 {
     size_t len = job_len(job);
     for(size_t i = 0; i < len; i++)
-        if(!job_at(job, i)->completed) {
-            fprintf(stderr, "process at %ld is not completed\n", i);
+        if(!job_at(job, i)->completed)
             return false;
-        }
     return true;
+}
+
+bool joblist_pop_job(job_t *job, job_t *out)
+{
+    size_t len = joblist_len();
+    for(size_t i = 0; i < len; i++) {
+        if(joblist_at(i)->id == job->id) {
+            vec_pop_at(joblist.jobs, out, i);
+            return true;
+        }
+    }
+    return false;
 }
 
 void process_format(process_t *p, byte *fmt, ...)
@@ -151,7 +175,7 @@ void process_format(process_t *p, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(stderr, "Process [PID:%d] <%s>: ", p->pid, p->commandline);
+        fprintf(stderr, "Process [PID:%d]~[%s]: ", p->pid, p->commandline);
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\n");
     });
@@ -162,13 +186,15 @@ void process_format(process_t *p, byte *fmt, ...)
 bool update_process(pid_t pid, int status)
 {
     size_t joblistn = joblist_len();
+    process_t *proc = NULL;
+
     if(pid > 0) {
         for(size_t i = 0; i < joblistn; i++) {
             job_t *job = joblist_at(i);
             size_t jobn = job_len(job);
 
             for(size_t j = 0; j < jobn; j++) {
-                process_t *proc = job_at(job, j);
+                proc = job_at(job, j);
 
                 if(proc->pid == pid) {
                     proc->status = status;
@@ -191,11 +217,13 @@ bool update_process(pid_t pid, int status)
                 }
             }
         }
-        /// Idk how this can even happen, invariant broken (code bug)?
-        ATOMIC_PRINT({ pwarn("no child process found [pid:%d]", pid); });
+        pwarn(
+            "FIX ME: tried to update process that is not inside the joblist! PROCESS -> "
+            "PID:%d, CMDLINE:'%s'",
+            proc->pid,
+            proc->commandline);
         return false;
     } else if(pid == 0 || errno == ECHILD) {
-        ATOMIC_PRINT({ fprintf(stderr, "no more children to wait on\n"); });
         return false;
     } else {
         ATOMIC_PRINT({ perr(); });
@@ -222,14 +250,57 @@ int job_wait(job_t *job)
 
     do {
         pid = waitpid(-job->pgid, &status, WUNTRACED);
-    } while(update_process(pid, status) && !job_stopped(job) && !job_completed(job));
+    } while(job_update(job, pid, status) && !job_stopped(job) && !job_completed(job));
 
+    if(job_stopped(job))
+        return 0;
     return job_lastp(job)->status;
+}
+
+bool job_update(job_t *job, pid_t pid, int status)
+{
+    size_t len = job_len(job);
+    process_t *proc = NULL;
+
+    if(pid > 0) {
+        for(size_t i = 0; i < len; i++) {
+            proc = job_at(job, i);
+
+            if(proc->pid == pid) {
+                if(WIFSTOPPED(status)) {
+                    proc->stopped = true;
+                } else {
+                    proc->completed = true;
+                    if(WIFSIGNALED(status)) {
+                        process_format(
+                            proc,
+                            "was TERMINATED by signal %d",
+                            proc->status = WTERMSIG(status));
+                    } else {
+                        assert(WIFEXITED(status));
+                        proc->status = WEXITSTATUS(status);
+                    }
+                }
+                return true;
+            }
+        }
+        /// Invariant broken
+        pwarn(
+            "FIX ME: foreground job was trying to update invalid process! PROCESS -> "
+            "PID:%d, CMDLINE:'%s'\n",
+            proc->pid,
+            proc->commandline);
+        return false;
+    } else if(ECHILD == errno) {
+        return false;
+    } else {
+        perr();
+        return false;
+    }
 }
 
 int job_move_to_fg(job_t *job, bool cont)
 {
-    /* put the job into the foreground */
     tcsetpgrp(TERMINAL_FD, job->pgid); /* Can't fail */
 
     if(cont) {
@@ -237,20 +308,16 @@ int job_move_to_fg(job_t *job, bool cont)
                tcsetattr(TERMINAL_FD, TCSADRAIN, &job->tmodes) < 0
                || kill(-job->pgid, SIGCONT) < 0))
         {
-            ATOMIC_PRINT({ perr(); });
+            ATOMIC_PRINT(perr());
         }
     }
 
     int status = job_wait(job);
 
-    if(!cont && job_stopped(job))
-        if(__glibc_unlikely(!joblist_push(job))) {
-            ATOMIC_PRINT({
-                pwarn("failed adding job [PGID:%d] to the joblist", job->pgid);
-                perr();
-            });
-            exit(EXIT_FAILURE);
-        }
+    if(__glibc_unlikely(!cont && job_stopped(job) && !joblist_push(job))) {
+        ATOMIC_PRINT(pwarn("failed adding job [PGID:%d] to joblist", job->pgid));
+        exit(EXIT_FAILURE);
+    }
 
     /* put shell back into the foreground */
     tcsetpgrp(TERMINAL_FD, getpgrp()); /* Can't fail */
@@ -275,9 +342,9 @@ void job_move_to_bg(job_t *job, bool cont)
             if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0))
                 perr();
             else
-                job_format(job, "\x1B[33mstarted\x1B[0m");
+                job_format(job, job_started_format);
         } else
-            job_format(job, "\x1B[33mstarted\x1B[0m");
+            job_format(job, job_started_format);
     });
 }
 
@@ -293,17 +360,12 @@ void joblist_update(void)
 
     do {
         pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
-        ATOMIC_PRINT({ printf("Updating process %d\n", pid); });
     } while(update_process(pid, status));
 }
 
 void joblist_update_and_notify(__attribute__((unused)) int signum)
 {
-    ATOMIC_PRINT({ printf("Running update of joblist\n"); });
-    sigchld_recv = true;
-
     size_t len = joblist_len();
-    ATOMIC_PRINT({ printf("len is %ld\n", len); });
     job_t *job;
 
     joblist_update();
@@ -312,31 +374,24 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
         job = joblist_at(i);
 
         if(job_completed(job)) {
-            printf("job completed is it foreground\n");
             if(!job->foreground) {
-                printf("it is\n");
                 ATOMIC_PRINT({
-                    job_format(job, "\x1B[32mcompleted\x1B[0m");
+                    job_format(job, job_completed_format);
                     pprompt();
                 });
             }
-            printf("it is not\n");
             joblist_remove(i);
-            printf("removed the job from the joblist\n");
             len--;
             continue;
         } else if(job_stopped(job) && !job->notified) {
-            printf("Job is stoppeeddd\n");
             ATOMIC_PRINT({
-                job_format(job, "\x1B[31mstopped\x1B[0m");
+                job_format(job, job_stopped_format);
                 pprompt();
             });
             job->notified = true;
         }
         i++;
-        printf("continuing to the next iteration\n");
     }
-    printf("exited the joblist update function\n");
 }
 
 void job_sa_running(job_t *job)
@@ -347,12 +402,30 @@ void job_sa_running(job_t *job)
     job->notified = 0;
 }
 
+bool joblist_remove_job(job_t *job)
+{
+    size_t len = joblist_len();
+    for(size_t i = 0; i < len; i++) {
+        if(joblist_at(i)->id == job->id) {
+            joblist_remove(i);
+            return true;
+        }
+    }
+    return false;
+}
+
 void job_continue(job_t *job, bool foreground)
 {
     job_sa_running(job);
-    if(foreground)
+    if(foreground) {
         job_move_to_fg(job, true);
-    else
+        if(__glibc_unlikely(job_completed(job) && !joblist_remove_job(job))) {
+            /// Invariant broken
+            ATOMIC_PRINT(pwarn(
+                "FIX ME: tried removing background job that was not in the joblist!"));
+            exit(EXIT_FAILURE);
+        }
+    } else
         job_move_to_bg(job, true);
 }
 

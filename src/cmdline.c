@@ -189,9 +189,9 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
         }
     }
 
-    if(job.foreground)
+    if(job.foreground) {
         status = job_move_to_fg(&job, false);
-    else {
+    } else {
         if(__glibc_unlikely(!joblist_push(&job))) {
             ATOMIC_PRINT(
                 { pwarn("failed adding a job [PGID:%d] to the joblist", job.pgid); });
@@ -392,6 +392,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
         exit(EXIT_FAILURE);
 
     resolve_redirections(argv);
+    printf("running builtin\n");
     status = run_builtin(argv[0], argv, true);
 
     if(strcmp(argv[0], "exit") != 0 && exit_warning)
@@ -434,12 +435,20 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             }
         }
         /// Move this process into the new process group
-        ATOMIC_PRINT(
-            { fprintf(stderr, "setting PID:%d into PGID:%d\n", pid, job->pgid); });
+        ATOMIC_PRINT({
+            fprintf(
+                stderr,
+                "PARENT: setting (%s)[PID:%d] into [PGID:%d]\n",
+                argv[0],
+                pid,
+                job->pgid);
+        });
         if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
             ATOMIC_PRINT({
                 pwarn(
-                    "process [ID:%d] failed setting itself into process group [ID:%d]",
+                    "process (%s)[ID:%d] failed setting itself into process group "
+                    "[ID:%d]",
+                    argv[0],
                     pid,
                     job->pgid);
                 perr();
@@ -475,13 +484,20 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
     if(job->pgid == 0)
         job->pgid = childPID;
 
-    ATOMIC_PRINT(
-        { fprintf(stderr, "setting PID:%d into PGID:%d\n", childPID, job->pgid); });
+    ATOMIC_PRINT({
+        fprintf(
+            stderr,
+            "PARENT: setting (%s)[PID:%d] into [PGID:%d]\n",
+            argv[0],
+            childPID,
+            job->pgid);
+    });
 
     if(__glibc_unlikely(setpgid(childPID, job->pgid) < 0)) {
         ATOMIC_PRINT({
             pwarn(
-                "process [ID:%d] failed setting itself into process group [ID:%d]",
+                "process (%s)[ID:%d] failed setting itself into process group [ID:%d]",
+                argv[0],
                 childPID,
                 job->pgid);
             perr();
@@ -730,11 +746,12 @@ static int run_builtin(const byte *command, byte *const *argv, bool shell)
             status = envcmd(argv, RM_ENV);
     } else if(strcmp(command, "pwd") == 0) {
         byte buff[PATH_MAX];
+        printf("running pwd builtin\n");
         if(__glibc_unlikely(is_null(getcwd(buff, PATH_MAX)))) {
             ATOMIC_PRINT({ perr(); });
             status = FAILURE;
         } else {
-            printf("%s\n", buff);
+            ATOMIC_PRINT({ printf("%s\n", buff); });
             status = SUCCESS;
         }
     } else if(strcmp(command, "clear") == 0) {

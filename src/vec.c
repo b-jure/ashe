@@ -259,6 +259,17 @@ bool vec_pop(vec_t *self, void *dst)
     return true;
 }
 
+bool vec_pop_at(vec_t *self, void *dst, size_t index)
+{
+    if(is_null(self) || self->len == 0 || is_null(dst) || index >= self->len) {
+        return false;
+    }
+
+    memcpy(dst, _an_vec_get(self, index), self->ele_size);
+    self->len--;
+    return true;
+}
+
 size_t vec_len(const vec_t *self)
 {
     if(is_null(self)) {

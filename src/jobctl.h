@@ -40,6 +40,8 @@ typedef struct {
 
 /// JOBLIST
 size_t joblist_len(void);
+job_t *joblist_at(size_t i);
+bool joblist_remove_job(job_t *job);
 bool joblist_init();
 void joblist_drop(void);
 void joblist_update_and_notify(int signum);
@@ -49,14 +51,19 @@ job_t *joblist_getjob(joblist_t *jlist, pid_t pgid);
 
 /// JOB
 job_t job_new(byte connection, bool bg);
+size_t job_len(job_t *job);
 bool job_add_process(job_t *job, process_t *process);
 int job_move_to_fg(job_t *job, bool cont);
+bool job_stopped(job_t *job);
+bool job_completed(job_t *job);
 void job_move_to_bg(job_t *job, bool cont);
 void job_format(job_t *job, byte *fmt, ...);
 void job_continue(job_t *job, bool foreground);
 void job_drop(job_t *job);
+bool job_update(job_t *job, pid_t pid, int status);
 
 /// PROCESS
 process_t process_new(pid_t pid, byte *argv);
+void process_drop(process_t *process);
 
 #endif

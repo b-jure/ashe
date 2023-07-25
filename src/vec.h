@@ -19,6 +19,8 @@ bool vec_push(vec_t *vec, const void *element);
 
 bool vec_pop(vec_t *vec, void *dst);
 
+bool vec_pop_at(vec_t *self, void *dst, size_t index);
+
 size_t vec_len(const vec_t *vec);
 
 size_t vec_max_size(void);

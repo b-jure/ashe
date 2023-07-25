@@ -1,33 +1,24 @@
 #include "ashe_string.h"
-#include "ashe_utils.h"
+#include "async.h"
 #include "jobctl.h"
 #include "parser.h"
 
-#include <assert.h>
-#include <stdlib.h>
 #include <string.h>
 #include <termios.h>
-#include <unistd.h>
 
 #define INSIZE 200
 #define INT_DIGITS 10
 
-/// Global shell terminal modes
+/// Shell terminal modes
 struct termios shell_tmodes;
-/// Flag in case we recieve the SIGINT signal
-/// while waiting on terminal input
-volatile atomic_bool sigint_recv = false;
-volatile atomic_bool sigchld_recv = false;
-
-void sigint_handler(__attribute__((unused)) int signum)
-{
-    sigint_recv = true;
-    ATOMIC_PRINT({ pprompt(); });
-}
+/// Flag that gets set if the rcmdline routine
+/// gets interrupted while it is still reading
+/// TODO: Recover terminal input
+volatile atomic_bool reading = false;
 
 static void init_shell(void)
 {
-    int shell_pgid;
+    pid_t shell_pgid = getpgrp();
     int terminal_fd = STDIN_FILENO;
     int shell_is_interactive = isatty(terminal_fd);
 
@@ -47,17 +38,16 @@ static void init_shell(void)
 
         if(__glibc_unlikely(atexit(joblist_drop) != SUCCESS)) {
             ATOMIC_PRINT({
-                pwarn("failed initializing shell 'atexit()' functions");
+                pwarn("failed setting up shell cleanup routine");
                 perr();
             });
             exit(EXIT_FAILURE);
         }
 
-        while(tcgetpgrp(terminal_fd) != (shell_pgid = getpgrp()))
+        while(tcgetpgrp(terminal_fd) != shell_pgid)
             kill(-shell_pgid, SIGTTIN);
 
-        shell_pgid = getpid();
-        if(__glibc_unlikely(setpgid(shell_pgid, shell_pgid) < 0)) {
+        if(__glibc_unlikely(setpgid(getpid(), shell_pgid) < 0)) {
             ATOMIC_PRINT({
                 pwarn("failed creating a shell process group");
                 perr();
@@ -73,43 +63,14 @@ static void init_shell(void)
             exit(EXIT_FAILURE);
         }
 
-        struct sigaction new_action;
-
-        new_action.sa_handler = sigint_handler;
-        new_action.sa_flags = 0;
-
-        if(__glibc_unlikely(
-               sigemptyset(&new_action.sa_mask) < 0
-               || sigaction(SIGINT, &new_action, NULL) < 0))
-        {
-            ATOMIC_PRINT({
-                pwarn("failed setting up shell SIGINT signal handler");
-                perr();
-            });
-            exit(EXIT_FAILURE);
-        }
-
-        new_action.sa_handler = SIG_IGN;
-
-        if(__glibc_unlikely(
-               sigaction(SIGTTIN, &new_action, NULL) < 0
-               || sigaction(SIGTTOU, &new_action, NULL) < 0
-               || sigaction(SIGQUIT, &new_action, NULL) < 0
-               || sigaction(SIGCHLD, &new_action, NULL) < 0))
-        {
-            ATOMIC_PRINT({
-                pwarn("failed setting up shell signal handlers");
-                perr();
-            });
-            exit(EXIT_FAILURE);
-        }
-
-        fprintf(stderr, "rest of the handlers assigned\n");
+        setup_default_signal_handling();
     }
 }
 
-int rcmdline(string_t *buffer)
+static int rcmdline(string_t *buffer)
 {
+    reading = true; /// Set the global
+
     byte input[INSIZE];
     byte *ptr;
     size_t appended;
@@ -131,17 +92,15 @@ read_more:
                     dq ^= true;
                 ptr++;
             }
-            if(!dq && string_last(buffer) == '\n')
+            if(!dq && string_last(buffer) == '\n') {
+                reading = false;
                 break;
+            }
         }
     }
 
-    if(sigint_recv || sigchld_recv) {
+    if(reading) {
         string_clear(buffer);
-        if(sigchld_recv)
-            sigchld_recv = false;
-        else
-            sigint_recv = false;
         goto read_more;
     }
 
@@ -155,14 +114,6 @@ int main()
     int status = SUCCESS;
     bool set_env = false;
 
-    struct sigaction sigchld_ac;
-
-    sigemptyset(&sigchld_ac.sa_mask);
-    sigchld_ac.sa_flags = 0;
-    sigchld_ac.sa_handler = joblist_update_and_notify;
-
-    init_shell();
-
     if(__glibc_unlikely(is_null(line = string_with_cap(INSIZE)))) {
         ATOMIC_PRINT({ pwarn("couldn't allocate input buffer"); });
         exit(EXIT_FAILURE);
@@ -172,24 +123,22 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    init_shell();
+
     while(true) {
-        // joblist_update_and_notify(0);
-        string_clear(line);
         ATOMIC_PRINT({ pprompt(); });
+        enable_async_joblist_update();
+        try_wait_missed_sigchld_signals();
 
-        // Enable async joblist updating
-        sigchld_ac.sa_handler = joblist_update_and_notify;
-        sigaction(SIGCHLD, &sigchld_ac, NULL); // Can't fail
-
+        /// Clear the buffer and start reading
+        string_clear(line);
         if(__glibc_unlikely(rcmdline(line) == FAILURE)) {
             string_drop(line);
             commandline_drop(&cmdline);
             exit(EXIT_FAILURE);
         }
 
-        // Disable async joblist updating
-        sigchld_ac.sa_handler = SIG_IGN;
-        sigaction(SIGCHLD, &sigchld_ac, NULL); // Can't fail
+        disable_async_joblist_update();
 
         if(string_len(line) == 1
            || parse_commandline(string_ref(line), &cmdline, &set_env) == FAILURE)

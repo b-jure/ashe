@@ -19,6 +19,7 @@ set(SRCFILES
     ${SRCDIR}/token.c
     ${SRCDIR}/utils.c
     ${SRCDIR}/jobctl.c
+    ${SRCDIR}/async.c
     ${SRCDIR}/vec.c)
 
 set(WARNING_FLAGS -Wall -Werror -Wextra -Wpedantic)
