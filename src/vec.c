@@ -1,8 +1,17 @@
-#include "ashe_utils.h"
+#ifndef GTEST
+    #include "async.h"
+    #include "errors.h"
+#endif
 #include "vec.h"
+
 #include <limits.h>
 #include <memory.h>
 #include <stdlib.h>
+
+#if !defined(is_null) || !defined(is_some)
+    #define is_null(ptr) ((ptr) == NULL)
+    #define is_some(ptr) ((ptr) != NULL)
+#endif
 
 #define MAX_VEC_SIZE UINT_MAX
 #define ptr_in_bounds(vec, ptr)                                                          \
@@ -25,10 +34,12 @@ vec_t *vec_new(const size_t ele_size)
     vec_t *vec = malloc(sizeof(vec_t));
 
     if(__glibc_unlikely(is_null(vec))) {
+#ifndef GTEST
         ATOMIC_PRINT({
-            pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(vec_t));
+            PW_OOM(sizeof(vec_t));
             perr();
         });
+#endif
         return NULL;
     }
 
@@ -48,11 +59,12 @@ vec_t *vec_with_capacity(const size_t ele_size, const size_t capacity)
     if(__glibc_unlikely(is_null(vec = vec_new(ele_size)))) {
         return NULL;
     } else if(__glibc_unlikely(is_null(allocation = calloc(capacity, ele_size)))) {
+#ifndef GTEST
         ATOMIC_PRINT({
-            pwarn(
-                "ran out of memory trying to allocate '%ld' bytes", capacity * ele_size);
+            PW_OOM(capacity * ele_size);
             perr();
         });
+#endif
         return NULL;
     }
 

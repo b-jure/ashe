@@ -1,11 +1,15 @@
+#include "async.h"
 #ifdef AN_DEBUG
     #include <assert.h>
 #endif
 #include "ashe_string.h"
 #include "ashe_utils.h"
+#include "errors.h"
+#include "input.h"
 #include "lexer.h"
 #include "parser.h"
 
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -57,11 +61,8 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_
 
     while(1) {
         if((token.type & (WORD_TOKEN | KVPAIR_TOKEN)) == 0) {
-            if(token.type == NAT_TOKEN)
-                pwarn("invalid syntax '%s'", string_ref(token.contents));
-            else if(__glibc_unlikely(token.type != OOM_TOKEN))
-                pwarn(
-                    "expected '&&' or '||' instead got '%s'", string_ref(token.contents));
+            if(__glibc_unlikely(token.type != OOM_TOKEN))
+                PW_PARSINVALTOK(string_ref(token.contents));
             else
                 string_drop(token.contents);
 
@@ -92,6 +93,8 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_
         }
     };
 
+    assert(token.contents == NULL);
+    assert(token.type == EOL_TOKEN);
     return SUCCESS;
 }
 
@@ -127,7 +130,7 @@ static int parse_command(lexer_t *lexer, command_t *command, bool *set_env)
                            != SUCCESS))
                     {
                         ATOMIC_PRINT({
-                            pwarn("failed setting env var '%s'", var);
+                            PW_VAREXPO(var);
                             perr();
                         });
                         return FAILURE;

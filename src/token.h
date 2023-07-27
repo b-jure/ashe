@@ -13,9 +13,8 @@ typedef enum {
   OR_TOKEN = 32,
   BG_TOKEN = 64,
   FG_TOKEN = 128,
-  NAT_TOKEN = 256,
-  EOL_TOKEN = 512,
-  OOM_TOKEN = 1024
+  EOL_TOKEN = 256,
+  OOM_TOKEN = 512,
 } tokentype_t;
 
 typedef struct {

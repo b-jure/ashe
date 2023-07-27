@@ -11,10 +11,7 @@
 #include <unistd.h>
 
 typedef char byte;
-
 extern byte **environ;
-
-#define PROMPT "\n[-ASHE-]: "
 
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)
@@ -25,12 +22,10 @@ extern byte **environ;
 
 #define TERMINAL_FD STDIN_FILENO
 
-#define ASHE_PREFIX "ashe"
-#define ASHE_WARN_PREFIX ASHE_PREFIX "<warning>: "
-#define ASHE_ERR_PREFIX ASHE_PREFIX "<error>"
-
 #define ATOMIC_PRINT(print_block)                                              \
   do {                                                                         \
+    block_sigint();                                                            \
+    block_sigchld();                                                           \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_EX) < 0 ||                   \
                          flock(STDOUT_FILENO, LOCK_EX) < 0)) {                 \
       perr();                                                                  \
@@ -46,12 +41,15 @@ extern byte **environ;
       perr();                                                                  \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
+    unblock_sigint();                                                          \
+    unblock_sigchld();                                                         \
   } while (0)
 
 /// Exit codes
 #define FAILURE -1
 #define SUCCESS 0
 
+void die(void);
 void pprompt(void);
 void pwarn(const byte *fmt, ...);
 void pusage(const byte *fmt, ...);

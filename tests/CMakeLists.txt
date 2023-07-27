@@ -15,18 +15,20 @@ add_executable(
     ash_string_test
     ash_string.cpp
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/string.c
-    ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
+
+target_compile_definitions(ash_string_test PUBLIC GTEST)
 
 add_executable(
     ash_chiter_test
     ash_chiter.cpp
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/string.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/chiter.c
-    ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
+
+target_compile_definitions(ash_chiter_test PUBLIC GTEST)
 
 add_executable(
     ash_lexer_test
@@ -38,6 +40,8 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/utils.c
     ${CMAKE_SOURCE_DIR}/${SRCDIR}/vec.c
 )
+
+target_compile_definitions(ash_lexer_test PUBLIC GTEST)
 
 target_compile_options(ash_lexer_test PRIVATE -fsanitize=address -g)
 target_link_options(ash_lexer_test PRIVATE -fsanitize=address)

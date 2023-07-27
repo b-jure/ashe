@@ -1,6 +1,11 @@
 #include "chiter.h"
 #include <stdio.h>
+
 #define is_exhausted(iter) ((iter)->next >= (iter)->end || (iter)->next == NULL)
+
+#if !defined(is_null)
+    #define is_null(ptr) ((ptr) == NULL)
+#endif
 
 chariter_t chariter_new(byte *start, size_t len)
 {
@@ -19,7 +24,7 @@ chariter_t chariter_from_string(string_t *string)
 int chariter_next(chariter_t *iter)
 {
     if(is_null(iter) || is_exhausted(iter)) {
-        return EOL;
+        return 0;
     }
 
     return *iter->next++;
@@ -51,7 +56,7 @@ bool chariter_set_unsafe(chariter_t *iter, byte *next)
 int chariter_peek(chariter_t *iter)
 {
     if(is_null(iter) || is_exhausted(iter)) {
-        return EOL;
+        return 0;
     }
 
     return *(iter->next);

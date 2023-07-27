@@ -1,9 +1,10 @@
 #ifndef __ASH_VEC_H__
 #define __ASH_VEC_H__
 
-#include "ashe_string.h"
 #include <stdbool.h>
 #include <stdio.h>
+
+typedef char byte;
 
 typedef int (*CmpFn)(const void *, const void *);
 

@@ -1,11 +1,11 @@
 #include "async.h"
+#include "errors.h"
 #include "input.h"
 #include "jobctl.h"
 
 #include <signal.h>
 #include <stdbool.h>
 
-/// TODO: Make use of these
 volatile atomic_bool sigint_recv = false;
 volatile atomic_bool sigchld_recv = false;
 
@@ -13,7 +13,10 @@ void sigint_handler(__attribute__((unused)) int signum)
 {
     block_sigchld();
     sigint_recv = true;
-    ATOMIC_PRINT(pprompt());
+    ATOMIC_PRINT({
+        fprintf(stderr, "\r\n");
+        pprompt();
+    });
     inbuff_clear(&terminal_input);
     unblock_sigchld();
 }
@@ -83,21 +86,20 @@ void setup_default_signal_handling(void)
 
     if(__glibc_unlikely(sigaction(SIGINT, &default_action, NULL) < 0)) {
         ATOMIC_PRINT({
-            pwarn("failed setting up shell SIGINT signal handler");
-            perr();
+            PW_SIGINITS("SIGINT");
+            die();
         });
-        exit(EXIT_FAILURE);
     }
 
     default_action.sa_handler = SIG_DFL;
 
     if(__glibc_unlikely(sigaction(SIGCHLD, &default_action, NULL) < 0)) {
         ATOMIC_PRINT({
-            pwarn("failed setting up shell SIGCHLD signal handler");
-            perr();
+            PW_SIGINITS("SIGCHLD");
+            die();
         });
-        exit(EXIT_FAILURE);
     }
+
     default_action.sa_handler = SIG_IGN;
 
     if(__glibc_unlikely(
@@ -107,10 +109,9 @@ void setup_default_signal_handling(void)
            || sigaction(SIGQUIT, &default_action, NULL) < 0))
     {
         ATOMIC_PRINT({
-            pwarn("failed setting up shell signal handlers");
-            perr();
+            PW_SIGINIT;
+            die();
         });
-        exit(EXIT_FAILURE);
     }
 }
 

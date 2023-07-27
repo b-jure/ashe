@@ -1,5 +1,6 @@
 #include "ashe_string.h"
 #include "async.h"
+#include "errors.h"
 #include "input.h"
 #include "jobctl.h"
 #include "parser.h"
@@ -15,6 +16,7 @@ inbuff_t terminal_input = {0};
 
 static void cleanup(void)
 {
+    set_dflmode();
     joblist_drop();
 }
 
@@ -26,24 +28,22 @@ static void init_shell(void)
 
     if(shell_is_interactive) {
         if(__glibc_unlikely(!joblist_init())) {
-            ATOMIC_PRINT({ pwarn("failed creating a joblist"); });
+            ATOMIC_PRINT(PW_JLINIT);
             exit(EXIT_FAILURE);
         }
 
         if(__glibc_unlikely(setenv("?", "0", 1) < 0)) {
             ATOMIC_PRINT({
-                pwarn("failed creating status environment variable '?'");
-                perr();
+                PW_STATVAR_INIT;
+                die();
             });
-            exit(EXIT_FAILURE);
         }
 
         if(__glibc_unlikely(atexit(cleanup))) {
             ATOMIC_PRINT({
-                pwarn("failed setting up shell cleanup routine");
-                perr();
+                PW_SHCLEANUP_INIT;
+                die();
             });
-            exit(EXIT_FAILURE);
         }
 
         while(tcgetpgrp(terminal_fd) != shell_pgid)
@@ -51,16 +51,13 @@ static void init_shell(void)
 
         if(__glibc_unlikely(setpgid(getpid(), shell_pgid) < 0)) {
             ATOMIC_PRINT({
-                pwarn("failed creating a shell process group");
-                perr();
+                PW_PGRPSET(getpid(), shell_pgid);
+                die();
             });
-            exit(EXIT_FAILURE);
         }
 
-        if(__glibc_unlikely(tcsetpgrp(terminal_fd, shell_pgid) < 0)) {
-            ATOMIC_PRINT(perr());
-            exit(EXIT_FAILURE);
-        }
+        if(__glibc_unlikely(tcsetpgrp(terminal_fd, shell_pgid) < 0))
+            ATOMIC_PRINT(die());
 
         init_dflterm();
         init_rawterm();
@@ -92,10 +89,11 @@ int main()
         try_wait_missed_sigchld_signals();
 
         inbuff_clear(&terminal_input);
+        fflush(stderr);
         if(__glibc_unlikely(read_input(&terminal_input) == FAILURE)) {
             string_drop(line);
             commandline_drop(&cmdline);
-            exit(EXIT_FAILURE);
+            die();
         }
 
         try_wait_missed_sigchld_signals();
@@ -103,6 +101,7 @@ int main()
         string_clear(line);
         string_append(line, terminal_input.buffer, terminal_input.len);
         inbuff_clear(&terminal_input);
+        fflush(stderr);
 
         disable_async_joblist_update();
 

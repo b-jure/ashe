@@ -1,4 +1,6 @@
 #include "builtin.h"
+#include "errors.h"
+#include "input.h"
 #include "jobctl.h"
 
 int fg_id(int id)
@@ -14,7 +16,7 @@ int fg_id(int id)
         }
     }
 
-    pwarn("There is no suitable job with 'id:%d' to move into foreground!", id);
+    PW_FGID_ERR(id);
     return FAILURE;
 }
 
@@ -31,7 +33,7 @@ int fg_pgid(pid_t pgid)
         }
     }
 
-    pwarn("There is no suitable job with 'PGID:%d' to move into foreground!", pgid);
+    PW_FGPGID_ERR(pgid);
     return FAILURE;
 }
 
@@ -45,7 +47,7 @@ int fg_last(void)
         return SUCCESS;
     }
 
-    pwarn("There is no suitable job to move into foreground!");
+    PW_FG_ERR;
     return FAILURE;
 }
 

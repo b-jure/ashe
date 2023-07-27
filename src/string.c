@@ -1,7 +1,20 @@
+#ifndef GTEST
+    #include "errors.h"
+#endif
 #include "ashe_string.h"
 #include "vec.h"
+
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef NULL_TERM
+    #define NULL_TERM '\0'
+#endif
+
+#if !defined(is_null) || !defined(is_some)
+    #define is_null(ptr) ((ptr) == NULL)
+    #define is_some(ptr) ((ptr) != NULL)
+#endif
 
 struct string_t {
     vec_t *vec;
@@ -11,7 +24,10 @@ string_t *string_new(void)
 {
     string_t *string = malloc(sizeof(string_t));
     if(__glibc_unlikely(is_null(string))) {
-        pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(string_t));
+#ifndef GTEST
+        PW_OOM(sizeof(string_t));
+#endif
+        return NULL;
     }
 
     if(__glibc_unlikely(is_null(string->vec = vec_with_capacity(sizeof(byte), 1)))) {
@@ -32,7 +48,9 @@ string_t *string_with_cap(size_t capacity)
         return string_new();
     } else {
         if(__glibc_unlikely(is_null(string = malloc(sizeof(string_t))))) {
-            pwarn("ran out of memory trying to allocate '%ld' bytes", sizeof(string_t));
+#ifndef GTEST
+            PW_OOM(sizeof(string_t));
+#endif
             return NULL;
         } else {
             string->vec = vec_with_capacity(sizeof(char), capacity);

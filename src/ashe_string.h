@@ -1,10 +1,10 @@
 #ifndef __ASH_STRING_H__
 #define __ASH_STRING_H__
 
-#include "ashe_utils.h"
 #include <stdbool.h>
 #include <stddef.h>
 
+typedef char byte;
 typedef struct string_t string_t;
 
 string_t *string_new(void);

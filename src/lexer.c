@@ -1,7 +1,10 @@
 #include "lexer.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+
+#define iter_peek_next(iter) ((iter)->next + 1)
 
 #define is_reserved_symbol(ch)                                                           \
     ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
@@ -85,44 +88,42 @@ static void lexer_skip_ws(lexer_t *lexer)
         chariter_next(iter);
 }
 
-// static void print_token(token_t *token)
-//{
-//     switch(token->type) {
-//         case REDIROP_TOKEN:
-//             fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
-//             break;
-//         case WORD_TOKEN:
-//             fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
-//             break;
-//         case KVPAIR_TOKEN:
-//             fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
-//             break;
-//         case PIPE_TOKEN:
-//             fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
-//             break;
-//         case AND_TOKEN:
-//             fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
-//             break;
-//         case OR_TOKEN:
-//             fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
-//             break;
-//         case BG_TOKEN:
-//             fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
-//             break;
-//         case FG_TOKEN:
-//             fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
-//             break;
-//         case NAT_TOKEN:
-//             fprintf(stderr, "NAT : 'NULL'\n");
-//             break;
-//         case EOL_TOKEN:
-//             fprintf(stderr, "EOL : 'NULL'\n");
-//             break;
-//         case OOM_TOKEN:
-//             fprintf(stderr, "OOM : 'NULL'\n");
-//             break;
-//     }
-// }
+/// Debug
+__attribute__((unused)) static void print_token(token_t *token)
+{
+    switch(token->type) {
+        case REDIROP_TOKEN:
+            fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
+            break;
+        case WORD_TOKEN:
+            fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
+            break;
+        case KVPAIR_TOKEN:
+            fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
+            break;
+        case PIPE_TOKEN:
+            fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
+            break;
+        case AND_TOKEN:
+            fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
+            break;
+        case OR_TOKEN:
+            fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
+            break;
+        case BG_TOKEN:
+            fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
+            break;
+        case FG_TOKEN:
+            fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
+            break;
+        case EOL_TOKEN:
+            fprintf(stderr, "EOL : 'NULL'\n");
+            break;
+        case OOM_TOKEN:
+            fprintf(stderr, "OOM : 'NULL'\n");
+            break;
+    }
+}
 
 token_t lexer_next(lexer_t *lexer)
 {
@@ -133,9 +134,9 @@ token_t lexer_next(lexer_t *lexer)
 
     switch((c = chariter_peek(iter))) {
         case '2':
-            if(*(iter->next + 1) == '>') {
+            if(*(iter_peek_next(iter)) == '>') {
                 chariter_next(iter);
-                if(*(iter->next + 1) == '>') {
+                if(*(iter_peek_next(iter)) == '>') {
                     chariter_next(iter);
                     lexer->token = token_new(REDIROP_TOKEN, "2>>");
                 } else {
@@ -147,7 +148,7 @@ token_t lexer_next(lexer_t *lexer)
             }
             break;
         case '>':
-            if(*(iter->next + 1) == '>') {
+            if(*(iter_peek_next(iter)) == '>') {
                 chariter_next(iter);
                 lexer->token = token_new(REDIROP_TOKEN, ">>");
             } else {
@@ -158,7 +159,7 @@ token_t lexer_next(lexer_t *lexer)
             lexer->token = token_new(REDIROP_TOKEN, "<");
             break;
         case '&':
-            if(*(iter->next + 1) == '&') {
+            if(*(iter_peek_next(iter)) == '&') {
                 chariter_next(iter);
                 lexer->token = token_new(AND_TOKEN, "&&");
             } else {
@@ -166,7 +167,7 @@ token_t lexer_next(lexer_t *lexer)
             }
             break;
         case '|':
-            if(*(iter->next + 1) == '|') {
+            if(*(iter_peek_next(iter)) == '|') {
                 chariter_next(iter);
                 lexer->token = token_new(OR_TOKEN, "||");
             } else {

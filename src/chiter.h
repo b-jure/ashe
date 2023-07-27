@@ -2,8 +2,10 @@
 #define __ASH_CHITER_H__
 
 #include "ashe_string.h"
-#include "ashe_utils.h"
-#include <stdbool.h>
+
+#ifndef EOL
+#define EOL '\0'
+#endif
 
 typedef struct {
   byte *next;

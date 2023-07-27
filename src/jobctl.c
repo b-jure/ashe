@@ -1,4 +1,5 @@
 #include "async.h"
+#include "errors.h"
 #include "input.h"
 #include "jobctl.h"
 
@@ -8,15 +9,18 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 
-#define obrack cyan("[")
-#define cbrack cyan("]")
-
-#define job_completed_format green("completed") obrack red("-") cbrack
-#define job_stopped_format red("stopped") obrack blue("/") cbrack
-#define job_started_format yellow("started") obrack green("+") cbrack
-
 #define POLITE(status)                                                                   \
     (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
+
+#define job_completed_format green("completed") obrack red("-") cbrack
+#define job_stopped_format red("stopped") obrack magenta("!") cbrack
+#define job_started_format byellow("started") obrack green("+") cbrack
+#define print_sigterm(status, polite)                                                    \
+    process_format(                                                                      \
+        proc,                                                                            \
+        "was" red("TERMINATED") "by signal" blue("%d") "%s",                             \
+        status,                                                                          \
+        ((polite) ? " (" italic("polite") ")" : ""))
 
 joblist_t joblist = {0};
 static size_t joblist_id();
@@ -98,7 +102,10 @@ void job_format(job_t *job, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(stderr, "\n" obrack yellow("%ld") cbrack obrack blue("\""), job->id);
+        fprintf(
+            stderr,
+            "\r\n" obrack bold(byellow("J_%ld")) cbrack obrack blue("\""),
+            job->id);
         for(size_t i = 0; i < len; i++)
             fprintf(
                 stderr,
@@ -107,7 +114,7 @@ void job_format(job_t *job, byte *fmt, ...)
                 (i + 1 == len) ? "" : "| ");
         fprintf(stderr, blue("\b\"") cbrack cyan(" -> "));
         vfprintf(stderr, fmt, argp);
-        fprintf(stderr, "\n");
+        fprintf(stderr, "\r\n");
     });
 
     va_end(argp);
@@ -116,7 +123,7 @@ void job_format(job_t *job, byte *fmt, ...)
 bool job_add_process(job_t *job, process_t *process)
 {
     if(__glibc_unlikely(!vec_push(job->processes, process))) {
-        ATOMIC_PRINT({ pwarn("failed adding process [ID:%d] to job", process->pid); });
+        ATOMIC_PRINT(PW_PROCTOJOB(process->pid));
         return false;
     }
     return true;
@@ -171,12 +178,12 @@ void process_format(process_t *p, byte *fmt, ...)
     ATOMIC_PRINT({
         fprintf(
             stderr,
-            "\n" obrack yellow("%d") cbrack obrack blue("\"") bred("%s") blue("\"")
-                cbrack cyan(" -> "),
+            "\r\n" obrack bold(blue("P_%d")) cbrack obrack blue("\"") bred("%s")
+                blue("\"") cbrack cyan(" -> "),
             p->pid,
             p->commandline);
         vfprintf(stderr, fmt, argp);
-        fprintf(stderr, "\n");
+        fprintf(stderr, "\r\n");
     });
 
     va_end(argp);
@@ -202,11 +209,8 @@ bool update_process(pid_t pid, int status)
                     } else {
                         proc->completed = true;
                         if(WIFSIGNALED(status)) {
-                            ATOMIC_PRINT(process_format(
-                                proc,
-                                "was" red("TERMINATED") "by signal" blue("%d") "%s",
-                                proc->status = WTERMSIG(status),
-                                (POLITE(status) ? " (polite)" : "")));
+                            proc->status = WTERMSIG(status);
+                            ATOMIC_PRINT(print_sigterm(proc->status, POLITE(status)));
                         } else if(WIFEXITED(status)) {
                             proc->status = WEXITSTATUS(status);
                         }
@@ -270,11 +274,7 @@ bool job_update(job_t *job, pid_t pid, int status)
                 } else {
                     proc->completed = true;
                     if(WIFSIGNALED(status)) {
-                        process_format(
-                            proc,
-                            "was " red("TERMINATED") " by signal " blue("%d") "%s",
-                            proc->status = WTERMSIG(status),
-                            (POLITE(status) ? " (polite)" : ""));
+                        proc->status = WTERMSIG(status);
                     } else {
                         assert(WIFEXITED(status));
                         proc->status = WEXITSTATUS(status);
@@ -286,7 +286,7 @@ bool job_update(job_t *job, pid_t pid, int status)
         /// Invariant broken
         pwarn(
             "FIX ME: foreground job was trying to update invalid process! PROCESS -> "
-            "PID:%d, CMDLINE:'%s'\n",
+            "PID:%d, CMDLINE:'%s'\r\n",
             proc->pid,
             proc->commandline);
         return false;
@@ -314,7 +314,7 @@ int job_move_to_fg(job_t *job, bool cont)
     int status = job_wait(job);
 
     if(__glibc_unlikely(!cont && job_stopped(job) && !joblist_push(job))) {
-        ATOMIC_PRINT(pwarn("failed adding job [PGID:%d] to joblist", job->pgid));
+        ATOMIC_PRINT(PW_ADDJ(job));
         exit(EXIT_FAILURE);
     }
 
@@ -326,7 +326,7 @@ int job_move_to_fg(job_t *job, bool cont)
            || tcsetattr(TERMINAL_FD, TCSADRAIN, &dflterm) < 0))
     {
         ATOMIC_PRINT({
-            pwarn("failed restoring shell's terminal modes");
+            PW_SHDFLMODE;
             perr();
         });
     }
@@ -336,15 +336,9 @@ int job_move_to_fg(job_t *job, bool cont)
 
 void job_move_to_bg(job_t *job, bool cont)
 {
-    ATOMIC_PRINT({
-        if(cont) {
-            if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0))
-                perr();
-            else
-                job_format(job, job_started_format);
-        } else
-            job_format(job, job_started_format);
-    });
+    if(cont)
+        if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0))
+            ATOMIC_PRINT(perr(););
 }
 
 size_t job_len(job_t *job)
@@ -373,17 +367,23 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
         job = joblist_at(i);
 
         if(job_completed(job)) {
+            /// pprompt format depends on joblist len this is why
+            /// we explicitly remove job in both branches ordering
+            /// is important to print correct job len in the prompt
             if(!job->foreground) {
                 ATOMIC_PRINT({
                     job_format(job, job_completed_format);
+                    joblist_remove(i);
                     pprompt();
                     if(reading) {
-                        inbuff_print(&terminal_input);
+                        inbuff_print(&terminal_input, true);
                         fflush(stderr);
                     }
                 });
+            } else {
+                joblist_remove(i);
             }
-            joblist_remove(i);
+
             len--;
             continue;
         } else if(job_stopped(job) && !job->notified) {
@@ -391,7 +391,7 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                 job_format(job, job_stopped_format);
                 pprompt();
                 if(reading) {
-                    inbuff_print(&terminal_input);
+                    inbuff_print(&terminal_input, true);
                     fflush(stderr);
                 }
             });
