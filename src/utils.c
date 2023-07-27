@@ -5,6 +5,7 @@
 void pprompt(void)
 {
     fprintf(stderr, "%s", PROMPT);
+    fflush(stderr);
 }
 
 void pwarn(const byte *fmt, ...)

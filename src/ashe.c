@@ -9,6 +9,15 @@
 
 #define INT_DIGITS 10
 
+/// Must be global so that signal
+/// handlers have access to it
+inbuff_t terminal_input = {0};
+
+static void cleanup(void)
+{
+    joblist_drop();
+}
+
 static void init_shell(void)
 {
     pid_t shell_pgid = getpgrp();
@@ -29,7 +38,7 @@ static void init_shell(void)
             exit(EXIT_FAILURE);
         }
 
-        if(__glibc_unlikely(atexit(joblist_drop) != SUCCESS)) {
+        if(__glibc_unlikely(atexit(cleanup))) {
             ATOMIC_PRINT({
                 pwarn("failed setting up shell cleanup routine");
                 perr();
@@ -48,30 +57,28 @@ static void init_shell(void)
             exit(EXIT_FAILURE);
         }
 
-        if(__glibc_unlikely(
-               tcsetpgrp(terminal_fd, shell_pgid) < 0
-               || tcgetattr(terminal_fd, &shell_tmodes) < 0))
-        {
-            ATOMIC_PRINT({ perr(); });
+        if(__glibc_unlikely(tcsetpgrp(terminal_fd, shell_pgid) < 0)) {
+            ATOMIC_PRINT(perr());
             exit(EXIT_FAILURE);
         }
 
+        init_dflterm();
+        init_rawterm();
         setup_default_signal_handling();
     }
 }
 
 int main()
 {
-    commandline_t cmdline;
-    string_t *line;
     int status = SUCCESS;
     bool set_env = false;
 
-    if(__glibc_unlikely(is_null(line = string_with_cap(INSIZE)))) {
-        ATOMIC_PRINT({ pwarn("couldn't allocate input buffer"); });
+    string_t *line = string_new();
+    if(__glibc_unlikely(is_null(line)))
         exit(EXIT_FAILURE);
-    } else if(__glibc_unlikely(is_null((cmdline = commandline_new()).conditionals))) {
-        ATOMIC_PRINT({ pwarn("couldn't allocate internal input storage"); });
+
+    commandline_t cmdline = commandline_new();
+    if(__glibc_unlikely(is_null(cmdline.conditionals))) {
         string_drop(line);
         exit(EXIT_FAILURE);
     }
@@ -79,17 +86,23 @@ int main()
     init_shell();
 
     while(true) {
-        ATOMIC_PRINT({ pprompt(); });
+        ATOMIC_PRINT(pprompt());
         enable_async_joblist_update();
+
         try_wait_missed_sigchld_signals();
 
-        /// Clear the buffer and start reading
-        string_clear(line);
-        if(__glibc_unlikely(read_input(line) == FAILURE)) {
+        inbuff_clear(&terminal_input);
+        if(__glibc_unlikely(read_input(&terminal_input) == FAILURE)) {
             string_drop(line);
             commandline_drop(&cmdline);
             exit(EXIT_FAILURE);
         }
+
+        try_wait_missed_sigchld_signals();
+
+        string_clear(line);
+        string_append(line, terminal_input.buffer, terminal_input.len);
+        inbuff_clear(&terminal_input);
 
         disable_async_joblist_update();
 
@@ -107,7 +120,6 @@ int main()
             setenv("?", retstat, 1);
         }
 
-        ATOMIC_PRINT({ fprintf(stderr, "return status: %d\n", status); });
         commandline_clear(&cmdline);
     }
 }

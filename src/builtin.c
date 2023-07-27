@@ -8,7 +8,7 @@ int fg_id(int id)
 
     for(size_t i = 0; i < len; i++) {
         job = joblist_at(i);
-        if(job->id == id) {
+        if(job->id == (size_t) id) {
             job_continue(job, true);
             return SUCCESS;
         }
@@ -37,7 +37,6 @@ int fg_pgid(pid_t pgid)
 
 int fg_last(void)
 {
-    size_t len = joblist_len();
     job_t *job;
 
     job = joblist_last();
@@ -52,9 +51,9 @@ int fg_last(void)
 
 int fg(pid_t pgid, int id)
 {
-    if(pgid != -1) {
+    if(pgid >= 0) {
         return fg_pgid(pgid);
-    } else if(id != -1) {
+    } else if(id >= 0) {
         return fg_id(id);
     } else {
         return fg_last();

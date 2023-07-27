@@ -85,44 +85,44 @@ static void lexer_skip_ws(lexer_t *lexer)
         chariter_next(iter);
 }
 
-static void print_token(token_t *token)
-{
-    switch(token->type) {
-        case REDIROP_TOKEN:
-            fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
-            break;
-        case WORD_TOKEN:
-            fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
-            break;
-        case KVPAIR_TOKEN:
-            fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
-            break;
-        case PIPE_TOKEN:
-            fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
-            break;
-        case AND_TOKEN:
-            fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
-            break;
-        case OR_TOKEN:
-            fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
-            break;
-        case BG_TOKEN:
-            fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
-            break;
-        case FG_TOKEN:
-            fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
-            break;
-        case NAT_TOKEN:
-            fprintf(stderr, "NAT : 'NULL'\n");
-            break;
-        case EOL_TOKEN:
-            fprintf(stderr, "EOL : 'NULL'\n");
-            break;
-        case OOM_TOKEN:
-            fprintf(stderr, "OOM : 'NULL'\n");
-            break;
-    }
-}
+// static void print_token(token_t *token)
+//{
+//     switch(token->type) {
+//         case REDIROP_TOKEN:
+//             fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
+//             break;
+//         case WORD_TOKEN:
+//             fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
+//             break;
+//         case KVPAIR_TOKEN:
+//             fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
+//             break;
+//         case PIPE_TOKEN:
+//             fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
+//             break;
+//         case AND_TOKEN:
+//             fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
+//             break;
+//         case OR_TOKEN:
+//             fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
+//             break;
+//         case BG_TOKEN:
+//             fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
+//             break;
+//         case FG_TOKEN:
+//             fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
+//             break;
+//         case NAT_TOKEN:
+//             fprintf(stderr, "NAT : 'NULL'\n");
+//             break;
+//         case EOL_TOKEN:
+//             fprintf(stderr, "EOL : 'NULL'\n");
+//             break;
+//         case OOM_TOKEN:
+//             fprintf(stderr, "OOM : 'NULL'\n");
+//             break;
+//     }
+// }
 
 token_t lexer_next(lexer_t *lexer)
 {
@@ -143,7 +143,6 @@ token_t lexer_next(lexer_t *lexer)
                 }
             } else {
                 lexer_get_string(lexer);
-                print_token(&lexer->token);
                 return lexer->token;
             }
             break;
@@ -182,13 +181,11 @@ token_t lexer_next(lexer_t *lexer)
             break;
         default:
             lexer_get_string(lexer);
-            print_token(&lexer->token);
             return lexer->token;
             break;
     }
 
     chariter_next(iter);
-    print_token(&lexer->token);
     return lexer->token;
 }
 

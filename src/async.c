@@ -1,4 +1,5 @@
 #include "async.h"
+#include "input.h"
 #include "jobctl.h"
 
 #include <signal.h>
@@ -12,12 +13,8 @@ void sigint_handler(__attribute__((unused)) int signum)
 {
     block_sigchld();
     sigint_recv = true;
-    // TODO: recover terminal input
-    // if(reading) {
-    //      todo()
-    // }
-
-    ATOMIC_PRINT({ pprompt(); });
+    ATOMIC_PRINT(pprompt());
+    inbuff_clear(&terminal_input);
     unblock_sigchld();
 }
 
@@ -25,11 +22,6 @@ void sigchld_handler(int signum)
 {
     block_sigint();
     sigchld_recv = true;
-    // TODO: recover terminal input
-    // if(reading) {
-    //      todo()
-    // }
-
     joblist_update_and_notify(signum);
     unblock_sigint();
 }

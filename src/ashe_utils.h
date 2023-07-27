@@ -36,7 +36,11 @@ extern byte **environ;
       perr();                                                                  \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
+    flockfile(stderr);                                                         \
+    flockfile(stdout);                                                         \
     print_block;                                                               \
+    funlockfile(stderr);                                                       \
+    funlockfile(stdout);                                                       \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_UN) < 0 ||                   \
                          flock(STDOUT_FILENO, LOCK_UN) < 0)) {                 \
       perr();                                                                  \

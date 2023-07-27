@@ -20,6 +20,8 @@ set(SRCFILES
     ${SRCDIR}/utils.c
     ${SRCDIR}/jobctl.c
     ${SRCDIR}/async.c
+    ${SRCDIR}/input.c
+    ${SRCDIR}/builtin.c
     ${SRCDIR}/vec.c)
 
 set(WARNING_FLAGS -Wall -Werror -Wextra -Wpedantic)

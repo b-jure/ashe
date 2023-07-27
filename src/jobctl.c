@@ -1,4 +1,5 @@
 #include "async.h"
+#include "input.h"
 #include "jobctl.h"
 
 #include <assert.h>
@@ -7,21 +8,15 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 
-#define yellow(text) "\x1B[33m" text "\x1B[0m"
-#define byellow(text) "\x1B[93m" text "\x1B[0m"
-#define green(text) "\x1B[32m" text "\x1B[0m"
-#define red(text) "\x1B[31m" text "\x1B[0m"
-#define bred(text) "\x1B[91m" text "\x1B[0m"
-#define cyan(text) "\x1B[36m" text "\x1B[0m"
-#define blue(text) "\x1B[34m" text "\x1B[0m"
-#define bwhite(text) "\x1B[97m" text "\x1B[0m"
-
-#define obrack bwhite("[")
-#define cbrack bwhite("]")
+#define obrack cyan("[")
+#define cbrack cyan("]")
 
 #define job_completed_format green("completed") obrack red("-") cbrack
 #define job_stopped_format red("stopped") obrack blue("/") cbrack
 #define job_started_format yellow("started") obrack green("+") cbrack
+
+#define POLITE(status)                                                                   \
+    (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
 
 joblist_t joblist = {0};
 static size_t joblist_id();
@@ -103,8 +98,7 @@ void job_format(job_t *job, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(stderr, "\n");
-        fprintf(stderr, obrack cyan("%ld") cbrack obrack blue("\""), job->id);
+        fprintf(stderr, "\n" obrack yellow("%ld") cbrack obrack blue("\""), job->id);
         for(size_t i = 0; i < len; i++)
             fprintf(
                 stderr,
@@ -175,7 +169,12 @@ void process_format(process_t *p, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(stderr, "Process [PID:%d]~[%s]: ", p->pid, p->commandline);
+        fprintf(
+            stderr,
+            "\n" obrack yellow("%d") cbrack obrack blue("\"") bred("%s") blue("\"")
+                cbrack cyan(" -> "),
+            p->pid,
+            p->commandline);
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\n");
     });
@@ -203,12 +202,11 @@ bool update_process(pid_t pid, int status)
                     } else {
                         proc->completed = true;
                         if(WIFSIGNALED(status)) {
-                            ATOMIC_PRINT({
-                                process_format(
-                                    proc,
-                                    "was TERMINATED by signal %d",
-                                    proc->status = WTERMSIG(status));
-                            });
+                            ATOMIC_PRINT(process_format(
+                                proc,
+                                "was" red("TERMINATED") "by signal" blue("%d") "%s",
+                                proc->status = WTERMSIG(status),
+                                (POLITE(status) ? " (polite)" : "")));
                         } else if(WIFEXITED(status)) {
                             proc->status = WEXITSTATUS(status);
                         }
@@ -274,8 +272,9 @@ bool job_update(job_t *job, pid_t pid, int status)
                     if(WIFSIGNALED(status)) {
                         process_format(
                             proc,
-                            "was TERMINATED by signal %d",
-                            proc->status = WTERMSIG(status));
+                            "was " red("TERMINATED") " by signal " blue("%d") "%s",
+                            proc->status = WTERMSIG(status),
+                            (POLITE(status) ? " (polite)" : ""));
                     } else {
                         assert(WIFEXITED(status));
                         proc->status = WEXITSTATUS(status);
@@ -324,7 +323,7 @@ int job_move_to_fg(job_t *job, bool cont)
 
     if(__glibc_unlikely(
            tcgetattr(TERMINAL_FD, &job->tmodes)
-           || tcsetattr(TERMINAL_FD, TCSADRAIN, &shell_tmodes) < 0))
+           || tcsetattr(TERMINAL_FD, TCSADRAIN, &dflterm) < 0))
     {
         ATOMIC_PRINT({
             pwarn("failed restoring shell's terminal modes");
@@ -378,6 +377,10 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                 ATOMIC_PRINT({
                     job_format(job, job_completed_format);
                     pprompt();
+                    if(reading) {
+                        inbuff_print(&terminal_input);
+                        fflush(stderr);
+                    }
                 });
             }
             joblist_remove(i);
@@ -387,6 +390,10 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
             ATOMIC_PRINT({
                 job_format(job, job_stopped_format);
                 pprompt();
+                if(reading) {
+                    inbuff_print(&terminal_input);
+                    fflush(stderr);
+                }
             });
             job->notified = true;
         }

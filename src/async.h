@@ -7,10 +7,12 @@
 #include <atomic>
 extern volatile std::atomic_bool sigchld_recv;
 extern volatile std::atomic_bool sigint_recv;
+extern volatile std::atomic_bool reading;
 #else
 #include <stdatomic.h>
 extern volatile atomic_bool sigchld_recv;
 extern volatile atomic_bool sigint_recv;
+extern volatile atomic_bool reading;
 #endif
 
 void setup_default_signal_handling(void);

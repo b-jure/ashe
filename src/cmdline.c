@@ -102,7 +102,6 @@ void commandline_execute(commandline_t *cmdline, int *status)
     int ret;
 
     for(size_t i = 0; i < cndn; i++) {
-        printf("running conditional [%ld]\n", i);
         ret = conditional_execute(vec_index(cnds, i));
         *status = (ret == FAILURE) ? 1 : ret;
     }
@@ -117,7 +116,6 @@ static int conditional_execute(conditional_t *cond)
 
     for(size_t i = 0; i < pipn; i++) {
         pipeline = vec_index(pips, i);
-        printf("Running pipeline [%ld]\n", i);
         ctn = pipeline_execute(pipeline, cond->is_background);
 
         if(ctn == FAILURE && IS_AND(pipeline->connection)) {
@@ -387,13 +385,21 @@ bool is_builtin(const byte *command)
 static int run_cmd_nofork(byte **argv, byte **env)
 {
     int status;
+    int out, err, in;
+
+    in = dup(STDIN_FILENO);
+    out = dup(STDOUT_FILENO);
+    err = dup(STDERR_FILENO);
 
     if(__glibc_unlikely(add_envs_to_environ(env) < 0))
         exit(EXIT_FAILURE);
 
     resolve_redirections(argv);
-    printf("running builtin\n");
     status = run_builtin(argv[0], argv, true);
+
+    dup2(in, STDIN_FILENO);
+    dup2(out, STDOUT_FILENO);
+    dup2(err, STDERR_FILENO);
 
     if(strcmp(argv[0], "exit") != 0 && exit_warning)
         exit_warning = false;
@@ -435,14 +441,6 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             }
         }
         /// Move this process into the new process group
-        ATOMIC_PRINT({
-            fprintf(
-                stderr,
-                "PARENT: setting (%s)[PID:%d] into [PGID:%d]\n",
-                argv[0],
-                pid,
-                job->pgid);
-        });
         if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
             ATOMIC_PRINT({
                 pwarn(
@@ -483,15 +481,6 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
 
     if(job->pgid == 0)
         job->pgid = childPID;
-
-    ATOMIC_PRINT({
-        fprintf(
-            stderr,
-            "PARENT: setting (%s)[PID:%d] into [PGID:%d]\n",
-            argv[0],
-            childPID,
-            job->pgid);
-    });
 
     if(__glibc_unlikely(setpgid(childPID, job->pgid) < 0)) {
         ATOMIC_PRINT({
@@ -746,7 +735,6 @@ static int run_builtin(const byte *command, byte *const *argv, bool shell)
             status = envcmd(argv, RM_ENV);
     } else if(strcmp(command, "pwd") == 0) {
         byte buff[PATH_MAX];
-        printf("running pwd builtin\n");
         if(__glibc_unlikely(is_null(getcwd(buff, PATH_MAX)))) {
             ATOMIC_PRINT({ perr(); });
             status = FAILURE;
