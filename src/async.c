@@ -8,6 +8,17 @@
 
 volatile atomic_bool sigint_recv = false;
 volatile atomic_bool sigchld_recv = false;
+volatile atomic_bool sigwin_recv = false;
+
+/// TODO: make terminal_t struct which will also hold terminal window size
+__attribute__((unused)) void sigwin_handler(__attribute__((unused)) int signum)
+{
+    block_sigchld();
+    block_sigint();
+    /// TODO: Read up
+    unblock_sigchld();
+    unblock_sigint();
+}
 
 void sigint_handler(__attribute__((unused)) int signum)
 {

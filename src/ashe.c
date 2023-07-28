@@ -84,24 +84,19 @@ int main()
 
     while(true) {
         ATOMIC_PRINT(pprompt());
+
         enable_async_joblist_update();
 
         try_wait_missed_sigchld_signals();
 
         inbuff_clear(&terminal_input);
-        fflush(stderr);
-        if(__glibc_unlikely(read_input(&terminal_input) == FAILURE)) {
-            string_drop(line);
-            commandline_drop(&cmdline);
-            die();
-        }
+        read_input(&terminal_input);
 
         try_wait_missed_sigchld_signals();
 
         string_clear(line);
         string_append(line, terminal_input.buffer, terminal_input.len);
         inbuff_clear(&terminal_input);
-        fflush(stderr);
 
         disable_async_joblist_update();
 
