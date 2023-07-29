@@ -22,25 +22,25 @@
 
 ///*************  SHELL-COMMAND  ******************///
 static command_t command_new(void);
-static int parse_command(lexer_t *lexer, command_t *out, bool *set_env);
+static int parse_command(lexer_t *lexer, command_t *out);
 static void command_drop(command_t *cmd);
 ///----------------------------------------------///
 
 ///***************  PIPELINE  *******************///
 static pipeline_t pipeline_new(void);
-static int parse_pipeline(lexer_t *lexer, pipeline_t *out, bool *set_env);
+static int parse_pipeline(lexer_t *lexer, pipeline_t *out);
 static void pipeline_drop(pipeline_t *pipeline);
 ///----------------------------------------------///
 
 ///*************  CONDITIONAL  ******************///
 static conditional_t conditional_new(void);
-static int parse_conditional(lexer_t *lexer, conditional_t *out, bool *set_env);
+static int parse_conditional(lexer_t *lexer, conditional_t *out);
 void conditional_drop(conditional_t *cond);
 ///----------------------------------------------///
 
-static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_env);
+static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline);
 
-int parse_commandline(const byte *line, commandline_t *out, bool *set_env)
+int parse_commandline(const byte *line, commandline_t *out)
 {
     lexer_t lexer = lexer_new(line, strlen(line));
     token_t token = lexer_next(&lexer);
@@ -49,10 +49,10 @@ int parse_commandline(const byte *line, commandline_t *out, bool *set_env)
     if(token.type == EOL_TOKEN)
         return SUCCESS;
 
-    return _parse_commandline(&lexer, out, set_env);
+    return _parse_commandline(&lexer, out);
 }
 
-static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_env)
+static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
 {
     conditional_t cond;
     conditional_t *lastcond;
@@ -72,11 +72,10 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_
         if(is_null((cond = conditional_new()).pipelines))
             return FAILURE;
 
-        status = parse_conditional(lexer, &cond, set_env);
+        status = parse_conditional(lexer, &cond);
         token = lexer->token;
 
-        if(status == FAILURE || __glibc_unlikely(!vec_push(cmdline->conditionals, &cond)))
-        {
+        if(status == FAILURE || __glibc_unlikely(!vec_push(cmdline->conditionals, &cond))) {
             conditional_drop(&cond);
             return FAILURE;
         }
@@ -98,83 +97,7 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline, bool *set_
     return SUCCESS;
 }
 
-static int parse_command(lexer_t *lexer, command_t *command, bool *set_env)
-{
-    token_t token = lexer->token;
-    bool env = false;
-
-    if(token.type == KVPAIR_TOKEN) {
-        env = true;
-    }
-
-    while(1) {
-        if(env && token.type != KVPAIR_TOKEN) {
-            env = false;
-        }
-        if(__glibc_unlikely(
-               !vec_push((env) ? command->env : command->argv, token.contents)))
-        {
-            return FAILURE;
-        }
-        free(token.contents);
-        token = lexer_next(lexer);
-        if(!(token.type & (WORD_TOKEN | KVPAIR_TOKEN | REDIROP_TOKEN))) {
-            if(env) {
-                *set_env = true;
-                byte *var;
-                vec_t *vars = command->env;
-                size_t len = vec_len(command->env);
-                while(len--) {
-                    if(__glibc_unlikely(
-                           putenv((var = string_slice(vec_index(vars, len), 0)))
-                           != SUCCESS))
-                    {
-                        ATOMIC_PRINT({
-                            PW_VAREXPO(var);
-                            perr();
-                        });
-                        return FAILURE;
-                    }
-                }
-            }
-            break;
-        }
-    }
-
-    return SUCCESS;
-}
-
-static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline, bool *set_env)
-{
-    token_t token = lexer->token;
-    command_t command;
-    int status;
-
-    while(1) {
-        if(__glibc_unlikely(cmd_is_null((command = command_new()))))
-            return FAILURE;
-
-        status = parse_command(lexer, &command, set_env);
-        token = lexer->token;
-
-        if(status == FAILURE || __glibc_unlikely(!vec_push(pipeline->commands, &command)))
-        {
-            command_drop(&command);
-            return FAILURE;
-        }
-
-        if(token.type == PIPE_TOKEN) {
-            free(token.contents);
-            token = lexer_next(lexer);
-        } else {
-            break;
-        }
-    }
-
-    return SUCCESS;
-}
-
-static int parse_conditional(lexer_t *lexer, conditional_t *cond, bool *set_env)
+static int parse_conditional(lexer_t *lexer, conditional_t *cond)
 {
     pipeline_t pipeline;
     pipeline_t *lastpipe;
@@ -186,7 +109,7 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond, bool *set_env)
         if(__glibc_unlikely(is_null(pipeline.commands)))
             return FAILURE;
 
-        status = parse_pipeline(lexer, &pipeline, set_env);
+        status = parse_pipeline(lexer, &pipeline);
         token = lexer->token;
 
         if(status == FAILURE || __glibc_unlikely(!vec_push(cond->pipelines, &pipeline))) {
@@ -205,6 +128,60 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond, bool *set_env)
         } else {
             break;
         }
+    }
+
+    return SUCCESS;
+}
+
+static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline)
+{
+    token_t token = lexer->token;
+    command_t command;
+    int status;
+
+    while(1) {
+        if(__glibc_unlikely(cmd_is_null((command = command_new()))))
+            return FAILURE;
+
+        status = parse_command(lexer, &command);
+        token = lexer->token;
+
+        if(status == FAILURE || __glibc_unlikely(!vec_push(pipeline->commands, &command))) {
+            command_drop(&command);
+            return FAILURE;
+        }
+
+        if(token.type == PIPE_TOKEN) {
+            free(token.contents);
+            token = lexer_next(lexer);
+        } else {
+            break;
+        }
+    }
+
+    return SUCCESS;
+}
+
+static int parse_command(lexer_t *lexer, command_t *command)
+{
+    token_t token = lexer->token;
+    bool env = false;
+
+    if(token.type == KVPAIR_TOKEN)
+        env = true;
+
+    while(1) {
+        if(env && token.type != KVPAIR_TOKEN)
+            env = false;
+
+        if(__glibc_unlikely(!vec_push((env) ? command->env : command->argv, token.contents)))
+            return FAILURE;
+
+        free(token.contents);
+        token = lexer_next(lexer);
+
+        if(!(token.type & (WORD_TOKEN | KVPAIR_TOKEN | REDIROP_TOKEN)))
+            break;
     }
 
     return SUCCESS;

@@ -9,17 +9,16 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 
-#define POLITE(status)                                                                   \
-    (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
+#define POLITE(status) (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
 
 #define job_completed_format green("completed") obrack red("-") cbrack
-#define job_stopped_format red("stopped") obrack magenta("!") cbrack
-#define job_started_format byellow("started") obrack green("+") cbrack
-#define print_sigterm(status, polite)                                                    \
-    process_format(                                                                      \
-        proc,                                                                            \
-        "was" red("TERMINATED") "by signal" blue("%d") "%s",                             \
-        status,                                                                          \
+#define job_stopped_format   red("stopped") obrack magenta("!") cbrack
+#define job_started_format   byellow("started") obrack green("+") cbrack
+#define print_sigterm(status, polite)                                                              \
+    process_format(                                                                                \
+        proc,                                                                                      \
+        "was" red("TERMINATED") "by signal" blue("%d") "%s",                                       \
+        status,                                                                                    \
         ((polite) ? " (" italic("polite") ")" : ""))
 
 joblist_t joblist = {0};
@@ -102,16 +101,9 @@ void job_format(job_t *job, byte *fmt, ...)
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
-        fprintf(
-            stderr,
-            "\r\n" obrack bold(byellow("J_%ld")) cbrack obrack blue("\""),
-            job->id);
+        fprintf(stderr, "\r\n" obrack bold(byellow("J_%ld")) cbrack obrack blue("\""), job->id);
         for(size_t i = 0; i < len; i++)
-            fprintf(
-                stderr,
-                bred("%s %s"),
-                job_at(job, i)->commandline,
-                (i + 1 == len) ? "" : "| ");
+            fprintf(stderr, bred("%s %s"), job_at(job, i)->commandline, (i + 1 == len) ? "" : "| ");
         fprintf(stderr, blue("\b\"") cbrack cyan(" -> "));
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\r\n");
@@ -178,8 +170,8 @@ void process_format(process_t *p, byte *fmt, ...)
     ATOMIC_PRINT({
         fprintf(
             stderr,
-            "\r\n" obrack bold(blue("P_%d")) cbrack obrack blue("\"") bred("%s")
-                blue("\"") cbrack cyan(" -> "),
+            "\r\n" obrack bold(blue("P_%d")) cbrack obrack blue("\"") bred("%s") blue("\"")
+                cbrack cyan(" -> "),
             p->pid,
             p->commandline);
         vfprintf(stderr, fmt, argp);
@@ -256,7 +248,8 @@ int job_wait(job_t *job)
 
     if(job_stopped(job))
         return 0;
-    return job_lastp(job)->status;
+    else
+        return job_lastp(job)->status;
 }
 
 bool job_update(job_t *job, pid_t pid, int status)
@@ -322,8 +315,7 @@ int job_move_to_fg(job_t *job, bool cont)
     tcsetpgrp(TERMINAL_FD, getpgrp()); /* Can't fail */
 
     if(__glibc_unlikely(
-           tcgetattr(TERMINAL_FD, &job->tmodes)
-           || tcsetattr(TERMINAL_FD, TCSADRAIN, &dflterm) < 0))
+           tcgetattr(TERMINAL_FD, &job->tmodes) || tcsetattr(TERMINAL_FD, TCSADRAIN, &dflterm) < 0))
     {
         ATOMIC_PRINT({
             PW_SHDFLMODE;
@@ -428,8 +420,8 @@ void job_continue(job_t *job, bool foreground)
         job_move_to_fg(job, true);
         if(__glibc_unlikely(job_completed(job) && !joblist_remove_job(job))) {
             /// Invariant broken
-            ATOMIC_PRINT(pwarn(
-                "FIX ME: tried removing background job that was not in the joblist!"));
+            ATOMIC_PRINT(
+                pwarn("FIX ME: tried removing background job that was not in the joblist!"));
             exit(EXIT_FAILURE);
         }
     } else

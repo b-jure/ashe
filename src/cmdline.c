@@ -1,5 +1,6 @@
 #include "ashe_string.h"
 #include "async.h"
+#include "builtin.h"
 #include "cmdline.h"
 #include "errors.h"
 #include "input.h"
@@ -114,20 +115,20 @@ static int conditional_execute(conditional_t *cond)
     vec_t *pips = cond->pipelines;
     size_t pipn = vec_len(pips);
     pipeline_t *pipeline = NULL;
-    int ctn = SUCCESS;
+    int status = SUCCESS;
 
     for(size_t i = 0; i < pipn; i++) {
         pipeline = vec_index(pips, i);
-        ctn = pipeline_execute(pipeline, cond->is_background);
+        status = pipeline_execute(pipeline, cond->is_background);
 
-        if(ctn == FAILURE && IS_AND(pipeline->connection)) {
+        if(status == FAILURE && IS_AND(pipeline->connection)) {
             return FAILURE;
-        } else if(ctn == SUCCESS && IS_OR(pipeline->connection)) {
+        } else if(status == SUCCESS && IS_OR(pipeline->connection)) {
             return SUCCESS;
         }
     }
 
-    return ctn;
+    return status;
 }
 
 static int pipeline_execute(pipeline_t *pipeline, bool bg)
@@ -154,21 +155,26 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
 
         size_t argc = vec_len(cmd->argv);
         byte *argv[argc + 1];
-        command_get_argv(cmd, argv, argc);
+        argv[0] = NULL;
+        if(argc > 0)
+            command_get_argv(cmd, argv, argc);
 
         size_t envc = vec_len(cmd->env);
         byte *env[envc + 1];
-        command_get_env(cmd, env, envc);
+        env[0] = NULL;
+        if(envc > 0)
+            command_get_env(cmd, env, envc);
 
         if(cmdn > 1) {
             exit_warning = false; /* User is not exiting the shell */
             configure_pipes(i, pipes, cmdn, &ctx);
-        } else if(job.foreground && is_builtin(argv[0])) {
+        } else if(job.foreground && (argc == 0 || is_builtin(argv[0]))) {
             job_drop(&job);
             return run_cmd_nofork(argv, env);
         }
 
         cpid = run_cmd(argv, env, &ctx, &job);
+
         process_t temp_proc = process_new(cpid, NULL);
         fargvs(cmd->argv, &temp_proc.commandline);
 
@@ -258,18 +264,24 @@ static void command_get_argv(command_t *cmd, byte *out[], size_t len)
 {
     size_t i;
     vec_t *argv = cmd->argv;
-    for(i = 0; i < len; i++)
-        out[i] = string_slice(vec_index(argv, i), 0);
-    out[i] = NULL;
+
+    if(is_some(argv)) {
+        for(i = 0; i < len; i++)
+            out[i] = string_slice(vec_index(argv, i), 0);
+        out[i] = NULL;
+    }
 }
 
 static void command_get_env(command_t *cmd, byte *out[], size_t len)
 {
     size_t i;
     vec_t *env = cmd->env;
-    for(i = 0; i < len; i++)
-        out[i] = string_slice(vec_index(env, i), 0);
-    out[i] = NULL;
+
+    if(!is_some(env)) {
+        for(i = 0; i < len; i++)
+            out[i] = string_slice(vec_index(env, i), 0);
+        out[i] = NULL;
+    }
 }
 
 static int close_pipe(int *pp)
@@ -370,8 +382,17 @@ bool is_builtin(const byte *command)
 
 static int run_cmd_nofork(byte **argv, byte **env)
 {
-    int status;
+    int status = SUCCESS;
     int out, err, in;
+
+    if(__glibc_unlikely(add_envs_to_environ(env) < 0))
+        exit(EXIT_FAILURE);
+
+    /// Early return if only env vars are supplied in
+    /// the commandline (no pipes, conditionals, commands)
+    /// by only exporting variables
+    if(is_null(argv[0]))
+        return status;
 
     in = STDIN_FILENO;
     out = STDOUT_FILENO;
@@ -383,9 +404,6 @@ static int run_cmd_nofork(byte **argv, byte **env)
     {
         die();
     }
-
-    if(__glibc_unlikely(add_envs_to_environ(env) < 0))
-        exit(EXIT_FAILURE);
 
     resolve_redirections(argv);
     status = run_builtin(argv[0], argv, true);
@@ -418,6 +436,12 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             die();
         });
     } else if(childPID == 0) {
+        /// If no command were provided and only
+        /// env vars then exit immediately this is
+        /// exactly the same as no-op
+        if(is_null(argv[0]))
+            exit(EXIT_SUCCESS);
+
         /// Add environment variables to environ
         if(__glibc_unlikely(add_envs_to_environ(env) < 0))
             exit(EXIT_FAILURE);
@@ -575,70 +599,9 @@ static void resolve_redirections(byte *const *argvp)
 static int run_builtin(const byte *command, byte *const *argv, bool shell)
 {
     int status = FAILURE;
+
     if(strcmp(command, "exit") == 0) {
-        if(is_null(argv[1])) {
-            if(shell) {
-                if(joblist_len() != 0 && !exit_warning) {
-                    exit_warning = true;
-                    ATOMIC_PRINT(pwarn(
-                        "There are still background jobs running!\n\nRun "
-                        "\x1B[32mexit\x1b[0m again to exit, this will result in "
-                        "termination of child processes that are still running or are stopped."));
-                } else
-                    exit(SUCCESS);
-            }
-            status = SUCCESS;
-        } else if(is_some(argv[1]) && is_null(argv[2])) {
-            int exit_status;
-            if(strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
-                ATOMIC_PRINT({
-                    fprintf(stderr, "exit - exits the shell");
-                    pusage("error [CODE]");
-                    fprintf(
-                        stderr,
-                        "\n\x1B[32mexit\x1B[0m is a builtin command that exits the shell "
-                        "with the CODE if "
-                        "supplied or 0 in case CODE is not supplied. In case there are "
-                        "background "
-                        "jobs running when exit is called, shell will not exit "
-                        "instantly, "
-                        "instead it will print additional information and then the user "
-                        "can "
-                        "exit by calling exit again.");
-                });
-            } else {
-                exit_status = strtol(argv[1], NULL, 10);
-                if(errno == EINVAL || errno == ERANGE) {
-                    ATOMIC_PRINT({
-                        pwarn("invalid exit status integer");
-                        pusage("error [CODE]");
-                        fprintf(
-                            stderr,
-                            "\nThe -h or --help options display help information this "
-                            "command\n");
-                    });
-                } else {
-                    status = exit_status;
-                    if(shell) {
-                        if(joblist_len() != 0 && !exit_warning) {
-                            exit_warning = true;
-                            ATOMIC_PRINT(
-                                pwarn("There are still background jobs running!\n\nRun "
-                                      "\x1B[32mexit\x1b[0m again to exit, this will result in "
-                                      "termination of child processes that are still running "
-                                      "or are stopped."));
-                        } else
-                            exit(exit_status);
-                    }
-                }
-            }
-        } else {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("exit [CODE]");
-            });
-            status = FAILURE;
-        }
+        return exit_builtin(argv, shell);
     } else if(strcmp(command, "cd") == 0) {
         if(is_null(argv[1])) {
             if(__glibc_unlikely(chdir(getenv(HOME)) == -1)) {

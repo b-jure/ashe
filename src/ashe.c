@@ -20,6 +20,7 @@ static void cleanup(void)
     joblist_drop();
 }
 
+/// TODO: Put everyhing in a new terminal_t struct (Data oriented design)
 static void init_shell(void)
 {
     pid_t shell_pgid = getpgrp();
@@ -68,7 +69,6 @@ static void init_shell(void)
 int main()
 {
     int status = SUCCESS;
-    bool set_env = false;
 
     string_t *line = string_new();
     if(__glibc_unlikely(is_null(line)))
@@ -100,19 +100,15 @@ int main()
 
         disable_async_joblist_update();
 
-        if(string_len(line) == 1
-           || parse_commandline(string_ref(line), &cmdline, &set_env) == FAILURE)
-        {
+        if(string_len(line) == 1 || parse_commandline(string_ref(line), &cmdline) == FAILURE) {
             commandline_clear(&cmdline);
             continue;
         }
 
-        if(!set_env) {
-            commandline_execute(&cmdline, &status);
-            byte retstat[INT_DIGITS + 2];
-            sprintf(retstat, "%d", status);
-            setenv("?", retstat, 1);
-        }
+        commandline_execute(&cmdline, &status);
+        byte retstat[INT_DIGITS + 2];
+        sprintf(retstat, "%d", status);
+        setenv("?", retstat, 1);
 
         commandline_clear(&cmdline);
     }

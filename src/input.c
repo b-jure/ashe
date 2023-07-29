@@ -403,12 +403,10 @@ void inbuff_process_key(inbuff_t *buffer, byte *state)
                 goto insert;
             case '\\': XORBIT(*state, S_ESC); goto insert;
             case CR:
-                if(TESTBIT(*state, S_DQ | S_ESC))
-                    write_or_die("\r\n", sizeof("\r\n"));
-                else
+                if(!TESTBIT(*state, S_DQ | S_ESC))
                     SETBIT(*state, S_END);
+                write_or_die("\r\n", sizeof("\r\n"));
                 break;
-            case CTRL_KEY('h'):
             case DEL_KEY:
             case BACKSPACE: inbuff_remove(buffer); break;
             case END_KEY: goto_eol(buffer); break;
@@ -416,6 +414,12 @@ void inbuff_process_key(inbuff_t *buffer, byte *state)
             case CTRL_KEY('l'): clear_screen(buffer); break;
             case L_ARW: inbuff_cursor_left(buffer); break;
             case R_ARW: inbuff_cursor_right(buffer); break;
+            /// Unimplemented stuff
+            case CTRL_KEY('x'):
+            case CTRL_KEY('h'):
+            case CTRL_KEY('j'):
+            case CTRL_KEY('k'):
+            case CTRL_KEY('i'): break;
             default:
             insert:
                 inbuff_insert(buffer, c);
