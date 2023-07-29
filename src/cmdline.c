@@ -7,31 +7,32 @@
 #include "parser.h"
 #include "vec.h"
 
+/// TODO: Implement rows in inbuff_t structure
+
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
 #include <stdlib.h>
 
-#define PIPE_R 0                            /* Read  end of a pipe */
-#define PIPE_W 1                            /* Write end of a pipe */
-#define PREV(i) (i - 1)                     /* Prev pipe at index i */
-#define CURR(i) (i)                         /* Current pipe at index i */
-#define pipe_at(i, pipes) (pipes + (i * 2)) /* Ptr PIPE_R to pipe in pipes at index i */
-#define not_last(i, total) (i + 1 != total) /* Command not last in pipeline */
-#define not_first(i) (i != 0)               /* Command not first in pipeline */
-#define first(i) (i == 0)                   /* Command is first in the pipeline */
+#define PIPE_R             0                 /* Read  end of a pipe */
+#define PIPE_W             1                 /* Write end of a pipe */
+#define PREV(i)            (i - 1)           /* Prev pipe at index i */
+#define CURR(i)            (i)               /* Current pipe at index i */
+#define pipe_at(i, pipes)  (pipes + (i * 2)) /* Ptr PIPE_R to pipe in pipes at index i */
+#define not_last(i, total) (i + 1 != total)  /* Command not last in pipeline */
+#define not_first(i)       (i != 0)          /* Command not first in pipeline */
+#define first(i)           (i == 0)          /* Command is first in the pipeline */
 
 /// Options for envcmd function
 #define ADD_ENV 0 /* Add env var name/value */
 #define SET_ENV 1 /* Add/overwrite env var name/value */
-#define RM_ENV 2  /* Remove env var */
-#define P_ENV 3   /* Print env var */
-#define P_ALL 4   /* Print all environ */
+#define RM_ENV  2 /* Remove env var */
+#define P_ENV   3 /* Print env var */
+#define P_ALL   4 /* Print all environ */
 
 /// Default modes for opening a file in which we are redirecting the output
-#define openf(file, append)                                                              \
-    open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
+#define openf(file, append) open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
 
 /// TODO: move into builtin.c module
 /// Built-in commands
@@ -140,7 +141,7 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     job_t job = job_new(pipeline->connection, bg); /* New job for this pipeline */
 
     if(__glibc_unlikely(is_null(job.processes)))
-        return FAILURE;
+        exit(EXIT_FAILURE);
 
     unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
     int pipes[pn];                  /* Pipe storage */
@@ -167,22 +168,14 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
             return run_cmd_nofork(argv, env);
         }
 
-        if(__glibc_likely((cpid = run_cmd(argv, env, &ctx, &job)) != FAILURE)) {
-            process_t temp_proc = process_new(cpid, NULL);
-            fargvs(cmd->argv, &temp_proc.commandline);
+        cpid = run_cmd(argv, env, &ctx, &job);
+        process_t temp_proc = process_new(cpid, NULL);
+        fargvs(cmd->argv, &temp_proc.commandline);
 
-            if(__glibc_unlikely(
-                   is_null(temp_proc.commandline) || !job_add_process(&job, &temp_proc)))
-            {
-                job_drop(&job);
-                exit(EXIT_FAILURE);
-            }
-        } else {
-            job_drop(&job);
-            exit(EXIT_FAILURE);
-        }
-
-        if(not_first(i) && __glibc_unlikely(close_pipe(pipe_at(PREV(i), pipes)) < 0)) {
+        if(__glibc_unlikely(
+               is_null(temp_proc.commandline) || !job_add_process(&job, &temp_proc)
+               || (not_first(i) && close_pipe(pipe_at(PREV(i), pipes)) < 0)))
+        {
             job_drop(&job);
             exit(EXIT_FAILURE);
         }
@@ -227,9 +220,7 @@ static int envcmd(byte *const *argv, int option)
                    (status = setenv(argv[1], argv[2], (option == ADD_ENV ? 0 : 1))) < 0))
                 ATOMIC_PRINT(perr());
             break;
-        case RM_ENV:
-            status = unsetenv(argv[1]);
-            break;
+        case RM_ENV: status = unsetenv(argv[1]); break;
         case P_ENV:
             if(is_some(temp = getenv(argv[1]))) {
                 ATOMIC_PRINT(printf("%s\n", temp));
@@ -240,8 +231,7 @@ static int envcmd(byte *const *argv, int option)
             penviron();
             status = SUCCESS;
             break;
-        default:
-            break;
+        default: break;
     }
 
     return status;
@@ -383,9 +373,16 @@ static int run_cmd_nofork(byte **argv, byte **env)
     int status;
     int out, err, in;
 
-    in = dup(STDIN_FILENO);
-    out = dup(STDOUT_FILENO);
-    err = dup(STDERR_FILENO);
+    in = STDIN_FILENO;
+    out = STDOUT_FILENO;
+    err = STDERR_FILENO;
+
+    if(__glibc_unlikely(
+           (in = dup(STDIN_FILENO)) < 0 || (out = dup(STDOUT_FILENO)) < 0
+           || (err = dup(STDERR_FILENO)) < 0))
+    {
+        die();
+    }
 
     if(__glibc_unlikely(add_envs_to_environ(env) < 0))
         exit(EXIT_FAILURE);
@@ -415,11 +412,11 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
     pid_t childPID = fork();
 
     if(__glibc_unlikely(childPID == -1)) {
+        job_drop(job);
         ATOMIC_PRINT({
             PW_FORKERR;
-            perr();
+            die();
         });
-        return FAILURE;
     } else if(childPID == 0) {
         /// Add environment variables to environ
         if(__glibc_unlikely(add_envs_to_environ(env) < 0))
@@ -431,8 +428,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
         /// and give it the terminal
         if(job->pgid == 0) {
             job->pgid = pid;
-            if(__glibc_unlikely(job->foreground && tcsetpgrp(TERMINAL_FD, job->pgid) < 0))
-            {
+            if(__glibc_unlikely(job->foreground && tcsetpgrp(TERMINAL_FD, job->pgid) < 0)) {
                 ATOMIC_PRINT({
                     PW_TERMTCSET(job->pgid);
                     die();
@@ -485,8 +481,6 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
 
 static void connect_io_with_pipe(context_t *ctx)
 {
-    /// Connect pipe streams and close the
-    /// redundant pipe end, if any
     if(__glibc_unlikely(
            dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
            || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
@@ -562,9 +556,7 @@ static void resolve_redirections(byte *const *argvp)
                     break;
                 }
                 // FALLTHRU
-            default:
-                *pargvp++ = *argvp;
-                break;
+            default: *pargvp++ = *argvp; break;
         }
         append = false;
     }
@@ -588,10 +580,10 @@ static int run_builtin(const byte *command, byte *const *argv, bool shell)
             if(shell) {
                 if(joblist_len() != 0 && !exit_warning) {
                     exit_warning = true;
-                    ATOMIC_PRINT(
-                        pwarn("There are still background jobs running!\nRun "
-                              "\x1B[32mexit\x1b[0m again to exit, this will result in "
-                              "orphaned child processes."));
+                    ATOMIC_PRINT(pwarn(
+                        "There are still background jobs running!\n\nRun "
+                        "\x1B[32mexit\x1b[0m again to exit, this will result in "
+                        "termination of child processes that are still running or are stopped."));
                 } else
                     exit(SUCCESS);
             }
@@ -630,11 +622,11 @@ static int run_builtin(const byte *command, byte *const *argv, bool shell)
                     if(shell) {
                         if(joblist_len() != 0 && !exit_warning) {
                             exit_warning = true;
-                            ATOMIC_PRINT({
-                                pwarn("There are still background jobs running!\nRun "
-                                      "\x1B[32mexit\x1b[0m again to exit, this will "
-                                      "result in orphaned child processes.");
-                            });
+                            ATOMIC_PRINT(
+                                pwarn("There are still background jobs running!\n\nRun "
+                                      "\x1B[32mexit\x1b[0m again to exit, this will result in "
+                                      "termination of child processes that are still running "
+                                      "or are stopped."));
                         } else
                             exit(exit_status);
                     }

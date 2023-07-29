@@ -27,15 +27,20 @@
 
 #define CTRL_KEY(k) ((k) &0x1f)
 #define ESCAPE      0x1B
-#define DEL         0x7F
 #define CR          0x0D
 
 typedef enum {
+    BACKSPACE = 127,
     L_ARW = 0x101,
-    U_ARW = 0x102,
-    D_ARW = 0x103,
-    R_ARW = 0x104,
+    U_ARW,
+    D_ARW,
+    R_ARW,
+    HOME_KEY,
+    END_KEY,
+    DEL_KEY
 } terminal_key;
+
+#define IMPLEMENTED(c) (c != U_ARW && c != D_ARW && c != ESCAPE)
 
 /// Flag that gets set if the rcmdline routine
 /// gets interrupted while it is still reading
@@ -43,14 +48,16 @@ volatile atomic_bool reading = false;
 /// Shell terminal modes
 struct termios dflterm, rawterm;
 
-static void inbuff_cursor_right(inbuff_t *buffer, size_t max_col);
+typedef uint16_t termkey_t;
+
+static void inbuff_cursor_right(inbuff_t *buffer);
 static void inbuff_cursor_left(inbuff_t *buffer);
 static void inbuff_remove(inbuff_t *inbuff);
-static void inbuff_insert(inbuff_t *inbuff, char c, size_t maxcol);
+static void inbuff_insert(inbuff_t *inbuff, char c);
 static int get_window_size(uint16_t *width, uint16_t *height);
 static int get_cursor_pos(uint16_t *row, uint16_t *col);
 static int get_window_size_fallback(uint16_t *height, uint16_t *width);
-static terminal_key read_key();
+static termkey_t read_key();
 
 void pprompt(void)
 {
@@ -166,9 +173,11 @@ static int get_cursor_pos(uint16_t *row, uint16_t *col)
     return SUCCESS;
 }
 
-static void inbuff_insert(inbuff_t *inbuff, char c, size_t maxcol)
+static void inbuff_insert(inbuff_t *inbuff, char c)
 {
     if(inbuff->len < MAXLINE - 1) {
+        uint16_t maxcol;
+        get_window_size(NULL, &maxcol);
         byte *src = inbuff->buffer + inbuff->curp;
         size_t n = inbuff->len - inbuff->curp;
         size_t cap = sizeof(byte) + sizeof(sv_cur_pos ld_cur_pos) + sizeof("\r\n") + n;
@@ -182,9 +191,11 @@ static void inbuff_insert(inbuff_t *inbuff, char c, size_t maxcol)
         inbuff->len++;
         inbuff->curp++;
 
+        strncat(buff, &c, sizeof(byte));
+
         if(inbuff->cur_col >= maxcol)
             strcat(buff, "\r\n");
-        strncat(buff, &c, sizeof(byte));
+
         strcat(buff, sv_cur_pos);
         strncat(buff, inbuff->buffer + inbuff->curp, n);
         strcat(buff, ld_cur_pos);
@@ -200,8 +211,7 @@ static void inbuff_remove(inbuff_t *inbuff)
         byte *src = inbuff->buffer + inbuff->curp;
         size_t n = inbuff->len - inbuff->curp;
         size_t cap
-            = sizeof(mv_cur_up(1) mv_cur_right(999) del_char sv_cur_pos erase_cur_to_eol ld_cur_pos)
-              + n;
+            = sizeof(mv_cur_up(1) mv_cur_right(999) del_char sv_cur_pos clrscr_down ld_cur_pos) + n;
         byte buff[cap + 10];
 
         buff[0] = '\0';
@@ -216,7 +226,7 @@ static void inbuff_remove(inbuff_t *inbuff)
         else
             strcat(buff, del_char);
 
-        strcat(buff, sv_cur_pos erase_cur_to_eol);
+        strcat(buff, sv_cur_pos clrscr_down);
         strncat(buff, inbuff->buffer + inbuff->curp, n);
         strcat(buff, ld_cur_pos);
 
@@ -252,18 +262,64 @@ static void inbuff_cursor_left(inbuff_t *buffer)
     }
 }
 
-static void inbuff_cursor_right(inbuff_t *buffer, size_t max_col)
+void goto_eol(inbuff_t *buffer)
 {
+    uint16_t maxcol;
+    get_window_size(NULL, &maxcol);
+
+    byte buff[maxcol * sizeof(mv_cur_right(1)) + sizeof(byte)];
+    buff[0] = '\0';
+
+    while(buffer->curp < buffer->len && buffer->cur_col < maxcol) {
+        buffer->curp++;
+        buffer->cur_col++;
+        strcat(buff, mv_cur_right(1));
+    }
+
+    write_or_die(buff, strlen(buff));
+}
+
+void goto_home(inbuff_t *buffer)
+{
+    uint16_t maxcol;
+    if(get_window_size(NULL, &maxcol) == FAILURE)
+        die();
+
+    byte buff[maxcol * sizeof(mv_cur_left(1)) + sizeof(byte)];
+    buff[0] = '\0';
+
+    while(buffer->curp > 0 && buffer->cur_col > 1) {
+        buffer->curp--;
+        buffer->cur_col--;
+        strcat(buff, mv_cur_left(1));
+    }
+
+    write_or_die(buff, strlen(buff));
+}
+
+static void inbuff_cursor_right(inbuff_t *buffer)
+{
+    uint16_t maxcol;
+    if(get_window_size(NULL, &maxcol) == FAILURE)
+        die();
+
     if(buffer->curp < buffer->len) {
         buffer->curp++;
-        if(buffer->cur_col < max_col)
+        if(buffer->cur_col < maxcol)
             write_or_die(mv_cur_right(1), sizeof(mv_cur_right(1)));
         else
             write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_down(1) mv_cur_col(1)));
     }
 }
 
-static terminal_key read_key(void)
+static void clear_screen(inbuff_t *buffer)
+{
+    write_or_die(clrscr mv_cur_home, sizeof(clrscr mv_cur_home));
+    pprompt();
+    inbuff_print(buffer, true);
+}
+
+static termkey_t read_key(void)
 {
     int nread;
     byte c;
@@ -291,16 +347,35 @@ static terminal_key read_key(void)
             return ESCAPE;
 
         if(seq[0] == '[') {
+            if(isdigit(seq[1])) {
+                if(read(STDIN_FILENO, &seq[2], 1) != 1)
+                    return ESCAPE;
+                if(seq[2] == '~') {
+                    switch(seq[1]) {
+                        case '3': return DEL_KEY;
+                        case '1':
+                        case '7': return HOME_KEY;
+                        case '4':
+                        case '8': return END_KEY;
+                        default: break;
+                    }
+                }
+            } else {
+                switch(seq[1]) {
+                    case 'C': return R_ARW;
+                    case 'D': return L_ARW;
+                    case 'B': return D_ARW;
+                    case 'A': return U_ARW;
+                    case 'H': return HOME_KEY;
+                    case 'F': return END_KEY;
+                    default: break;
+                }
+            }
+        } else if(seq[0] == 'O') {
             switch(seq[1]) {
-                case 'C':
-                    return R_ARW;
-                case 'D':
-                    return L_ARW;
-                case 'B':
-                case 'A':
-                    /// TODO: Implement cmd history
-                default:
-                    break;
+                case 'H': return HOME_KEY;
+                case 'F': return HOME_KEY;
+                default: break;
             }
         }
 
@@ -312,64 +387,44 @@ static terminal_key read_key(void)
 
 void inbuff_process_key(inbuff_t *buffer, byte *state)
 {
-    uint16_t c, max_col;
+    termkey_t c;
+    uint16_t max_col;
 
     c = read_key();
 
     get_cursor_pos(NULL, &buffer->cur_col);
     get_window_size(NULL, &max_col);
 
-    switch(c) {
-        case CR:
-            if(TESTBIT(*state, S_CLR)) {
-                write_or_die("\r\n", sizeof("\r\n"));
-                SETBIT(*state, S_END);
-                CLRBIT(*state, S_CLR);
-                return;
-            }
-            CLRBIT(*state, S_ESC);
-            break;
-        case DEL:
-            inbuff_remove(buffer);
-            CLRBIT(*state, S_ESC);
-            return;
-        case '"':
-            if(!TESTBIT(*state, S_ESC))
-                XORBIT(*state, S_DQ);
-            break;
-        case '\\':
-            XORBIT(*state, S_ESC);
-            break;
-        case CTRL_KEY('l'):
-            write_or_die(clrscr_up mv_cur_home, sizeof(clrscr_up mv_cur_home));
-            pprompt();
-            return;
-        case CTRL_KEY('o'):
-        case CTRL_KEY('c'):
-        case CTRL_KEY('v'):
-            // TODO: Implement copy
-            // TODO: Implement paste
-            return;
-        case L_ARW:
-            inbuff_cursor_left(buffer);
-            CLRBIT(*state, S_ESC);
-            return;
-        case R_ARW:
-            inbuff_cursor_right(buffer, max_col);
-            CLRBIT(*state, S_ESC);
-            return;
-        // TODO: Implement input history
-        case ESCAPE:
-        case U_ARW: // up
-        case D_ARW: // down
-            return;
-        default:
-            break;
+    if((IMPLEMENTED(c))) {
+        switch(c) {
+            case '"':
+                if(!TESTBIT(*state, S_ESC))
+                    XORBIT(*state, S_DQ);
+                goto insert;
+            case '\\': XORBIT(*state, S_ESC); goto insert;
+            case CR:
+                if(TESTBIT(*state, S_DQ | S_ESC))
+                    write_or_die("\r\n", sizeof("\r\n"));
+                else
+                    SETBIT(*state, S_END);
+                break;
+            case CTRL_KEY('h'):
+            case DEL_KEY:
+            case BACKSPACE: inbuff_remove(buffer); break;
+            case END_KEY: goto_eol(buffer); break;
+            case HOME_KEY: goto_home(buffer); break;
+            case CTRL_KEY('l'): clear_screen(buffer); break;
+            case L_ARW: inbuff_cursor_left(buffer); break;
+            case R_ARW: inbuff_cursor_right(buffer); break;
+            default:
+            insert:
+                inbuff_insert(buffer, c);
+                break;
+        }
     }
 
-    CLRBIT(*state, S_ESC);
-
-    inbuff_insert(buffer, c, max_col);
+    if(c != '\\')
+        CLRBIT(*state, S_ESC);
 }
 
 void read_input(inbuff_t *buffer)

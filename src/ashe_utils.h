@@ -1,6 +1,7 @@
 #ifndef __ASH_UTILS_H__
 #define __ASH_UTILS_H__
 
+#define _BSD_SOURCE
 #define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
