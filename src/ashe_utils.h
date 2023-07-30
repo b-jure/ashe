@@ -24,6 +24,8 @@ extern byte **environ;
 
 #define TERMINAL_FD STDIN_FILENO
 
+/// Concurrently safe printing (advisory lock), async-safe and because
+/// shell is single threaded no need for 'flockfile/funlockfile'.
 #define ATOMIC_PRINT(print_block)                                              \
   do {                                                                         \
     block_sigint();                                                            \
@@ -33,11 +35,9 @@ extern byte **environ;
       perr();                                                                  \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
-    flockfile(stderr);                                                         \
-    flockfile(stdout);                                                         \
     print_block;                                                               \
-    funlockfile(stderr);                                                       \
-    funlockfile(stdout);                                                       \
+    fflush(stdout);                                                            \
+    fflush(stderr);                                                            \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_UN) < 0 ||                   \
                          flock(STDOUT_FILENO, LOCK_UN) < 0)) {                 \
       perr();                                                                  \
@@ -51,11 +51,13 @@ extern byte **environ;
 #define FAILURE -1
 #define SUCCESS 0
 
+typedef enum { INF_NAME, INF_DESC, INF_USAGE } info_t;
+
 void die(void);
-void pprompt(void);
 void pwarn(const byte *fmt, ...);
-void pusage(const byte *fmt, ...);
 void perr(void);
+void pinfo(info_t type, const byte *fmt, ...);
+void pmanpage(const byte *name, const byte *usage, const byte *desc);
 
 #define PCS_EXTRA "/.-"
 #define PORTABLE_CHARACTER_SET                                                 \

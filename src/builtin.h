@@ -5,7 +5,7 @@
 
 #include <sys/types.h>
 
-int exit_builtin(byte *const *argv, bool shell);
-int fg(pid_t pgid, int id);
+int run_builtin(const byte *command, byte *const *argv, bool shell);
+bool is_builtin(const byte *command);
 
 #endif

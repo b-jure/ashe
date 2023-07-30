@@ -1,18 +1,18 @@
 #ifndef __ASH_ERRORS_H__
 #define __ASH_ERRORS_H__
 
-#include "input.h"
 #include "ashe_utils.h"
+#include "input.h"
 
-#define PW_FGID_ERR(id)                                                        \
-  pwarn("There is no suitable job with id " bold(                              \
+#define PW_FG_ID_ERR(id)                                                        \
+  pwarn("There is no suitable job with ID " bold(                              \
             bred("%d")) " to move into foreground!",                           \
         id)
 
-#define PW_FGPGID_ERR(pgid)                                                    \
-  pwarn("There is no suitable job with pgid " bold(                            \
+#define PW_FG_PID_ERR(pid)                                                      \
+  pwarn("There is no suitable job containing PID " bold(                       \
             bred("%d")) " to move into foreground!",                           \
-        pgid)
+        pid)
 
 #define PW_FG_ERR pwarn("There is no suitable job to move into foreground!")
 

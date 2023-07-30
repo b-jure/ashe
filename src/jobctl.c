@@ -70,6 +70,7 @@ job_t job_new(byte connection, bool bg)
         .foreground = !bg || connection & (JC_AND | JC_OR),
         .processes = vec_new(sizeof(process_t)),
         .id = 0,
+        .tmodes = dflterm,
     };
 }
 
@@ -367,10 +368,8 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                     job_format(job, job_completed_format);
                     joblist_remove(i);
                     pprompt();
-                    if(reading) {
+                    if(reading)
                         inbuff_print(&terminal_input, true);
-                        fflush(stderr);
-                    }
                 });
             } else {
                 joblist_remove(i);
@@ -382,10 +381,8 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
             ATOMIC_PRINT({
                 job_format(job, job_stopped_format);
                 pprompt();
-                if(reading) {
+                if(reading)
                     inbuff_print(&terminal_input, true);
-                    fflush(stderr);
-                }
             });
             job->notified = true;
         }

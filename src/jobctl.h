@@ -51,6 +51,7 @@ job_t *joblist_getjob(joblist_t *jlist, pid_t pgid);
 
 /// JOB
 job_t job_new(byte connection, bool bg);
+process_t *job_at(job_t *job, size_t i);
 size_t job_len(job_t *job);
 bool job_add_process(job_t *job, process_t *process);
 int job_move_to_fg(job_t *job, bool cont);

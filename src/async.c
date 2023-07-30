@@ -8,17 +8,6 @@
 
 volatile atomic_bool sigint_recv = false;
 volatile atomic_bool sigchld_recv = false;
-volatile atomic_bool sigwin_recv = false;
-
-/// TODO: make terminal_t struct which will also hold terminal window size
-__attribute__((unused)) void sigwin_handler(__attribute__((unused)) int signum)
-{
-    block_sigchld();
-    block_sigint();
-    /// TODO: Read up
-    unblock_sigchld();
-    unblock_sigint();
-}
 
 void sigint_handler(__attribute__((unused)) int signum)
 {
@@ -48,6 +37,14 @@ void block_sigint(void)
     sigprocmask(SIG_BLOCK, &block_sigint, NULL);
 }
 
+void block_sigchld(void)
+{
+    sigset_t block_sigchld;
+    sigemptyset(&block_sigchld);
+    sigaddset(&block_sigchld, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &block_sigchld, NULL);
+}
+
 void unblock_sigint(void)
 {
     sigset_t ublock_sigint;
@@ -62,14 +59,6 @@ void unblock_sigchld(void)
     sigemptyset(&unblock_sigchld);
     sigaddset(&unblock_sigchld, SIGCHLD);
     sigprocmask(SIG_UNBLOCK, &unblock_sigchld, NULL);
-}
-
-void block_sigchld(void)
-{
-    sigset_t block_sigchld;
-    sigemptyset(&block_sigchld);
-    sigaddset(&block_sigchld, SIGCHLD);
-    sigprocmask(SIG_BLOCK, &block_sigchld, NULL);
 }
 
 void enable_async_joblist_update(void)

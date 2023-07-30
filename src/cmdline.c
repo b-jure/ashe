@@ -25,20 +25,8 @@
 #define not_first(i)       (i != 0)          /* Command not first in pipeline */
 #define first(i)           (i == 0)          /* Command is first in the pipeline */
 
-/// Options for envcmd function
-#define ADD_ENV 0 /* Add env var name/value */
-#define SET_ENV 1 /* Add/overwrite env var name/value */
-#define RM_ENV  2 /* Remove env var */
-#define P_ENV   3 /* Print env var */
-#define P_ALL   4 /* Print all environ */
-
 /// Default modes for opening a file in which we are redirecting the output
 #define openf(file, append) open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
-
-/// TODO: move into builtin.c module
-/// Built-in commands
-byte *builtin[] = {"exit", "pwd", "clear", "cd", "penv", "senv", "renv", "builtin"};
-#define BUILTINN sizeof(builtin) / sizeof(builtin[0])
 
 bool exit_warning = false;
 
@@ -53,9 +41,6 @@ static context_t context_new(void);
 static int conditional_execute(conditional_t *cond);
 static int pipeline_execute(pipeline_t *pipeline, bool bg);
 static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *job);
-static int envcmd(byte *const *argv, int option);
-static void penviron(void);
-static void pbuiltin(void);
 static void command_get_argv(command_t *cmd, byte *out[], size_t len);
 static void command_get_env(command_t *cmd, byte *out[], size_t len);
 static int close_pipe(int *pp);
@@ -64,8 +49,6 @@ static void reset_signal_handling(void);
 static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx);
 static void resolve_redirections(byte *const *argvp);
 static void connect_io_with_pipe(context_t *ctx);
-static int run_builtin(const byte *command, byte *const *argv, bool shell);
-bool is_builtin(const byte *command);
 static int run_cmd_nofork(byte **argv, byte **env);
 static void fargvs(vec_t *argv, byte **out);
 
@@ -169,6 +152,10 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
             exit_warning = false; /* User is not exiting the shell */
             configure_pipes(i, pipes, cmdn, &ctx);
         } else if(job.foreground && (argc == 0 || is_builtin(argv[0]))) {
+            /// In case we don't have a pipeline or conditional and
+            /// only a single command that is run in foreground and
+            /// is a builtin command or only contains environment variables,
+            /// then run the command without forking.
             job_drop(&job);
             return run_cmd_nofork(argv, env);
         }
@@ -212,52 +199,6 @@ static void reset_signal_handling(void)
     sigaction(SIGTTIN, &sigdfl_ac, NULL);
     sigaction(SIGTTOU, &sigdfl_ac, NULL);
     sigaction(SIGCHLD, &sigdfl_ac, NULL);
-}
-
-static int envcmd(byte *const *argv, int option)
-{
-    const byte *temp = NULL;
-    int status = FAILURE;
-
-    switch(option) {
-        case ADD_ENV:
-        case SET_ENV:
-            if(__glibc_unlikely(
-                   (status = setenv(argv[1], argv[2], (option == ADD_ENV ? 0 : 1))) < 0))
-                ATOMIC_PRINT(perr());
-            break;
-        case RM_ENV: status = unsetenv(argv[1]); break;
-        case P_ENV:
-            if(is_some(temp = getenv(argv[1]))) {
-                ATOMIC_PRINT(printf("%s\n", temp));
-                status = SUCCESS;
-            }
-            break;
-        case P_ALL:
-            penviron();
-            status = SUCCESS;
-            break;
-        default: break;
-    }
-
-    return status;
-}
-
-static void pbuiltin(void)
-{
-    ATOMIC_PRINT({
-        for(size_t i = 0; i < BUILTINN; i++)
-            ATOMIC_PRINT(printf("%s\n", builtin[i]));
-    });
-}
-
-static void penviron(void)
-{
-    ATOMIC_PRINT({
-        int i = 0;
-        while(is_some(environ[i]))
-            ATOMIC_PRINT(printf("%s\n", environ[i++]));
-    });
 }
 
 static void command_get_argv(command_t *cmd, byte *out[], size_t len)
@@ -372,14 +313,6 @@ static void fargvs(vec_t *argv, byte **out)
     }
 }
 
-bool is_builtin(const byte *command)
-{
-    for(size_t i = 0; i < BUILTINN; i++)
-        if(strcmp(command, builtin[i]) == 0)
-            return true;
-    return false;
-}
-
 static int run_cmd_nofork(byte **argv, byte **env)
 {
     int status = SUCCESS;
@@ -389,7 +322,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
         exit(EXIT_FAILURE);
 
     /// Early return if only env vars are supplied in
-    /// the commandline (no pipes, conditionals, commands)
+    /// the commandline (no pipes, conditionals, args)
     /// by only exporting variables
     if(is_null(argv[0]))
         return status;
@@ -593,101 +526,4 @@ static void resolve_redirections(byte *const *argvp)
     {
         ATOMIC_PRINT(die());
     }
-}
-
-/// TODO: move into builtin.c module
-static int run_builtin(const byte *command, byte *const *argv, bool shell)
-{
-    int status = FAILURE;
-
-    if(strcmp(command, "exit") == 0) {
-        return exit_builtin(argv, shell);
-    } else if(strcmp(command, "cd") == 0) {
-        if(is_null(argv[1])) {
-            if(__glibc_unlikely(chdir(getenv(HOME)) == -1)) {
-                ATOMIC_PRINT({ perr(); });
-                status = FAILURE;
-            } else
-                status = SUCCESS;
-        } else if(is_some(argv[2])) {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("cd [DIRNAME]");
-            });
-            status = FAILURE;
-        } else if(chdir(argv[1]) < 0) {
-            ATOMIC_PRINT({
-                if(errno == ENOENT)
-                    PW_NOPATH(argv[1]);
-                perr();
-            });
-            status = FAILURE;
-        } else
-            status = SUCCESS;
-    } else if(strcmp(command, "penv") == 0) {
-        if(is_null(argv[1])) {
-            status = envcmd(NULL, P_ALL);
-        } else if(is_some(argv[1]) && is_null(argv[2])) {
-            status = envcmd(argv, P_ENV);
-        } else {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("penv [VARNAME]");
-            });
-            status = FAILURE;
-        }
-    } else if(strcmp(command, "senv") == 0) {
-        if(is_null(argv[1]) || is_null(argv[2])) {
-            ATOMIC_PRINT({
-                PW_FEWARG(argv[0]);
-                pusage("senv [VARNAME] [VARVALUE]");
-            });
-            status = FAILURE;
-        } else if(is_some(argv[3])) {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("senv [VARNAME] [VARVALUE]");
-            });
-            status = FAILURE;
-        } else
-            status = envcmd(argv, SET_ENV);
-    } else if(strcmp(command, "renv") == 0) {
-        if(is_null(argv[1])) {
-            ATOMIC_PRINT({
-                PW_FEWARG(argv[0]);
-                pusage("renv [VARNAME] [VARVALUE]");
-            });
-            status = FAILURE;
-        } else if(is_some(argv[2])) {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("renv [VARNAME] [VARVALUE]");
-            });
-            status = FAILURE;
-        } else
-            status = envcmd(argv, RM_ENV);
-    } else if(strcmp(command, "pwd") == 0) {
-        byte buff[PATH_MAX];
-        if(__glibc_unlikely(is_null(getcwd(buff, PATH_MAX)))) {
-            ATOMIC_PRINT(perr());
-            status = FAILURE;
-        } else {
-            ATOMIC_PRINT(printf("%s\n", buff));
-            status = SUCCESS;
-        }
-    } else if(strcmp(command, "clear") == 0) {
-        status = system("clear");
-    } else if(strcmp(command, "builtin") == 0) {
-        if(is_some(argv[1])) {
-            ATOMIC_PRINT({
-                PW_MANYARG(argv[0]);
-                pusage("builtin");
-            });
-            status = FAILURE;
-        } else {
-            pbuiltin();
-            status = SUCCESS;
-        }
-    }
-    return status;
 }
