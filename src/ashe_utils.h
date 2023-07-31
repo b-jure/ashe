@@ -28,8 +28,6 @@ extern byte **environ;
 /// shell is single threaded no need for 'flockfile/funlockfile'.
 #define ATOMIC_PRINT(print_block)                                              \
   do {                                                                         \
-    block_sigint();                                                            \
-    block_sigchld();                                                           \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_EX) < 0 ||                   \
                          flock(STDOUT_FILENO, LOCK_EX) < 0)) {                 \
       perr();                                                                  \
@@ -43,8 +41,6 @@ extern byte **environ;
       perr();                                                                  \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
-    unblock_sigint();                                                          \
-    unblock_sigchld();                                                         \
   } while (0)
 
 /// Exit codes

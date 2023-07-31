@@ -24,9 +24,6 @@
 joblist_t joblist = {0};
 static size_t joblist_id();
 
-job_t *last_bg = NULL;
-job_t *last_fg = NULL;
-
 bool joblist_init()
 {
     joblist.jobs = vec_new(sizeof(job_t));
@@ -40,6 +37,34 @@ bool joblist_push(job_t *job)
 {
     job->id = joblist_id();
     return vec_push(joblist.jobs, job);
+}
+
+job_t *joblist_get_bg_job(void)
+{
+    size_t len = joblist_len();
+    job_t *job;
+
+    while(len--) {
+        job = joblist_at(len);
+        if(!job->foreground)
+            return job;
+    }
+
+    return NULL;
+}
+
+job_t *joblist_get_fg_job(void)
+{
+    size_t len = joblist_len();
+    job_t *job;
+
+    while(len--) {
+        job = joblist_at(len);
+        if(job->foreground)
+            return job;
+    }
+
+    return NULL;
 }
 
 job_t *joblist_find_id(size_t id)
@@ -329,8 +354,10 @@ bool job_update(job_t *job, pid_t pid, int status)
 
 int job_move_to_fg(job_t *job, bool cont)
 {
+    /* Put job process group into the foreground */
     tcsetpgrp(TERMINAL_FD, job->pgid); /* Can't fail */
 
+    /* If continue flag is set, send SIGCONT signal to the job process group */
     if(cont) {
         if(__glibc_unlikely(
                tcsetattr(TERMINAL_FD, TCSADRAIN, &job->tmodes) < 0
@@ -340,8 +367,11 @@ int job_move_to_fg(job_t *job, bool cont)
         }
     }
 
+    /* Wait for job to either complete or get stopped */
     int status = job_wait(job);
 
+    /* If job was originally ran in the foreground without being stopped prior
+     * and now it is stopped, then move it into the joblist */
     if(__glibc_unlikely(!cont && job_stopped(job) && !joblist_push(job))) {
         ATOMIC_PRINT(PW_ADDJ(job));
         exit(EXIT_FAILURE);
@@ -350,6 +380,7 @@ int job_move_to_fg(job_t *job, bool cont)
     /* put shell back into the foreground */
     tcsetpgrp(TERMINAL_FD, getpgrp()); /* Can't fail */
 
+    /* Update the terminal modes for the job and load the default shell terminal mode. */
     if(__glibc_unlikely(
            tcgetattr(TERMINAL_FD, &job->tmodes) || tcsetattr(TERMINAL_FD, TCSADRAIN, &dflterm) < 0))
     {

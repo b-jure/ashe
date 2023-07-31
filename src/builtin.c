@@ -1,3 +1,4 @@
+#include "ashe_utils.h"
 #include "async.h"
 #include "builtin.h"
 #include "errors.h"
@@ -32,10 +33,30 @@ byte *builtin[] = {
     "builtin",
     "fg",
     "bg",
+    "jobs",
 };
 
-#define BUILTINN sizeof(builtin) / sizeof(builtin[0])
+#define BUILTINN          sizeof(builtin) / sizeof(builtin[0])
+#define namef(name)       bold(green(#name))
+#define keywordf(keyword) bold(cyan(#keyword))
+#define validf(valid)     bold(blue(valid))
+#define invalidf(invalid) bold(bred(invalid))
 
+/// TODO: Maybe refactor this, ugly as shit
+#define jobheaderf printf("\r\n%-*s %-*s %-*s\r\n", 10, "Job", 10, "Group", 10, "State")
+#define joboutf(job)                                                                               \
+    printf(                                                                                        \
+        "%-*ld %-*d %-*s\r\n",                                                                     \
+        10,                                                                                        \
+        (job)->id,                                                                                 \
+        10,                                                                                        \
+        (job)->pgid,                                                                               \
+        10,                                                                                        \
+        job_completed((job)) ? green("completed")                                                  \
+        : job_stopped((job)) ? red("stopped")                                                      \
+                             : yellow("running"))
+
+/// Internal functions
 static int argv_len(byte *const *argv);
 static void pbuiltin(void);
 static void penviron(void);
@@ -56,6 +77,7 @@ static void bg_last(void);
 static void bg_id(int32_t id);
 static void bg_pid(pid_t pid);
 static int bg(byte *const *argv);
+static int jobs(byte *const *argv);
 
 /// This is used in 'bg' builtin command when parsing and storing combination
 /// of id and pid integers in the same array to later distinguish them by their sign bit.
@@ -65,6 +87,61 @@ static int bg(byte *const *argv);
     ((int32_t) ((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1)))
 
 // clang-format off
+
+static int jobs(byte* const* argv)
+{
+    static const byte* name = namef(jobs) " - print currently running/stopped jobs.";
+    static const byte* usage = namef(jobs) " " obrack keywordf(PID) keywordf(|) keywordf(ID) cbrack;
+    static const byte* desc =
+        namef(jobs) " - prints all currently running jobs and their status.\r\n"
+        "\tThis command can accept arguments in the form of " keywordf(PID) " or " keywordf(ID) " (job id).\r\n"
+        "\tIf the " keywordf(PID) " is supplied then the output is restricted to jobs that contain the selected "
+        "process ID.\r\n"
+        "\tIn case job " keywordf(ID) " is used, then the output will contain only the job with the given job " keywordf(ID);
+
+    int status;
+    size_t len = argv_len(argv);
+
+    if(len == 1) {
+        size_t jlistn = joblist_len();
+        if(jlistn == 0) {
+            pwarn("there are no jobs running.");
+            status = FAILURE;
+        } else {
+            jobheaderf;
+            for(size_t i = 0; i < jlistn; i++)
+                joboutf(joblist_at(i));
+            status = SUCCESS;
+        }
+    } else if(len == 2) {
+        if(is_help_opt(argv[1])) {
+            ATOMIC_PRINT(pmanpage(name, usage, desc));
+            status = SUCCESS;
+        } else {
+            int integer;
+            if(get_integers(argv + 1, &integer, 1) == FAILURE)
+                status = FAILURE;
+            else {
+                job_t* job = (integer < 0) ? joblist_find_id(FLIP_SIGN_BIT(integer)) : joblist_find_pid(integer);
+                if(is_some(job)) {
+                    jobheaderf;
+                    joboutf(job);
+                    status = SUCCESS;
+                } else
+                    status = FAILURE;
+            }
+        }
+    } else {
+        ATOMIC_PRINT({
+            PW_MANYARG(argv[0]);
+            pinfo(INF_USAGE, "%s", usage);
+            phelp_opts;
+        });
+        status = FAILURE;
+    }
+
+    return status;
+}
 
 static int argv_len(byte *const *argv)
 {
@@ -101,7 +178,7 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
             precision = errstr - intstr;
             ATOMIC_PRINT({
                 pwarn(
-                    "invalid integer provided >> " bold(blue("%*s")) bold(red("%s")) " <<",
+                    "invalid integer provided >> " validf("%*s") invalidf("%s") " <<",
                     precision,
                     intstr,
                     errstr
@@ -112,7 +189,7 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
         } else if(errno == ERANGE || integer > INT_MAX) {
             ATOMIC_PRINT({
                 pwarn(
-                    "integer is too large >> " bold(red("%s")) " <<, limit is " bold(blue("%d")) ".",
+                    "integer is too large >> " invalidf("%s") " <<, limit is " validf("%d") ".",
                     intstr,
                     INT_MAX
                 );
@@ -130,10 +207,12 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
 
 static void bg_last(void)
 {
-    if(last_bg == NULL)
+    job_t* job;
+    if(is_some(job = joblist_get_fg_job())) {
+        job->foreground = false;
+        job_continue(job, false);
+    } else
         ATOMIC_PRINT(PW_JOBMV("bg"));
-    else
-        job_continue(last_bg, false);
 }
 
 static void bg_id(int32_t id)
@@ -162,20 +241,20 @@ static void bg_pid(pid_t pid)
 
 static int bg(byte * const* argv)
 {
-    static const byte* name = bold(green("bg")) " - move jobs to background";
+    static const byte* name = namef(bg) " - move jobs to background";
     static const byte* usage = 
-        bold(green("bg")) " " obrack italic("PID") "..." cbrack"\r\n"
-        "\t" bold(green("bg")) " " obrack italic("%ID") "..." cbrack;
+        namef(bg) " " obrack keywordf(PID) "..." cbrack "\r\n"
+        "\t" namef(bg) " " obrack keywordf(%ID) "..." cbrack;
     static const byte* desc = 
-        bold(green("bg")) " moves jobs to the background automatically resuming them if they were stopped\n\r"
-        "\tThere are multiple ways of specifying which job to move, either by " italic("PID") ", " italic("ID") " or "
+        namef(bg) " moves jobs to the background automatically resuming them if they were stopped\n\r"
+        "\tThere are multiple ways of specifying which job to move, either by " keywordf(PID) ", " keywordf(ID) " or "
         "by not giving any arguments to the command.\r\n"
-        "\tUser can provide multiple " italic("PID") "s, if any job contains a process with that ID it will be put into "
+        "\tUser can provide multiple " keywordf(PID) "s, if any job contains a process with that ID it will be put into "
         "background.\r\n"
-        "\tAdditionally the " italic("ID") " of a job can be used to move a jobs to background, this is done by specifying "
-        bold(blue("%")) " in front of the " italic("ID") ", for example -> " bold(blue("%5")) italic("ID") ", this would place "
-        " job with " italic("ID") " of " bold(blue("5")) " into the background.\r\n"
-        "\tFinally by not specifying any arguments the last job that was in the foreground will be moved to background.";
+        "\tAdditionally the " keywordf(ID) " of a job can be used to move a jobs to background, this is done by specifying\r\n"
+        "\t" validf("%") " in front of the " keywordf(ID) ", for example -> " validf("%5") keywordf(ID) ", this would place "
+        " job with " keywordf(ID) " of " validf("5") " into the background.\r\n"
+        "\tFinally by not specifying any arguments the last job that was used will be moved to background.";
 
     int status;
     size_t len = argv_len(argv);
@@ -226,25 +305,27 @@ static void fg_pid(pid_t pid)
 
 static void fg_last(void)
 {
-    if(is_some(last_fg))
-        job_continue(last_fg, true);
-    else
+    job_t* job = joblist_get_bg_job();
+    if(is_some(job)) {
+        job->foreground = true;
+        job_continue(job, true);
+    } else
         ATOMIC_PRINT(PW_JOBMV("fg"));
 }
 
 static int fg(byte* const* argv)
 {
-    static const byte* name = bold(green("fg")) " - move job to foreground";
+    static const byte* name = namef(fg) " - move job to foreground";
     static const byte* usage = 
-        bold(green("fg")) " " obrack italic("PID") cbrack "\r\n"
-        "\t" bold(green("fg")) " " obrack italic("%ID") cbrack;
+        namef(fg) " " obrack keywordf(PID) cbrack "\r\n"
+        "\t" namef(fg) " " obrack keywordf(%ID) cbrack;
     static const byte* desc =
-        bold(green("fg")) " bring the specified job to the foreground additionally resuming it if was stopped\r\n"
-        "\tIf no arguments were supplied then the last job to be created it put into foreground.\r\n"
-        "\tIn case " italic("PID") " was provided, then the job that contains specified process ID is put "
+        namef(fg) " bring the specified job to the foreground additionally resuming it if was stopped\r\n"
+        "\tIf no arguments were supplied then the last job that was used is put into foreground.\r\n"
+        "\tIn case " keywordf(PID) " was provided, then the job that contains specified process ID is put "
         "in the foreground.\r\n"
-        "\tAdditionally the " italic("ID") " of a job can be used given that user provides " bold(blue("%")) " before it, "
-        bold(blue("%5"))", this would try to bring the foreground job with " italic("ID") " of " bold(blue("5")) " into foreground.\r\n";
+        "\tAdditionally the " keywordf(ID) " of a job can be used given that user provides " validf("%") " before it, "
+        validf("%5")", this would try to bring the foreground job with " keywordf(ID) " of " validf("5") " into foreground.\r\n";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -283,17 +364,16 @@ bool is_builtin(const byte *command)
 
 static int exit_builtin(byte *const *argv, bool shell)
 {
-    static const byte* usage = bold(green("exit")) " " obrack italic("CODE") cbrack;
-    static const byte* name = bold(green("exit")) " - exits the shell";
+    static const byte* usage = namef(exit) " " obrack keywordf(CODE) cbrack;
+    static const byte* name = namef(exit) " - exits the shell";
     static const byte* desc = 
-        bold(green("exit")) " is a builtin command that exits the shell with the " italic("CODE") 
-        " if supplied or 0 in case " italic("CODE") " is not supplied.\r\n"
+        namef(exit) " is a builtin command that exits the shell with the " keywordf(CODE) 
+        " if supplied or 0 in case " keywordf(CODE) " is not supplied.\r\n"
         "\tIn case there are background jobs running when exit is called, shell will not exit instantly, "
         "instead it will warn user first if there are any running/stopped background jobs.";
     static const byte *exit_warn = 
         "There are background jobs that are still running/stopped!\n\r"
-        "Run " bold(green("exit"))" again to exit, this will result in " bold(bred("termination")) 
-        " of child processes.";
+        "Run " namef(exit) " again to exit, this will result in " invalidf("termination") " of child processes.";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -316,7 +396,7 @@ static int exit_builtin(byte *const *argv, bool shell)
             exit_status = strtol(argv[1], NULL, 10);
             if(errno == EINVAL || errno == ERANGE) {
                 ATOMIC_PRINT({
-                    pwarn("invalid exit status integer " bold(bred("%s")), argv[1]);
+                    pwarn("invalid exit status integer " invalidf("%s"), argv[1]);
                     pinfo(INF_USAGE, "%s", usage);
                     phelp_opts;
                 });
@@ -347,13 +427,12 @@ static int exit_builtin(byte *const *argv, bool shell)
 
 static int change_dir(byte *const *argv)
 {
-    static const byte *usage = bold(green("cd")) " " obrack italic("DIRNAME") cbrack;
-    static const byte *name = bold(green("cd")) " - change directory";
+    static const byte *usage = namef(cd) " " obrack keywordf(DIRNAME) cbrack;
+    static const byte *name = namef(cd) " - change directory";
     static const byte *desc = 
-        bold(green("cd")) " command changes current working directory.\r\n"
-        "\tIf no " italic("DIRECTORY") " is given, then the " italic("HOME")
-        " environment variable will be used.\r\n"
-        "\tOtherwise " italic("DIRECTORY") " becomes the new working directory.";
+        namef(cd) " command changes current working directory.\r\n"
+        "\tIf no " keywordf(DIRECTORY) " is given, then the " keywordf(HOME) " environment variable will be used.\r\n"
+        "\tOtherwise " keywordf(DIRECTORY) " becomes the new working directory.";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -387,13 +466,13 @@ static int change_dir(byte *const *argv)
 
 static int print_variable(byte *const *argv)
 {
-    static const byte *name = bold(green("penv")) " - print environment variable/s.";
-    static const byte *usage = bold(green("penv")) " " obrack italic("NAME") cbrack;
+    static const byte *name = namef(penv) " - print environment variable/s.";
+    static const byte *usage = namef(penv) " " obrack keywordf(NAME) cbrack;
     static const byte *desc = 
-        bold(green("penv")) " prints environmental variables.\n\r"
-        "\tIf no " italic("NAME") " is provided " green("penv") " will print all environment variables.\r\n"
-        "\tIf " italic("NAME") " is provided, " green("penv") " prints the value of that variable with that "
-        italic("NAME") ".";
+        namef(penv) " prints environmental variables.\n\r"
+        "\tIf no " keywordf(NAME) " is provided " namef(penv) " will print all environment variables.\r\n"
+        "\tIf " keywordf(NAME) " is provided, " namef(penv) " prints the value of that variable with that "
+        keywordf(NAME) ".";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -420,16 +499,16 @@ static int print_variable(byte *const *argv)
 
 int set_variable(byte *const *argv)
 {
-    static const byte *name = bold(green("senv")) " - set environment variable.";
+    static const byte *name = namef(senv) " - set environment variable.";
     static const byte *usage = 
-        bold(green("senv")) " " obrack italic("NAME") cbrack " " obrack italic("VALUE") cbrack;
+        namef(senv) " " obrack keywordf(NAME) cbrack " " obrack keywordf(VALUE) cbrack;
     static const byte *desc = 
-        bold(green("penv")) " set/add environmental variable.\n\r"
-        "\tIf variable with " italic("NAME") " already exists then its " italic("VALUE") " is overwritten.\r\n"
-        "\tIn case the variable with " italic("NAME") " doesn't already exist, then it is newly created and "
-        "added into the environment with the value of " italic("VALUE") ".\r\n"
-        "\tAdditionally if the " italic("NAME") " was provided but " italic("VALUE") " was not, then the "
-        "variable is initialized with the value of empty string (" italic("\"\"") ").";
+        namef(penv) " set/add environmental variable.\n\r"
+        "\tIf variable with " keywordf(NAME) " already exists then its " keywordf(VALUE) " is overwritten.\r\n"
+        "\tIn case the variable with " keywordf(NAME) " doesn't already exist, then it is newly created and "
+        "added into the environment with the value of " keywordf(VALUE) ".\r\n"
+        "\tAdditionally if the " keywordf(NAME) " was provided but " keywordf(VALUE) " was not, then the "
+        "variable is initialized with the value of empty string (" keywordf("") ").";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -463,12 +542,11 @@ int set_variable(byte *const *argv)
 
 static int remove_variable(byte *const *argv)
 {
-    static const byte *name = bold(green("renv")) " - remove environment variable.";
-    static const byte *usage
-        = bold(green("renv")) " " obrack italic("NAME");
+    static const byte *name = namef(renv) " - remove environment variable.";
+    static const byte *usage = namef(renv) " " obrack keywordf(NAME);
     static const byte *desc = 
-        bold(green("renv")) " removes environmental variable.\n\r"
-        "\tIf variable with " italic("NAME") " exists it gets removed from the environment.";
+        namef(renv) " removes environmental variable.\n\r"
+        "\tIf variable with " keywordf(NAME) " exists it gets removed from the environment.";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -537,9 +615,9 @@ static void penviron(void)
 
 static int pwd(byte * const * argv)
 {
-    static const byte* name = bold(green("pwd")) " - print the current working directory.";
-    static const byte* usage = bold(green("pwd"));
-    static const byte* desc = bold(green("pwd")) " prints the current working directory. (ashe builtin pwd)";
+    static const byte* name = namef(pwd) " - print the current working directory.";
+    static const byte* usage = namef(pwd);
+    static const byte* desc = namef(pwd) " prints the current working directory. (ashe builtin pwd)";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -570,9 +648,9 @@ static int pwd(byte * const * argv)
 
 static int clear(byte* const* argv)
 {
-    static const byte* name = bold(green("clear")) " - clear the screen.";
-    static const byte* usage = bold(green("clear"));
-    static const byte* desc = bold(green("clear")) " - clears the terminal screen including scrollback. (ashe builtin)";
+    static const byte* name = namef(clear) " - clear the screen.";
+    static const byte* usage = namef(clear);
+    static const byte* desc = namef(clear) " - clears the terminal screen including scrollback. (ashe builtin)";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -597,9 +675,9 @@ static int clear(byte* const* argv)
 
 static int builtin_names(byte* const* argv)
 {
-    static const byte* name = bold(green("builtin")) " - print list of all builtin commands.";
-    static const byte* usage = bold(green("builtin"));
-    static const byte* desc = bold(green("builtin")) " prints all ashe builtin commands. (ashe builtin)";
+    static const byte* name = namef(builtin) " - print list of all builtin commands.";
+    static const byte* usage = namef(builtin);
+    static const byte* desc = namef(builtin) " prints all ashe builtin commands. (ashe builtin)";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -655,7 +733,9 @@ int run_builtin(const byte *command, byte *const *argv, bool shell)
         status = fg(argv);
     } else if(strcmp(command, "bg") == 0) {
         status = bg(argv);
-    } else {
+    } else if(strcmp(command, "jobs") == 0) {
+        status = jobs(argv);
+    }  else {
         fprintf(stderr, "FIX ME: UNREACHABLE CODE\r\nFILE: %s\n\rLINE: %d\r\nFUNCTION: %s\n\r", __FILE__, __LINE__, __func__);
         exit(EXIT_FAILURE);
     }
