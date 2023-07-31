@@ -4,6 +4,7 @@
 #include "input.h"
 #include "jobctl.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
@@ -20,17 +21,25 @@
     fprintf(stderr, "\r\nThe -h or --help options display help information for this command\n\r")
 
 /// Built-in commands
-byte *builtin[] = {"exit", "pwd", "clear", "cd", "penv", "senv", "renv", "builtin", "fg"};
+byte *builtin[] = {
+    "exit",
+    "pwd",
+    "clear",
+    "cd",
+    "penv",
+    "senv",
+    "renv",
+    "builtin",
+    "fg",
+    "bg",
+};
+
 #define BUILTINN sizeof(builtin) / sizeof(builtin[0])
 
 static int argv_len(byte *const *argv);
 static void pbuiltin(void);
 static void penviron(void);
 static int envcmd(byte *const *argv, int option);
-static int fg_last(void);
-static int fg_pid(pid_t pid);
-static int fg_id(uint64_t id);
-static int fg(byte *const *argv);
 static int exit_builtin(byte *const *argv, bool shell);
 static int change_dir(byte *const *argv);
 static int print_variable(byte *const *argv);
@@ -38,7 +47,22 @@ static int remove_variable(byte *const *argv);
 static int pwd(byte *const *argv);
 static int clear(byte *const *argv);
 static int builtin_names(byte *const *argv);
-static int bg_id(int64_t *const *idlist);
+static int get_integers(byte *const *argv, int32_t *out, size_t len);
+static void fg_last(void);
+static void fg_pid(pid_t pid);
+static void fg_id(int32_t id);
+static int fg(byte *const *argv);
+static void bg_last(void);
+static void bg_id(int32_t id);
+static void bg_pid(pid_t pid);
+static int bg(byte *const *argv);
+
+/// This is used in 'bg' builtin command when parsing and storing combination
+/// of id and pid integers in the same array to later distinguish them by their sign bit.
+/// All valid PID's and ID's are positive so by flipping a sign bit we can differentiate
+/// them while also storing them in the same array without storing each inside a tagged union.
+#define FLIP_SIGN_BIT(integer)                                                                     \
+    ((int32_t) ((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1)))
 
 // clang-format off
 
@@ -50,17 +74,98 @@ static int argv_len(byte *const *argv)
     return len;
 }
 
-static int bg_id(int64_t * const* idlist)
+static int get_integers(byte* const* argv, int32_t *out, size_t len)
 {
-    int status;
-    // TODO: Implement
-    return status;
+    byte *intstr;
+    byte *errstr;
+    bool id = false;
+    int integer;
+    size_t precision;
+
+    while(len--) {
+        intstr = *argv;
+        if(*intstr == '%') {
+            id = true;
+            if(*++intstr == '\0') {
+                ATOMIC_PRINT({
+                    pwarn("provided '%' but missing ID");
+                    phelp_opts;
+                });
+                return FAILURE;
+            }
+        }
+
+        integer = strtol(intstr, &errstr, 10);
+
+        if(*errstr != '\0') {
+            precision = errstr - intstr;
+            ATOMIC_PRINT({
+                pwarn(
+                    "invalid integer provided >> " bold(blue("%*s")) bold(red("%s")) " <<",
+                    precision,
+                    intstr,
+                    errstr
+                );
+                phelp_opts;
+            });
+            return FAILURE;
+        } else if(errno == ERANGE || integer > INT_MAX) {
+            ATOMIC_PRINT({
+                pwarn(
+                    "integer is too large >> " bold(red("%s")) " <<, limit is " bold(blue("%d")) ".",
+                    intstr,
+                    INT_MAX
+                );
+                perr();
+                phelp_opts;
+            });
+            return FAILURE;
+        }
+
+        *out++ = (id) ? (int32_t) FLIP_SIGN_BIT(integer) : integer;
+    }
+
+    return SUCCESS;
+}
+
+static void bg_last(void)
+{
+    if(last_bg == NULL)
+        ATOMIC_PRINT(PW_JOBMV("bg"));
+    else
+        job_continue(last_bg, false);
+}
+
+static void bg_id(int32_t id)
+{
+    job_t* job;
+
+    job = joblist_find_id(id);
+
+    if(is_some(job))
+        job_continue(job, false);
+    else
+        ATOMIC_PRINT(PW_JOBMV_ID("bg", id));
+}
+
+static void bg_pid(pid_t pid)
+{
+    job_t* job;
+
+    job = joblist_find_pid(pid);
+
+    if(is_some(job))
+        job_continue(job, false);
+    else
+        ATOMIC_PRINT(PW_JOBMV_PID("bg", pid));
 }
 
 static int bg(byte * const* argv)
 {
     static const byte* name = bold(green("bg")) " - move jobs to background";
-    static const byte* usage = bold(green("bg")) " " obrack italic("PID") "..." cbrack;
+    static const byte* usage = 
+        bold(green("bg")) " " obrack italic("PID") "..." cbrack"\r\n"
+        "\t" bold(green("bg")) " " obrack italic("%ID") "..." cbrack;
     static const byte* desc = 
         bold(green("bg")) " moves jobs to the background automatically resuming them if they were stopped\n\r"
         "\tThere are multiple ways of specifying which job to move, either by " italic("PID") ", " italic("ID") " or "
@@ -73,65 +178,58 @@ static int bg(byte * const* argv)
         "\tFinally by not specifying any arguments the last job that was in the foreground will be moved to background.";
 
     int status;
-    ssize_t len = argv_len(argv);
+    size_t len = argv_len(argv);
 
+    if(len == 1) {
+        bg_last();
+        status = SUCCESS;
+    } else {
+        if(len == 2 && is_help_opt(argv[1])) {
+            ATOMIC_PRINT(pmanpage(name, usage, desc));
+            status = SUCCESS;
+        } else {
+            size_t n = argv_len(argv + 1);
+            int32_t integers[n];
 
-    //TODO: Implement
-
-    return status;
-}
-
-static int fg_id(uint64_t id)
-{
-    size_t len = joblist_len();
-    job_t *job;
-
-    for(size_t i = 0; i < len; i++) {
-        job = joblist_at(i);
-        if(job->id == id) {
-            job_continue(job, true);
-            return SUCCESS;
-        }
-    }
-
-    ATOMIC_PRINT(PW_FG_ID_ERR(id));
-    return FAILURE;
-}
-
-static int fg_pid(pid_t pid)
-{
-    job_t *job;
-    size_t joblen; 
-    process_t* proc;
-    size_t len = joblist_len();
-
-    for(size_t i = 0; i < len; i++) {
-        job = joblist_at(i);
-        joblen = job_len(job);
-        for(size_t j = 0; j < joblen; j++) {
-            proc = job_at(job, j);
-            if(proc->pid == pid) {
-                job_continue(job, true);
-                return SUCCESS;
+            if(get_integers(argv + 1, integers, n) == FAILURE) {
+                status = FAILURE;
+            } else {
+                for(size_t i = 0; i < n; i++)
+                    (integers[i] < 0) ? bg_id(FLIP_SIGN_BIT(integers[i])) : bg_pid(integers[i]);
+                status = SUCCESS;
             }
         }
     }
 
-    ATOMIC_PRINT(PW_FG_PID_ERR(pid));
-    return FAILURE;
+    return status;
 }
 
-static int fg_last(void)
+static void fg_id(int32_t id)
 {
-    job_t *job;
+    job_t* job = joblist_find_id(id);
 
-    if(is_some((job = joblist_last()))) {
+    if(is_some(job))
         job_continue(job, true);
-        return SUCCESS;
-    }
+    else
+        ATOMIC_PRINT(PW_JOBMV_ID("fg", id));
+}
 
-    ATOMIC_PRINT(PW_FG_ERR);
-    return FAILURE;
+static void fg_pid(pid_t pid)
+{
+    job_t* job = joblist_find_pid(pid);
+
+    if(is_some(job))
+        job_continue(job, true);
+    else
+        ATOMIC_PRINT(PW_JOBMV_PID("fg", pid));
+}
+
+static void fg_last(void)
+{
+    if(is_some(last_fg))
+        job_continue(last_fg, true);
+    else
+        ATOMIC_PRINT(PW_JOBMV("fg"));
 }
 
 static int fg(byte* const* argv)
@@ -150,59 +248,18 @@ static int fg(byte* const* argv)
 
     int status;
     ssize_t len = argv_len(argv);
-    byte* errstr;
 
     if(len == 1) {
-        status = fg_last();
+        fg_last();
+        status = SUCCESS;
     } else if(len == 2) {
         if(is_help_opt(argv[1])) {
             ATOMIC_PRINT(pmanpage(name, usage, desc));
             status = SUCCESS;
         } else {
-            const byte* intstr = argv[1];
-            bool id = false;
-
-            if(*argv[1] == '%') {
-                id = true;
-                intstr++;
-                if(*intstr == '\0') {
-                    ATOMIC_PRINT({
-                        pwarn("provided '%' but missing ID");
-                        phelp_opts;
-                    });
-                    return FAILURE;
-                }
-            }
-
-            int64_t integer = strtol(intstr, &errstr, 10);
-
-            if(*errstr != '\0') {
-                int precision = errstr - intstr;
-
-                ATOMIC_PRINT({
-                    pwarn(
-                        "invalid integer provided >> " bold(blue("%*s")) bold(red("%s")) " <<",
-                        precision,
-                        intstr,
-                        errstr
-                    );
-                    phelp_opts;
-                });
-                status = FAILURE;
-            } else {
-                if(!id && integer > INT_MAX) {
-                    ATOMIC_PRINT({
-                        pwarn(
-                            "integer provided for process ID " bold(bred("%d")) " is bigger than the limit of " bold(green("%d")),
-                            integer,
-                            INT_MAX
-                        );
-                        phelp_opts;
-                    });
-                    status = FAILURE;
-                } else
-                    status = (id) ? fg_id(integer) : fg_pid(integer);
-            }
+            int32_t integer;
+            if((status = get_integers(argv + 1, &integer, 1)) != FAILURE)
+                (integer < 0) ? fg_id(FLIP_SIGN_BIT(integer)) : fg_pid(integer);
         }
     } else {
         ATOMIC_PRINT({
@@ -234,7 +291,7 @@ static int exit_builtin(byte *const *argv, bool shell)
         "\tIn case there are background jobs running when exit is called, shell will not exit instantly, "
         "instead it will warn user first if there are any running/stopped background jobs.";
     static const byte *exit_warn = 
-        "There are background jobs that are still running/stopped!\n\n"
+        "There are background jobs that are still running/stopped!\n\r"
         "Run " bold(green("exit"))" again to exit, this will result in " bold(bred("termination")) 
         " of child processes.";
 
@@ -457,7 +514,7 @@ static int envcmd(byte *const *argv, int option)
         case RM_ENV: status = unsetenv(argv[1]); break;
         case P_ENV:
             if(is_some(temp = getenv(argv[1]))) {
-                ATOMIC_PRINT(printf("%s\n", temp));
+                ATOMIC_PRINT(printf("%s\n\r", temp));
                 status = SUCCESS;
             }
             break;
@@ -475,7 +532,7 @@ static void penviron(void)
 {
     int i = 0;
     while(is_some(environ[i]))
-        ATOMIC_PRINT(printf("%s\n", environ[i++]));
+        ATOMIC_PRINT(printf("%s\r\n", environ[i++]));
 }
 
 static int pwd(byte * const * argv)
@@ -493,7 +550,7 @@ static int pwd(byte * const * argv)
             ATOMIC_PRINT(perr());
             status = FAILURE;
         } else {
-            ATOMIC_PRINT(printf("%s\n", buff));
+            ATOMIC_PRINT(printf("%s\n\r", buff));
             status = SUCCESS;
         }
     } else if(len == 2 && is_help_opt(argv[1])) {
@@ -568,7 +625,7 @@ static int builtin_names(byte* const* argv)
 static void pbuiltin(void)
 {
     for(size_t i = 0; i < BUILTINN; i++)
-        printf("%s\n", builtin[i]);
+        printf("%s\n\r", builtin[i]);
 }
 
 int run_builtin(const byte *command, byte *const *argv, bool shell)
@@ -596,6 +653,11 @@ int run_builtin(const byte *command, byte *const *argv, bool shell)
         status = builtin_names(argv);
     } else if(strcmp(command, "fg") == 0) {
         status = fg(argv);
+    } else if(strcmp(command, "bg") == 0) {
+        status = bg(argv);
+    } else {
+        fprintf(stderr, "FIX ME: UNREACHABLE CODE\r\nFILE: %s\n\rLINE: %d\r\nFUNCTION: %s\n\r", __FILE__, __LINE__, __func__);
+        exit(EXIT_FAILURE);
     }
 
     return status;

@@ -24,6 +24,9 @@
 joblist_t joblist = {0};
 static size_t joblist_id();
 
+job_t *last_bg = NULL;
+job_t *last_fg = NULL;
+
 bool joblist_init()
 {
     joblist.jobs = vec_new(sizeof(job_t));
@@ -37,6 +40,38 @@ bool joblist_push(job_t *job)
 {
     job->id = joblist_id();
     return vec_push(joblist.jobs, job);
+}
+
+job_t *joblist_find_id(size_t id)
+{
+    size_t len = joblist_len();
+    job_t *job;
+
+    for(size_t i = 0; i < len; i++) {
+        job = joblist_at(i);
+        if(job->id == id)
+            return job;
+    }
+
+    return NULL;
+}
+
+job_t *joblist_find_pid(pid_t pid)
+{
+    size_t len = joblist_len();
+    job_t *job;
+    size_t jobn;
+
+    for(size_t i = 0; i < len; i++) {
+        job = joblist_at(i);
+        jobn = job_len(job);
+
+        for(size_t j = 0; j < jobn; j++)
+            if(job_at(job, j)->pid == pid)
+                return job;
+    }
+
+    return NULL;
 }
 
 static size_t joblist_id()

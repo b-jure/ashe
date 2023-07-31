@@ -4,17 +4,17 @@
 #include "ashe_utils.h"
 #include "input.h"
 
-#define PW_FG_ID_ERR(id)                                                        \
-  pwarn("There is no suitable job with ID " bold(                              \
-            bred("%d")) " to move into foreground!",                           \
-        id)
+#define PW_JOBMV_ID(prog, id)                                                  \
+  pwarn(                                                                       \
+      bold(bred("%s")) ": there is no suitable job with ID " bold(bred("%d")), \
+      prog, id)
+#define PW_JOBMV_PID(prog, pid)                                                \
+  pwarn(bold(bred("%s")) ": there is no suitable job containing PID " bold(    \
+            bred("%d")),                                                       \
+        prog, pid)
 
-#define PW_FG_PID_ERR(pid)                                                      \
-  pwarn("There is no suitable job containing PID " bold(                       \
-            bred("%d")) " to move into foreground!",                           \
-        pid)
-
-#define PW_FG_ERR pwarn("There is no suitable job to move into foreground!")
+#define PW_JOBMV(prog)                                                         \
+  pwarn(bold(bred("%s")) ": there is no suitable job!", prog)
 
 #define PW_OOM(bytes)                                                          \
   pwarn("ran out of memory while trying to allocate " bold(                    \

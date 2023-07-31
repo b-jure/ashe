@@ -33,10 +33,13 @@ typedef struct {
   struct termios tmodes;
 } job_t;
 
-/// Job connection
-#define JC_AND ASH_AND /* '&&' */
-#define JC_OR ASH_OR   /* '||' */
-#define JC_NONE ASH_NONE
+extern job_t *last_bg; /* Last background job */
+extern job_t *last_fg; /* Last foreground job */
+
+/// Job connection (conditionals)
+#define JC_AND ASH_AND   /* '&&' */
+#define JC_OR ASH_OR     /* '||' */
+#define JC_NONE ASH_NONE /* No connection */
 
 /// JOBLIST
 size_t joblist_len(void);
@@ -48,6 +51,8 @@ void joblist_update_and_notify(int signum);
 bool joblist_push(job_t *job);
 job_t *joblist_last(void);
 job_t *joblist_getjob(joblist_t *jlist, pid_t pgid);
+job_t *joblist_find_pid(pid_t pid);
+job_t *joblist_find_id(size_t id);
 
 /// JOB
 job_t job_new(byte connection, bool bg);
