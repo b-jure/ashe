@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 typedef char byte;
+
 extern byte **environ;
 
 #define is_null(ptr) ((ptr) == NULL)
@@ -49,10 +50,11 @@ extern byte **environ;
 
 typedef enum { INF_NAME, INF_DESC, INF_USAGE } info_t;
 
+void _die(void);
 void die(void);
 void pwarn(const byte *fmt, ...);
 void perr(void);
-void pinfo(info_t type, const byte *fmt, ...);
+void pinfo(info_t type, const byte *str);
 void pmanpage(const byte *name, const byte *usage, const byte *desc);
 
 #define PCS_EXTRA "/.-"

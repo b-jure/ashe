@@ -4,6 +4,7 @@
 #include "errors.h"
 #include "input.h"
 #include "jobctl.h"
+#include "shell.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -84,7 +85,7 @@ static int jobs(byte *const *argv);
 /// All valid PID's and ID's are positive so by flipping a sign bit we can differentiate
 /// them while also storing them in the same array without storing each inside a tagged union.
 #define FLIP_SIGN_BIT(integer)                                                                     \
-    ((int32_t) ((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1)))
+    ((int32_t) (((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1))))
 
 // clang-format off
 
@@ -93,24 +94,23 @@ static int jobs(byte* const* argv)
     static const byte* name = namef(jobs) " - print currently running/stopped jobs.";
     static const byte* usage = namef(jobs) " " obrack keywordf(PID) keywordf(|) keywordf(ID) cbrack;
     static const byte* desc =
-        namef(jobs) " - prints all currently running jobs and their status.\r\n"
-        "\tThis command can accept arguments in the form of " keywordf(PID) " or " keywordf(ID) " (job id).\r\n"
-        "\tIf the " keywordf(PID) " is supplied then the output is restricted to jobs that contain the selected "
-        "process ID.\r\n"
-        "\tIn case job " keywordf(ID) " is used, then the output will contain only the job with the given job " keywordf(ID);
+        namef(jobs) " - prints all currently running jobs and their status."
+        "This command can accept arguments in the form of " keywordf(PID) " or " keywordf(ID) " (job id)."
+        "If the " keywordf(PID) " is supplied then the output is restricted to jobs that contain the selected process ID."
+        "In case job " keywordf(ID) " is used, then the output will contain only the job with the given job " keywordf(ID);
 
     int status;
     size_t len = argv_len(argv);
 
     if(len == 1) {
-        size_t jlistn = joblist_len();
+        size_t jlistn = joblist_len(&shell.sh_jlist);
         if(jlistn == 0) {
             pwarn("there are no jobs running.");
             status = FAILURE;
         } else {
             jobheaderf;
             for(size_t i = 0; i < jlistn; i++)
-                joboutf(joblist_at(i));
+                joboutf(joblist_at(&shell.sh_jlist, i));
             status = SUCCESS;
         }
     } else if(len == 2) {
@@ -122,7 +122,7 @@ static int jobs(byte* const* argv)
             if(get_integers(argv + 1, &integer, 1) == FAILURE)
                 status = FAILURE;
             else {
-                job_t* job = (integer < 0) ? joblist_find_id(FLIP_SIGN_BIT(integer)) : joblist_find_pid(integer);
+                job_t* job = (integer < 0) ? joblist_find_id(&shell.sh_jlist, FLIP_SIGN_BIT(integer)) : joblist_find_pid(&shell.sh_jlist, integer);
                 if(is_some(job)) {
                     jobheaderf;
                     joboutf(job);
@@ -134,7 +134,7 @@ static int jobs(byte* const* argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -160,7 +160,7 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
     size_t precision;
 
     while(len--) {
-        intstr = *argv;
+        intstr = *argv++;
         if(*intstr == '%') {
             id = true;
             if(*++intstr == '\0') {
@@ -176,6 +176,8 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
 
         if(*errstr != '\0') {
             precision = errstr - intstr;
+            if(precision == 0)
+                intstr = "";
             ATOMIC_PRINT({
                 pwarn(
                     "invalid integer provided >> " validf("%*s") invalidf("%s") " <<",
@@ -207,9 +209,8 @@ static int get_integers(byte* const* argv, int32_t *out, size_t len)
 
 static void bg_last(void)
 {
-    job_t* job;
-    if(is_some(job = joblist_get_fg_job())) {
-        job->foreground = false;
+    job_t* job = joblist_get_fg_job(&shell.sh_jlist);
+    if(is_some(job)) {
         job_continue(job, false);
     } else
         ATOMIC_PRINT(PW_JOBMV("bg"));
@@ -217,21 +218,17 @@ static void bg_last(void)
 
 static void bg_id(int32_t id)
 {
-    job_t* job;
+    job_t* job = joblist_get_fg_id(&shell.sh_jlist, id);
 
-    job = joblist_find_id(id);
-
-    if(is_some(job))
+    if(is_some(job)) {
         job_continue(job, false);
-    else
+    } else
         ATOMIC_PRINT(PW_JOBMV_ID("bg", id));
 }
 
 static void bg_pid(pid_t pid)
 {
-    job_t* job;
-
-    job = joblist_find_pid(pid);
+    job_t* job = joblist_get_fg_pid(&shell.sh_jlist, pid);
 
     if(is_some(job))
         job_continue(job, false);
@@ -244,17 +241,16 @@ static int bg(byte * const* argv)
     static const byte* name = namef(bg) " - move jobs to background";
     static const byte* usage = 
         namef(bg) " " obrack keywordf(PID) "..." cbrack "\r\n"
-        "\t" namef(bg) " " obrack keywordf(%ID) "..." cbrack;
+        namef(bg) " " obrack keywordf(%ID) "..." cbrack;
     static const byte* desc = 
-        namef(bg) " moves jobs to the background automatically resuming them if they were stopped\n\r"
-        "\tThere are multiple ways of specifying which job to move, either by " keywordf(PID) ", " keywordf(ID) " or "
+        namef(bg) " moves jobs to the background automatically resuming them if they were stopped.\r\n"
+        "There are multiple ways of specifying which job to move, either by " keywordf(PID) ", " keywordf(ID) " or "
         "by not giving any arguments to the command.\r\n"
-        "\tUser can provide multiple " keywordf(PID) "s, if any job contains a process with that ID it will be put into "
-        "background.\r\n"
-        "\tAdditionally the " keywordf(ID) " of a job can be used to move a jobs to background, this is done by specifying\r\n"
-        "\t" validf("%") " in front of the " keywordf(ID) ", for example -> " validf("%5") keywordf(ID) ", this would place "
+        "User can provide multiple " keywordf(PID) "s, if any job contains a process with that ID it will be put into background. "
+        "Additionally the " keywordf(ID) " of a job can be used to move a jobs to background, this is done by specifying"
+        validf("%") " in front of the " keywordf(ID) ", for example -> " validf("%5") keywordf(ID) ", this would place "
         " job with " keywordf(ID) " of " validf("5") " into the background.\r\n"
-        "\tFinally by not specifying any arguments the last job that was used will be moved to background.";
+        "Finally by not specifying any arguments the last job that was used will be moved to background.";
 
     int status;
     size_t len = argv_len(argv);
@@ -285,7 +281,7 @@ static int bg(byte * const* argv)
 
 static void fg_id(int32_t id)
 {
-    job_t* job = joblist_find_id(id);
+    job_t* job = joblist_get_bg_id(&shell.sh_jlist, id);
 
     if(is_some(job))
         job_continue(job, true);
@@ -295,7 +291,7 @@ static void fg_id(int32_t id)
 
 static void fg_pid(pid_t pid)
 {
-    job_t* job = joblist_find_pid(pid);
+    job_t* job = joblist_get_bg_pid(&shell.sh_jlist, pid);
 
     if(is_some(job))
         job_continue(job, true);
@@ -305,9 +301,9 @@ static void fg_pid(pid_t pid)
 
 static void fg_last(void)
 {
-    job_t* job = joblist_get_bg_job();
+    job_t* job = joblist_get_bg_job(&shell.sh_jlist);
+
     if(is_some(job)) {
-        job->foreground = true;
         job_continue(job, true);
     } else
         ATOMIC_PRINT(PW_JOBMV("fg"));
@@ -318,14 +314,13 @@ static int fg(byte* const* argv)
     static const byte* name = namef(fg) " - move job to foreground";
     static const byte* usage = 
         namef(fg) " " obrack keywordf(PID) cbrack "\r\n"
-        "\t" namef(fg) " " obrack keywordf(%ID) cbrack;
+        namef(fg) " " obrack keywordf(%ID) cbrack;
     static const byte* desc =
-        namef(fg) " bring the specified job to the foreground additionally resuming it if was stopped\r\n"
-        "\tIf no arguments were supplied then the last job that was used is put into foreground.\r\n"
-        "\tIn case " keywordf(PID) " was provided, then the job that contains specified process ID is put "
-        "in the foreground.\r\n"
-        "\tAdditionally the " keywordf(ID) " of a job can be used given that user provides " validf("%") " before it, "
-        validf("%5")", this would try to bring the foreground job with " keywordf(ID) " of " validf("5") " into foreground.\r\n";
+        namef(fg) " bring the specified job to the foreground additionally resuming it if was stopped.\r\n"
+        "If no arguments were supplied then the last job that was used is put into foreground.\r\n"
+        "In case " keywordf(PID) " was provided, then the job that contains specified process ID is put in the foreground.\r\n"
+        "Additionally the " keywordf(ID) " of a job can be used given that user provides " validf("%") " before it, "
+        validf("%5")", this would try to bring the foreground job with " keywordf(ID) " of " validf("5") " into foreground.";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -345,7 +340,7 @@ static int fg(byte* const* argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -362,25 +357,25 @@ bool is_builtin(const byte *command)
     return false;
 }
 
-static int exit_builtin(byte *const *argv, bool shell)
+static int exit_builtin(byte *const *argv, bool is_shell)
 {
     static const byte* usage = namef(exit) " " obrack keywordf(CODE) cbrack;
     static const byte* name = namef(exit) " - exits the shell";
     static const byte* desc = 
         namef(exit) " is a builtin command that exits the shell with the " keywordf(CODE) 
         " if supplied or 0 in case " keywordf(CODE) " is not supplied.\r\n"
-        "\tIn case there are background jobs running when exit is called, shell will not exit instantly, "
-        "instead it will warn user first if there are any running/stopped background jobs.";
+        "In case there are jobs running when exit is called, shell will not exit instantly, "
+        "instead it will warn user first if there are any running jobs.";
     static const byte *exit_warn = 
-        "There are background jobs that are still running/stopped!\n\r"
+        "There are background jobs that are still running/stopped!\r\n"
         "Run " namef(exit) " again to exit, this will result in " invalidf("termination") " of child processes.";
 
     int status;
     ssize_t len = argv_len(argv);
 
     if(len == 1) {
-        if(shell) {
-            if(joblist_len() != 0 && !exit_warning) {
+        if(is_shell) {
+            if(joblist_len(&shell.sh_jlist) != 0 && !exit_warning) {
                 exit_warning = true;
                 ATOMIC_PRINT(pwarn("%s", exit_warn));
             } else
@@ -397,14 +392,14 @@ static int exit_builtin(byte *const *argv, bool shell)
             if(errno == EINVAL || errno == ERANGE) {
                 ATOMIC_PRINT({
                     pwarn("invalid exit status integer " invalidf("%s"), argv[1]);
-                    pinfo(INF_USAGE, "%s", usage);
+                    pinfo(INF_USAGE, usage);
                     phelp_opts;
                 });
                 status = FAILURE;
             } else {
                 status = exit_status;
-                if(shell) {
-                    if(joblist_len() != 0 && !exit_warning) {
+                if(is_shell) {
+                    if(joblist_len(&shell.sh_jlist) != 0 && !exit_warning) {
                         exit_warning = true;
                         ATOMIC_PRINT(pwarn("%s", exit_warn));
                     } else
@@ -415,7 +410,7 @@ static int exit_builtin(byte *const *argv, bool shell)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -431,8 +426,8 @@ static int change_dir(byte *const *argv)
     static const byte *name = namef(cd) " - change directory";
     static const byte *desc = 
         namef(cd) " command changes current working directory.\r\n"
-        "\tIf no " keywordf(DIRECTORY) " is given, then the " keywordf(HOME) " environment variable will be used.\r\n"
-        "\tOtherwise " keywordf(DIRECTORY) " becomes the new working directory.";
+        "If no " keywordf(DIRECTORY) " is given, then the " keywordf(HOME) " environment variable will be used.\r\n"
+        "Otherwise " keywordf(DIRECTORY) " becomes the new working directory.";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -455,7 +450,7 @@ static int change_dir(byte *const *argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -469,9 +464,9 @@ static int print_variable(byte *const *argv)
     static const byte *name = namef(penv) " - print environment variable/s.";
     static const byte *usage = namef(penv) " " obrack keywordf(NAME) cbrack;
     static const byte *desc = 
-        namef(penv) " prints environmental variables.\n\r"
-        "\tIf no " keywordf(NAME) " is provided " namef(penv) " will print all environment variables.\r\n"
-        "\tIf " keywordf(NAME) " is provided, " namef(penv) " prints the value of that variable with that "
+        namef(penv) " prints environmental variables.\r\n"
+        "If no " keywordf(NAME) " is provided " namef(penv) " will print all environment variables.\r\n"
+        "If " keywordf(NAME) " is provided, " namef(penv) " prints the value of that variable with that "
         keywordf(NAME) ".";
 
     int status;
@@ -488,7 +483,7 @@ static int print_variable(byte *const *argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -503,11 +498,11 @@ int set_variable(byte *const *argv)
     static const byte *usage = 
         namef(senv) " " obrack keywordf(NAME) cbrack " " obrack keywordf(VALUE) cbrack;
     static const byte *desc = 
-        namef(penv) " set/add environmental variable.\n\r"
-        "\tIf variable with " keywordf(NAME) " already exists then its " keywordf(VALUE) " is overwritten.\r\n"
-        "\tIn case the variable with " keywordf(NAME) " doesn't already exist, then it is newly created and "
+        namef(penv) " set/add environmental variable.\r\n"
+        "If variable with " keywordf(NAME) " already exists then its " keywordf(VALUE) " is overwritten.\r\n"
+        "In case the variable with " keywordf(NAME) " doesn't already exist, then it is newly created and "
         "added into the environment with the value of " keywordf(VALUE) ".\r\n"
-        "\tAdditionally if the " keywordf(NAME) " was provided but " keywordf(VALUE) " was not, then the "
+        "Additionally if the " keywordf(NAME) " was provided but " keywordf(VALUE) " was not, then the "
         "variable is initialized with the value of empty string (" keywordf("") ").";
 
     int status;
@@ -516,7 +511,7 @@ int set_variable(byte *const *argv)
     if(len == 1) {
         ATOMIC_PRINT({
             PW_FEWARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -531,7 +526,7 @@ int set_variable(byte *const *argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -545,8 +540,8 @@ static int remove_variable(byte *const *argv)
     static const byte *name = namef(renv) " - remove environment variable.";
     static const byte *usage = namef(renv) " " obrack keywordf(NAME);
     static const byte *desc = 
-        namef(renv) " removes environmental variable.\n\r"
-        "\tIf variable with " keywordf(NAME) " exists it gets removed from the environment.";
+        namef(renv) " removes environmental variable.\r\n"
+        "If variable with " keywordf(NAME) " exists it gets removed from the environment.\r\n";
 
     int status;
     ssize_t len = argv_len(argv);
@@ -554,7 +549,7 @@ static int remove_variable(byte *const *argv)
     if(len == 1) {
         ATOMIC_PRINT({
             PW_FEWARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -567,7 +562,7 @@ static int remove_variable(byte *const *argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -637,7 +632,7 @@ static int pwd(byte * const * argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -664,7 +659,7 @@ static int clear(byte* const* argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -691,7 +686,7 @@ static int builtin_names(byte* const* argv)
     } else {
         ATOMIC_PRINT({
             PW_MANYARG(argv[0]);
-            pinfo(INF_USAGE, "%s", usage);
+            pinfo(INF_USAGE, usage);
             phelp_opts;
         });
         status = FAILURE;
@@ -702,8 +697,10 @@ static int builtin_names(byte* const* argv)
 
 static void pbuiltin(void)
 {
-    for(size_t i = 0; i < BUILTINN; i++)
-        printf("%s\n\r", builtin[i]);
+    ATOMIC_PRINT({
+        for(size_t i = 0; i < BUILTINN; i++)
+            printf("%s\n\r", builtin[i]);
+    });
 }
 
 int run_builtin(const byte *command, byte *const *argv, bool shell)

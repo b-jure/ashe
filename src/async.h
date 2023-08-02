@@ -3,18 +3,6 @@
 
 #include "ashe_utils.h"
 
-#ifdef __cplusplus /* For gtest */
-#include <atomic>
-extern volatile std::atomic_bool sigchld_recv;
-extern volatile std::atomic_bool sigint_recv;
-extern volatile std::atomic_bool reading;
-#else
-#include <stdatomic.h>
-extern volatile atomic_bool sigchld_recv;
-extern volatile atomic_bool sigint_recv;
-extern volatile atomic_bool reading;
-#endif
-
 void setup_default_signal_handling(void);
 void disable_async_joblist_update(void);
 void enable_async_joblist_update(void);

@@ -21,6 +21,7 @@ set(SRCFILES
     ${SRCDIR}/jobctl.c
     ${SRCDIR}/async.c
     ${SRCDIR}/input.c
+    ${SRCDIR}/shell.c
     ${SRCDIR}/builtin.c
     ${SRCDIR}/vec.c)
 

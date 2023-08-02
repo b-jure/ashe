@@ -2,11 +2,20 @@
 #include "input.h"
 
 #include <stdarg.h>
+#include <string.h>
+
+#define TAB_SIZE 8
 
 void die(void)
 {
     perr();
     exit(EXIT_FAILURE);
+}
+
+void _die(void)
+{
+    perr();
+    _exit(EXIT_FAILURE);
 }
 
 void pwarn(const byte *fmt, ...)
@@ -20,7 +29,7 @@ void pwarn(const byte *fmt, ...)
     va_end(argp);
 }
 
-void pinfo(info_t type, const byte *fmt, ...)
+void pinfo(info_t type, const byte *str)
 {
     byte *info = NULL;
 
@@ -30,20 +39,20 @@ void pinfo(info_t type, const byte *fmt, ...)
         case INF_DESC: info = "DESCRIPTION"; break;
     }
 
-    va_list argp;
-    va_start(argp, fmt);
-    fprintf(stderr, "\n\r" yellow(bold("%s")) "\n\r\t", info);
-    vfprintf(stderr, fmt, argp);
+    /// HEADER
+    fprintf(stderr, "\n\r" yellow(bold("%s")) "\n\r", info);
+    /// PARAGRAPH
+    fprintf(stderr, "%-s", str);
+
     fprintf(stderr, "\r\n");
     fflush(stderr);
-    va_end(argp);
 }
 
 void pmanpage(const byte *name, const byte *usage, const byte *desc)
 {
-    pinfo(INF_NAME, "%s", name);
-    pinfo(INF_USAGE, "%s", usage);
-    pinfo(INF_DESC, "%s", desc);
+    pinfo(INF_NAME, name);
+    pinfo(INF_USAGE, usage);
+    pinfo(INF_DESC, desc);
 }
 
 void perr(void)

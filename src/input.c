@@ -4,6 +4,7 @@
 #include "errors.h"
 #include "input.h"
 #include "jobctl.h"
+#include "shell.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -14,19 +15,41 @@
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
 
-/// State Bits
-#define S_CLR 0x1 // all bits clear
-#define S_ESC 0x2 // '\'
-#define S_DQ  0x4 // '"'
-#define S_END 0x8 // found newline and S_ESC & S_DQ bits are not set
-/// Bit manipulation
-#define TESTBIT(state, bit) ((state) & (bit))
-#define SETBIT(state, bit)  (state) |= (bit);
-#define CLRBIT(state, bit)  (state) &= ~((bit));
-#define XORBIT(state, bit)  (state) ^= (bit);
+/*------------------------- PROMPT ------------------------*/
+
+#define ASH_MAX_PLEN (ARG_MAX >> 2)
+
+size_t _prompt_len = 0;
+#define PLEN _prompt_len
+
+/*---------- FORMAT ------------*/
+
+#define ASH_P_JOBS   bold(byellow("%ld"))
+#define ASH_P_PREFIX bold(bred("%s"))
+#define ASH_P_USER   bold(magenta("%s"))
+#define ASH_P_SEP    bold(cyan("%s"))
+#define ASH_P_SYSTEM bold(bwhite("%s"))
+#define ASH_P_SUFFIX bwhite("%s")
+
+#define ASH_P_DEFAULT                                                                              \
+    bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM) ASH_P_SUFFIX
+#define ASH_P_WJOBCOUNT                                                                            \
+    bracketed(ASH_P_JOBS) bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM)     \
+        ASH_P_SUFFIX
+
+/*------------------------------*/
+
+/*---------------------------------------------------------*/
+
+/*
+ *
+ *
+ *
+ *
+ */
 
 #define CTRL_KEY(k) ((k) &0x1f)
-#define ESCAPE      0x1B
+#define ESCAPE      27
 #define CR          0x0D
 
 typedef enum {
@@ -40,24 +63,43 @@ typedef enum {
     DEL_KEY
 } terminal_key;
 
-#define IMPLEMENTED(c) (c != U_ARW && c != D_ARW && c != ESCAPE)
+typedef struct {
+    byte *start;
+    size_t len;
+} row_t;
 
-/// Flag that gets set if the rcmdline routine
-/// gets interrupted while it is still reading
-volatile atomic_bool reading = false;
-/// Shell terminal modes
-struct termios dflterm, rawterm;
+#define IMPLEMENTED(c) (c != U_ARW && c != D_ARW && c != ESCAPE)
 
 typedef uint16_t termkey_t;
 
-static void inbuff_cursor_right(inbuff_t *buffer);
-static void inbuff_cursor_left(inbuff_t *buffer);
+static bool is_escaped(byte *bt, size_t curpos);
+static bool in_dq(byte *str, size_t len);
+static void inbuff_cursor_right(inbuff_t *buffer, byte *state);
+static void inbuff_cursor_left(inbuff_t *buffer, byte *state);
 static void inbuff_remove(inbuff_t *inbuff);
 static void inbuff_insert(inbuff_t *inbuff, char c);
-static int get_window_size(uint16_t *width, uint16_t *height);
 static int get_cursor_pos(uint16_t *row, uint16_t *col);
-static int get_window_size_fallback(uint16_t *height, uint16_t *width);
 static termkey_t read_key();
+static size_t prompt_len(const byte *prompt);
+
+static size_t prompt_len(const byte *prompt)
+{
+    size_t len = 0;
+    bool escape_seq = false;
+
+    for(size_t i = 0; prompt[i]; i++) {
+        if(escape_seq) {
+            if(prompt[i] == 'm')
+                escape_seq = false;
+        } else if(prompt[i] == '\033') {
+            escape_seq = true;
+        } else {
+            len++;
+        }
+    }
+
+    return len;
+}
 
 void pprompt(void)
 {
@@ -74,53 +116,51 @@ void pprompt(void)
         die();
     }
 
-    byte jobs[100];
-    size_t jobn = joblist_len();
+    byte prompt[ASH_MAX_PLEN] = {0};
+    size_t jobn = joblist_len(&shell.sh_jlist);
 
-    if(jobn > 0)
-        sprintf(jobs, obrack bold(byellow("%ld")) cbrack, jobn);
-    else
-        jobs[0] = NULL_TERM;
+    if(jobn <= 0) {
+        sprintf(prompt, ASH_P_DEFAULT, "ashe", username, "@", system.sysname, ": ");
+    } else {
+        sprintf(prompt, ASH_P_WJOBCOUNT, jobn, "ashe", username, "@", system.sysname, ": ");
+    }
 
-    fprintf(
-        stderr,
-        "\r\n"
-        "%s" obrack bold(bred("ashe")) cbrack obrack bold(magenta("%s")) bold(cyan("@"))
-            bold(bwhite("%s")) cbrack bwhite(": "),
-        jobs,
-        username,
-        system.sysname);
+    _prompt_len = prompt_len(prompt);
+
+    fprintf(stderr, "\r\n%s", prompt);
     fflush(stderr);
 }
 
-void init_rawterm(void)
+void terminal_init(terminal_t *term)
 {
-    tcgetattr(TERMINAL_FD, &rawterm);
-    rawterm = dflterm;
-    rawterm.c_iflag &= ~(BRKINT | INPCK | ISTRIP | IXON | ICRNL);
-    rawterm.c_oflag &= ~(OPOST);
-    rawterm.c_lflag &= ~(ECHO | ICANON | IEXTEN);
-    rawterm.c_cflag |= (CS8);
-    rawterm.c_cc[VMIN] = 1;
-    rawterm.c_cc[VTIME] = 0;
+    term->tm_reading = 0;
+    init_rawterm(&term->tm_rawterm);
+    init_dflterm(&term->tm_dflterm);
+    memset(&term->tm_inbuff, 0, sizeof(term->tm_inbuff));
 }
 
-void init_dflterm(void)
+void init_rawterm(struct termios *rawterm)
 {
-    tcgetattr(TERMINAL_FD, &dflterm);
+    tcgetattr(TERMINAL_FD, rawterm);
+    rawterm->c_iflag &= ~(BRKINT | INPCK | ISTRIP | IXON | ICRNL);
+    rawterm->c_oflag &= ~(OPOST);
+    rawterm->c_lflag &= ~(ECHO | ICANON | IEXTEN);
+    rawterm->c_cflag |= (CS8);
+    rawterm->c_cc[VMIN] = 1;
+    rawterm->c_cc[VTIME] = 0;
 }
 
-void set_rawtmode(void)
+void settmode(struct termios *tmode)
 {
-    tcsetattr(TERMINAL_FD, TCSAFLUSH, &rawterm);
+    tcsetattr(TERMINAL_FD, TCSAFLUSH, tmode);
 }
 
-void set_dflmode(void)
+void init_dflterm(struct termios *dflterm)
 {
-    tcsetattr(TERMINAL_FD, TCSAFLUSH, &dflterm);
+    tcgetattr(TERMINAL_FD, dflterm);
 }
 
-static int get_window_size(uint16_t *height, uint16_t *width)
+int get_window_size(uint16_t *height, uint16_t *width)
 {
     struct winsize ws;
     if(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0) {
@@ -135,7 +175,23 @@ static int get_window_size(uint16_t *height, uint16_t *width)
     }
 }
 
-static int get_window_size_fallback(uint16_t *height, uint16_t *width)
+static bool in_dq(byte *str, size_t len)
+{
+    bool dq = false;
+    while(len--)
+        if(*str++ == '"')
+            dq ^= true;
+    return dq;
+}
+
+static bool is_escaped(byte *bt, size_t curpos)
+{
+    return (
+        (curpos > 1 && *(bt - 1) == '\\' && *(bt - 2) != '\\')
+        || (curpos == 1 && *(bt - 1) == '\\'));
+}
+
+int get_window_size_fallback(uint16_t *height, uint16_t *width)
 {
     size_t n = sizeof(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos);
     write_or_die(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos, n);
@@ -175,141 +231,257 @@ static int get_cursor_pos(uint16_t *row, uint16_t *col)
 
 static void inbuff_insert(inbuff_t *inbuff, char c)
 {
-    if(inbuff->len < MAXLINE - 1) {
-        uint16_t maxcol;
-        get_window_size(NULL, &maxcol);
-        byte *src = inbuff->buffer + inbuff->curp;
-        size_t n = inbuff->len - inbuff->curp;
-        size_t cap = sizeof(byte) + sizeof(sv_cur_pos ld_cur_pos) + sizeof("\r\n") + n;
-        byte buff[cap + 10]; /// Add extra I am bad at math
+    // if(inbuff->in_len < MAXLINE - 1) {
+    //     uint16_t maxcol;
+    //     get_window_size(NULL, &maxcol);
+    //     byte *src = inbuff->in_buffer + inbuff->in_cpos;
+    //     size_t n = inbuff->in_len - inbuff->in_cpos;
+    //     size_t cap = sizeof(byte) + sizeof(sv_cur_pos ld_cur_pos) + sizeof("\r\n") + n;
+    //     byte buff[cap + 10]; /// Add extra I am bad at math
 
-        buff[0] = '\0';
+    //    buff[0] = '\0';
 
-        memmove(src + 1, src, n);
-        memcpy(src, &c, sizeof(byte));
+    //    memmove(src + 1, src, n);
+    //    memcpy(src, &c, sizeof(byte));
 
-        inbuff->len++;
-        inbuff->curp++;
+    //    inbuff->in_len++;
+    //    inbuff->in_cpos++;
 
-        strncat(buff, &c, sizeof(byte));
+    //    strncat(buff, &c, sizeof(byte));
 
-        if(inbuff->cur_col >= maxcol)
-            strcat(buff, "\r\n");
+    //    if(inbuff->in_tcol >= maxcol)
+    //        strcat(buff, "\r\n");
 
-        strcat(buff, sv_cur_pos);
-        strncat(buff, inbuff->buffer + inbuff->curp, n);
-        strcat(buff, ld_cur_pos);
+    //    strcat(buff, sv_cur_pos);
+    //    strncat(buff, inbuff->in_buffer + inbuff->in_cpos, n);
+    //    strcat(buff, ld_cur_pos);
 
-        write_or_die(buff, strlen(buff));
-    }
+    //    write_or_die(buff, strlen(buff));
+    //}
 }
 
 static void inbuff_remove(inbuff_t *inbuff)
 {
-    if(inbuff->curp > 0) {
+    // if(inbuff->in_cpos > 0) {
 
-        byte *src = inbuff->buffer + inbuff->curp;
-        size_t n = inbuff->len - inbuff->curp;
-        size_t cap
-            = sizeof(mv_cur_up(1) mv_cur_right(999) del_char sv_cur_pos clrscr_down ld_cur_pos) + n;
-        byte buff[cap + 10];
+    //    byte *src = inbuff->in_buffer + inbuff->in_cpos;
+    //    size_t n = inbuff->in_len - inbuff->in_cpos;
+    //    size_t cap
+    //        = sizeof(mv_cur_up(1) mv_cur_right(999) del_char sv_cur_pos clrscr_down
+    //        ld_cur_pos) + n;
+    //    byte buff[cap + 10];
 
-        buff[0] = '\0';
+    //    buff[0] = '\0';
 
-        memmove(src - 1, src, n);
+    //    memmove(src - 1, src, n);
 
-        inbuff->len--;
-        inbuff->curp--;
+    //    inbuff->in_len--;
+    //    inbuff->in_cpos--;
 
-        if(inbuff->cur_col <= 1)
-            strcat(buff, mv_cur_up(1) mv_cur_col(999));
-        else
-            strcat(buff, del_char);
+    //    if(inbuff->in_tcol <= 1)
+    //        strcat(buff, mv_cur_up(1) mv_cur_col(999));
+    //    else
+    //        strcat(buff, del_char);
 
-        strcat(buff, sv_cur_pos clrscr_down);
-        strncat(buff, inbuff->buffer + inbuff->curp, n);
-        strcat(buff, ld_cur_pos);
+    //    strcat(buff, sv_cur_pos clrscr_down);
+    //    strncat(buff, inbuff->in_buffer + inbuff->in_cpos, n);
+    //    strcat(buff, ld_cur_pos);
 
-        write_or_die(buff, strlen(buff));
-    }
+    //    write_or_die(buff, strlen(buff));
+    //}
 }
 
 void inbuff_print(inbuff_t *buffer, bool interrupted)
 {
-    size_t len = buffer->len;
-    size_t n = buffer->len - buffer->curp;
-    size_t cap = (sizeof(mv_cur_left(1)) * n) + len;
-    byte buff[cap + 10];
+    // size_t len = buffer->in_len;
+    // size_t n = buffer->in_len - buffer->in_cpos;
+    // size_t cap = (sizeof(mv_cur_left(1)) * n) + len;
+    // byte buff[cap + 10];
 
-    buff[0] = '\0';
+    // buff[0] = '\0';
 
-    strncat(buff, buffer->buffer, len);
-    if(interrupted)
-        while(n--)
-            strcat(buff, mv_cur_left(1));
+    // strncat(buff, buffer->in_buffer, len);
+    // if(interrupted)
+    //     while(n--)
+    //         strcat(buff, mv_cur_left(1));
 
-    write_or_die(buff, strlen(buff));
+    // write_or_die(buff, strlen(buff));
 }
 
-static void inbuff_cursor_left(inbuff_t *buffer)
+static void inbuff_cursor_left(inbuff_t *buffer, byte *state)
 {
-    if(buffer->curp > 0) {
-        buffer->curp--;
-        if(buffer->cur_col > 1)
+    cursor_t *buf_cursor = &buffer->in_bcur;
+    cursor_t *term_cursor = &buffer->in_tcur;
+
+    uint16_t maxcol;
+    get_size_or_die(NULL, &maxcol);
+
+    if(buf_cursor->cr_col > 0) {
+        row_t *row = vec_index(buffer->in_rows, buf_cursor->cr_row);
+        --buf_cursor->cr_col;
+
+        if(term_cursor->cr_col == 1) {
+            term_cursor->cr_col = maxcol;
+            --term_cursor->cr_row;
+            write_or_die(mv_cur_up(1) mv_cur_col(maxcol), sizeof(mv_cur_up(1) mv_cur_col(maxcol)));
+        } else {
+            --term_cursor->cr_col;
             write_or_die(mv_cur_left(1), sizeof(mv_cur_left(1)));
-        else
-            write_or_die(mv_cur_up(1) mv_cur_col(999), sizeof(mv_cur_up(1) mv_cur_col(999)));
+        }
+    } else if(buf_cursor->cr_row > 0) {
+        row_t *row = vec_index(buffer->in_rows, --buf_cursor->cr_row);
+        buf_cursor->cr_col = row->len - 1;
+
+        --term_cursor->cr_row;
+        term_cursor->cr_col = maxcol - (row->len % maxcol);
+
+        /* In case this is the row with prompt add prompt len */
+        if(buf_cursor->cr_row == 0)
+            term_cursor->cr_col += PLEN;
+
+        write_or_die(
+            mv_cur_up(1) mv_cur_col(term_cursor->cr_col),
+            sizeof(mv_cur_up(1) mv_cur_col(term_cursor->cur_col)));
+    }
+} // OK
+
+static void inbuff_cursor_right(inbuff_t *buffer, byte *state)
+{
+    cursor_t *buf_cursor = &buffer->in_bcur;
+    cursor_t *term_cursor = &buffer->in_tcur;
+    row_t *row = vec_index(buffer->in_rows, buf_cursor->cr_row);
+    size_t nrow = vec_len(buffer->in_rows);
+
+    uint16_t maxcol;
+    get_size_or_die(NULL, &maxcol);
+
+    if(buf_cursor->cr_row < (row->len - 1)) {
+        ++buf_cursor->cr_col;
+
+        if(term_cursor->cr_row < maxcol) {
+            ++term_cursor->cr_col;
+            write_or_die(mv_cur_right(1), sizeof(mv_cur_right(1)));
+        } else {
+            term_cursor->cr_col = 1;
+            ++term_cursor->cr_row;
+            write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_down(1) mv_cur_col(1)));
+        }
+    } else if(buf_cursor->cr_row < (nrow - 1)) {
+        row = vec_index(buffer->in_rows, ++buf_cursor->cr_row);
+        buf_cursor->cr_col = 0;
+        ++term_cursor->cr_row;
+        term_cursor->cr_col = 1;
+        write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_up(1) mv_cur_col(1)));
+    }
+} // OK
+
+static void inbuff_cursor_up(inbuff_t *buffer, byte *state)
+{
+    uint16_t maxcol;
+    uint16_t temp;
+    cursor_t *buf_cursor = &buffer->in_bcur;
+    cursor_t *term_cursor = &buffer->in_tcur;
+    row_t *row = vec_index(buffer->in_rows, buf_cursor->cr_row);
+    size_t nrow = vec_len(buffer->in_rows);
+
+    get_size_or_die(NULL, &maxcol);
+
+    if(buf_cursor->cr_col >= maxcol) {
+        buf_cursor->cr_col -= maxcol;
+        --term_cursor->cr_row;
+        write_or_die(mv_cur_up(1), sizeof(mv_cur_up(1)));
+    } else if(buf_cursor->cr_row > 0) {
+        --term_cursor->cr_row;
+        row = vec_index(buffer->in_rows, --buf_cursor->cr_row);
+        temp = (row->len % maxcol) - 1;
+
+        if(temp <= buf_cursor->cr_col) {
+            buf_cursor->cr_col = row->len - 1;
+            term_cursor->cr_col = temp + 1;
+            write_or_die(
+                mv_cur_up(1) mv_cur_col(term_cursor->cr_col),
+                sizeof(mv_cur_up(1) mv_cur_col(term_cursor->cr_col)));
+        } else if(row->len > maxcol) {
+            buf_cursor->cr_col += maxcol;
+            write_or_die(mv_cur_up(1), sizeof(mv_cur_up(1)));
+        } else if(buf_cursor->cr_row == 0) {
+            term_cursor->cr_col += PLEN;
+            write_or_die(
+                mv_cur_up(1) mv_cur_col(term_cursor->cr_col),
+                sizeof(mv_cur_up(1) mv_cur_col(term_cursor->cr_col)));
+        }
+    }
+} // OK
+
+static void inbuff_cursor_down(inbuff_t *buffer, byte *state)
+{
+    uint16_t maxcol;
+    cursor_t *buf_cursor = &buffer->in_bcur;
+    cursor_t *term_cursor = &buffer->in_tcur;
+    row_t *row = vec_index(buffer->in_rows, buf_cursor->cr_row);
+    size_t nrow = vec_len(buffer->in_rows);
+
+    if(buf_cursor->cr_row < row->len || buf_cursor->cr_row < nrow) {
+        get_size_or_die(NULL, &maxcol);
+
+        if(buf_cursor->cr_row < row->len) {
+            ++buf_cursor->cr_col;
+
+            if(term_cursor->cr_row < maxcol) {
+                ++term_cursor->cr_col;
+                write_or_die(mv_cur_right(1), sizeof(mv_cur_right(1)));
+            } else {
+                ++term_cursor->cr_row;
+                term_cursor->cr_col = 1;
+                write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_down(1) mv_cur_col(1)));
+            }
+        } else {
+            row = vec_index(buffer->in_rows, ++buf_cursor->cr_row);
+            buf_cursor->cr_col = 0;
+
+            ++term_cursor->cr_row;
+            term_cursor->cr_col = 1;
+
+            write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_up(1) mv_cur_col(1)));
+        }
     }
 }
 
 void goto_eol(inbuff_t *buffer)
 {
-    uint16_t maxcol;
-    get_window_size(NULL, &maxcol);
-
-    byte buff[maxcol * sizeof(mv_cur_right(1)) + sizeof(byte)];
-    buff[0] = '\0';
-
-    while(buffer->curp < buffer->len && buffer->cur_col < maxcol) {
-        buffer->curp++;
-        buffer->cur_col++;
-        strcat(buff, mv_cur_right(1));
-    }
-
-    write_or_die(buff, strlen(buff));
 }
+//{
+//    uint16_t maxcol;
+//    get_window_size(NULL, &maxcol);
+//
+//    byte buff[maxcol * sizeof(mv_cur_right(1)) + sizeof(byte)];
+//    buff[0] = '\0';
+//
+//    while(buffer->in_cpos < buffer->in_len && buffer->in_tcol < maxcol) {
+//        buffer->in_cpos++;
+//        buffer->in_tcol++;
+//        strcat(buff, mv_cur_right(1));
+//    }
+//
+//    write_or_die(buff, strlen(buff));
+//}
 
 void goto_home(inbuff_t *buffer)
 {
-    uint16_t maxcol;
-    if(get_window_size(NULL, &maxcol) == FAILURE)
-        die();
+    // uint16_t maxcol;
+    // if(get_window_size(NULL, &maxcol) == FAILURE)
+    //     die();
 
-    byte buff[maxcol * sizeof(mv_cur_left(1)) + sizeof(byte)];
-    buff[0] = '\0';
+    // byte buff[maxcol * sizeof(mv_cur_left(1)) + sizeof(byte)];
+    // buff[0] = '\0';
 
-    while(buffer->curp > 0 && buffer->cur_col > 1) {
-        buffer->curp--;
-        buffer->cur_col--;
-        strcat(buff, mv_cur_left(1));
-    }
+    // while(buffer->in_cpos > 0 && buffer->in_tcol > 1) {
+    //     buffer->in_cpos--;
+    //     buffer->in_tcol--;
+    //     strcat(buff, mv_cur_left(1));
+    // }
 
-    write_or_die(buff, strlen(buff));
-}
-
-static void inbuff_cursor_right(inbuff_t *buffer)
-{
-    uint16_t maxcol;
-    if(get_window_size(NULL, &maxcol) == FAILURE)
-        die();
-
-    if(buffer->curp < buffer->len) {
-        buffer->curp++;
-        if(buffer->cur_col < maxcol)
-            write_or_die(mv_cur_right(1), sizeof(mv_cur_right(1)));
-        else
-            write_or_die(mv_cur_down(1) mv_cur_col(1), sizeof(mv_cur_down(1) mv_cur_col(1)));
-    }
+    // write_or_die(buff, strlen(buff));
 }
 
 static void clear_screen(inbuff_t *buffer)
@@ -325,13 +497,11 @@ static termkey_t read_key(void)
     byte c;
 
     while((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-        if(nread == -1 && (errno != EINTR || (!sigchld_recv && !sigint_recv))) {
+        if(nread == -1 && (errno != EINTR && !shell.sh_intr)) {
             ATOMIC_PRINT({
                 PW_TERMINR;
                 die();
             });
-        } else if(sigchld_recv || sigint_recv) {
-            sigchld_recv = sigint_recv = false;
         }
     }
 
@@ -385,45 +555,35 @@ static termkey_t read_key(void)
     }
 }
 
-void inbuff_process_key(inbuff_t *buffer, byte *state)
+void handle_cr(
+
+void inbuff_process_key(inbuff_t *buffer)
 {
     termkey_t c;
     uint16_t max_col;
+    cursor_t *buffer_cursor = &buffer->in_bcur;
 
     c = read_key();
 
-    get_cursor_pos(NULL, &buffer->cur_col);
-    get_window_size(NULL, &max_col);
+    get_cursor_pos(&buffer_cursor->cr_row, &buffer_cursor->cr_col);
 
     if((IMPLEMENTED(c))) {
         switch(c) {
-            case '"':
-                if(!TESTBIT(*state, S_ESC))
-                    XORBIT(*state, S_DQ);
-                goto insert;
-            case '\\': XORBIT(*state, S_ESC); goto insert;
-            case CR:
-                if(!TESTBIT(*state, S_DQ | S_ESC))
-                    SETBIT(*state, S_END);
-                write_or_die("\r\n", sizeof("\r\n"));
-                break;
+            case CR: break;
             case DEL_KEY:
             case BACKSPACE: inbuff_remove(buffer); break;
             case END_KEY: goto_eol(buffer); break;
             case HOME_KEY: goto_home(buffer); break;
             case CTRL_KEY('l'): clear_screen(buffer); break;
-            case L_ARW: inbuff_cursor_left(buffer); break;
-            case R_ARW: inbuff_cursor_right(buffer); break;
+            case L_ARW: inbuff_cursor_left(buffer, state); break;
+            case R_ARW: inbuff_cursor_right(buffer, state); break;
             /// Unimplemented stuff
             case CTRL_KEY('x'):
             case CTRL_KEY('h'):
             case CTRL_KEY('j'):
             case CTRL_KEY('k'):
             case CTRL_KEY('i'): break;
-            default:
-            insert:
-                inbuff_insert(buffer, c);
-                break;
+            default: inbuff_insert(buffer, c); break;
         }
     }
 
@@ -433,11 +593,11 @@ void inbuff_process_key(inbuff_t *buffer, byte *state)
 
 void read_input(inbuff_t *buffer)
 {
-    reading = true;
-    byte state = S_CLR;
+    shell.sh_term.tm_reading = true;
+    byte state = 1;
 
     fflush(stderr);
-    set_rawtmode();
+    settmode(&shell.sh_term.tm_rawterm);
 
     while(!TESTBIT(state, S_END)) {
         inbuff_process_key(buffer, &state);
@@ -445,8 +605,8 @@ void read_input(inbuff_t *buffer)
         unblock_sigchld();
     }
 
-    buffer->buffer[buffer->len++] = '\0';
-    reading = false;
+    buffer->in_buffer[buffer->in_len++] = '\0';
+    shell.sh_term.tm_reading = false;
     fflush(stderr);
-    set_dflmode();
+    settmode(&shell.sh_term.tm_dflterm);
 }

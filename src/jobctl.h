@@ -21,8 +21,6 @@ typedef struct joblist_t {
   size_t next_id;
 } joblist_t;
 
-extern joblist_t joblist;
-
 typedef struct {
   vec_t *processes;
   pid_t pgid;
@@ -39,19 +37,24 @@ typedef struct {
 #define JC_NONE ASH_NONE /* No connection */
 
 /// JOBLIST
-size_t joblist_len(void);
-job_t *joblist_at(size_t i);
-bool joblist_remove_job(job_t *job);
-bool joblist_init();
-void joblist_drop(void);
-void joblist_update_and_notify(int signum);
-bool joblist_push(job_t *job);
-job_t *joblist_last(void);
+joblist_t joblist_init(void);
+size_t joblist_len(joblist_t *jlist);
+job_t *joblist_at(joblist_t *jlist, size_t i);
+bool joblist_remove_job(joblist_t *jlist, job_t *job);
+void joblist_drop(joblist_t *jlist);
+void joblist_update_and_notify(int signum); /* Signal handler */
+bool joblist_push(joblist_t *jlist, job_t *job);
 job_t *joblist_getjob(joblist_t *jlist, pid_t pgid);
-job_t *joblist_find_pid(pid_t pid);
-job_t *joblist_find_id(size_t id);
-job_t *joblist_get_fg_job(void);
-job_t *joblist_get_bg_job(void);
+job_t *joblist_find_pid(joblist_t *jlist, pid_t pid);
+job_t *joblist_find_id(joblist_t *jlist, size_t id);
+// fg builtin
+job_t *joblist_get_fg_job(joblist_t *jlist);
+job_t *joblist_get_fg_pid(joblist_t *jlist, pid_t pid);
+job_t *joblist_get_fg_id(joblist_t *jlist, size_t id);
+// bg builtin
+job_t *joblist_get_bg_job(joblist_t *jlist);
+job_t *joblist_get_bg_pid(joblist_t *jlist, pid_t pid);
+job_t *joblist_get_bg_id(joblist_t *jlist, size_t id);
 
 /// JOB
 job_t job_new(byte connection, bool bg);
@@ -69,6 +72,5 @@ bool job_update(job_t *job, pid_t pid, int status);
 
 /// PROCESS
 process_t process_new(pid_t pid, byte *argv);
-void process_drop(process_t *process);
 
 #endif

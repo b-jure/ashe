@@ -6,6 +6,7 @@
 #include "input.h"
 #include "jobctl.h"
 #include "parser.h"
+#include "shell.h"
 #include "vec.h"
 
 /// TODO: Implement rows in inbuff_t structure
@@ -177,7 +178,7 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     if(job.foreground) {
         status = job_move_to_fg(&job, false);
     } else {
-        if(__glibc_unlikely(!joblist_push(&job))) {
+        if(__glibc_unlikely(!joblist_push(&shell.sh_jlist, &job))) {
             ATOMIC_PRINT(PW_ADDJ(&job));
             exit(EXIT_FAILURE);
         }
@@ -369,15 +370,25 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             die();
         });
     } else if(childPID == 0) {
+        /// NOTE**
+        /// Forked process must not call atexit() registered
+        /// functions, that is why we use _exit and _die.
+        /// Reason being is that the forked process gets exact copy of
+        /// the global shell structure, this means it also contains
+        /// exact copy of joblist structure which holds valid
+        /// PGIDs inside. This in combination that atexit registered
+        /// shell cleanup function sends a kill signal to all the processes inside
+        /// a joblist therefore removing and harvesting all the jobs
+        /// each time a fork exits without calling exec successfully.
+
         /// If no command were provided and only
-        /// env vars then exit immediately this is
-        /// exactly the same as no-op
+        /// env vars then exit immediately
         if(is_null(argv[0]))
-            exit(EXIT_SUCCESS);
+            _exit(EXIT_SUCCESS);
 
         /// Add environment variables to environ
         if(__glibc_unlikely(add_envs_to_environ(env) < 0))
-            exit(EXIT_FAILURE);
+            _exit(EXIT_FAILURE);
 
         pid_t pid = getpid(); /* Current process ID */
 
@@ -388,7 +399,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             if(__glibc_unlikely(job->foreground && tcsetpgrp(TERMINAL_FD, job->pgid) < 0)) {
                 ATOMIC_PRINT({
                     PW_TERMTCSET(job->pgid);
-                    die();
+                    _die();
                 });
             }
         }
@@ -396,7 +407,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
         if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
             ATOMIC_PRINT({
                 PW_PGRPSET(pid, job->pgid);
-                die();
+                _die();
             });
         }
 
@@ -419,7 +430,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
                 else
                     perr();
             });
-            exit(EXIT_FAILURE);
+            _exit(EXIT_FAILURE);
         }
     }
 

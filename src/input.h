@@ -2,6 +2,7 @@
 #define __ASH_INPUT_H__
 
 #include "ashe_utils.h"
+#include "vec.h"
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -23,12 +24,18 @@
       die();                                                                   \
   } while (0)
 
-
 #define write_or_die(ptr, n)                                                   \
   do {                                                                         \
     if (write(STDERR_FILENO, ptr, n) == -1)                                    \
       die();                                                                   \
     fflush(stderr);                                                            \
+  } while (0)
+
+#define get_size_or_die(row, col)                                              \
+  do {                                                                         \
+    if (__glibc_unlikely(get_window_size((row), (col)) == FAILURE &&           \
+                         get_window_size_fallback((row), (col)) == FAILURE))   \
+      die();                                                                   \
   } while (0)
 
 /// Cursor movement
@@ -68,9 +75,10 @@
 #define bblue(text) ESC(94m) text ESC(0m)
 #define bwhite(text) ESC(97m) text ESC(0m)
 #define byellow(text) ESC(93m) text ESC(0m)
-/// Custom...
+/// Custom formatting
 #define obrack cyan("[")
 #define cbrack cyan("]")
+#define bracketed(text) obrack text cbrack
 
 /// Shell prefix format
 #define ASHE_PREFIX bold(bred("ashe"))
@@ -82,28 +90,43 @@
 #define ASHE_ERR_PREFIX                                                        \
   obrack ASHE_PREFIX bold(cyan(" ~ ")) italic(bred("error")) cbrack cyan(":>")
 
+typedef struct {
+  uint16_t cr_col;
+  uint16_t cr_row;
+} cursor_t;
+
 /// Terminal input buffer
 typedef struct {
-  byte buffer[MAXLINE];
-  uint16_t cur_col;
-  size_t len;
-  size_t curp;
+  byte in_buffer[MAXLINE];
+  vec_t *in_rows; /* Buffer rows as slices of bytes */
+  size_t in_len;
+  cursor_t in_bcur; /* Buffer cursor */
+  cursor_t in_tcur; /* Terminal cursor */
 } inbuff_t;
 
-extern inbuff_t terminal_input;
-extern struct termios dflterm;
-extern struct termios rawterm;
+typedef struct {
+  bool tm_reading;           /* User input reprint flag */
+  struct termios tm_dflterm; /* Default terminal modes */
+  struct termios tm_rawterm; /* Raw (input reading) terminal modes */
+  inbuff_t tm_inbuff;        /* User input/state storage */
+  uint16_t rows;
+  uint16_t columns;
+} terminal_t;
 
 #define inbuff_clear(inbuff)                                                   \
-  (inbuff)->len = 0;                                                           \
-  (inbuff)->curp = 0
+  do {                                                                         \
+    (inbuff)->len = 0;                                                         \
+    (inbuff)->curp = 0;                                                        \
+  } while (0)
 
 void read_input(inbuff_t *buffer);
 void inbuff_print(inbuff_t *buffer, bool interrupted);
-void init_rawterm(void);
-void init_dflterm(void);
-void set_dflmode(void);
-void set_rawtmode(void);
+void init_rawterm(struct termios *rawterm);
+void init_dflterm(struct termios *dflterm);
+void settmode(struct termios *tmode);
 void pprompt(void);
+int get_window_size(uint16_t *height, uint16_t *width);
+int get_window_size_fallback(uint16_t *height, uint16_t *width);
+void terminal_init(terminal_t *term);
 
 #endif

@@ -2,29 +2,27 @@
 #include "errors.h"
 #include "input.h"
 #include "jobctl.h"
+#include "shell.h"
 
 #include <signal.h>
 #include <stdbool.h>
 
-volatile atomic_bool sigint_recv = false;
-volatile atomic_bool sigchld_recv = false;
-
 void sigint_handler(__attribute__((unused)) int signum)
 {
     block_sigchld();
-    sigint_recv = true;
+    shell.sh_intr = true;
     ATOMIC_PRINT({
         fprintf(stderr, "\r\n");
         pprompt();
     });
-    inbuff_clear(&terminal_input);
+    inbuff_clear(&shell.sh_term.tm_inbuff);
     unblock_sigchld();
 }
 
 void sigchld_handler(int signum)
 {
     block_sigint();
-    sigchld_recv = true;
+    shell.sh_intr = true;
     joblist_update_and_notify(signum);
     unblock_sigint();
 }
