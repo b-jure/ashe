@@ -47,6 +47,7 @@
 #define mv_cur_col(col) ESC(col) "G"
 #define sv_cur_pos ESC(s)
 #define ld_cur_pos ESC(u)
+#define mv_cur_pos(row, col) ESC(row ";" col) "H"
 #define req_cur_pos ESC(6n)
 #define hide_cur ESC(?25l)
 #define show_cur ESC(?25h)
