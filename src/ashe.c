@@ -34,7 +34,8 @@ int main()
         disable_async_joblist_update();
 
         commandline_clear(cmdline);
-        if(input_buffer->len <= 1 || parse_commandline(input_buffer->buffer, cmdline) == FAILURE)
+        if(input_buffer->in_len <= 1
+           || parse_commandline(input_buffer->in_buffer, cmdline) == FAILURE)
             continue;
 
         commandline_execute(cmdline, &status);

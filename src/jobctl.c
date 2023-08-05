@@ -17,11 +17,11 @@
 #define job_completed_format green("completed") obrack red("-") cbrack
 #define job_stopped_format   red("stopped") obrack magenta("!") cbrack
 #define job_started_format   byellow("started") obrack green("+") cbrack
-#define print_sigterm(status, polite)                                                              \
-    process_format(                                                                                \
-        proc,                                                                                      \
-        "was " bold(bred("TERMINATED")) " by " bold(magenta("SIG")) bold(magenta("%s")) " %s",     \
-        sigabbrev_np(status),                                                                      \
+#define print_sigterm(status, polite)                                                          \
+    process_format(                                                                            \
+        proc,                                                                                  \
+        "was " bold(bred("TERMINATED")) " by " bold(magenta("SIG")) bold(magenta("%s")) " %s", \
+        sigabbrev_np(status),                                                                  \
         ((polite) ? " (" italic("polite") ")" : ""))
 
 static size_t joblist_id(joblist_t *joblist);
@@ -112,8 +112,8 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                     job_format(job, job_completed_format);
                     joblist_remove(&shell.sh_jlist, i);
                     pprompt();
-                    if(shell.sh_term.reading)
-                        inbuff_print(&shell.sh_term.tm_inbuff, true);
+                    if(shell.sh_term.tm_reading)
+                        inbuff_redraw(&shell.sh_term.tm_inbuff);
                 });
             } else {
                 joblist_remove(&shell.sh_jlist, i);
@@ -125,8 +125,8 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
             ATOMIC_PRINT({
                 job_format(job, job_stopped_format);
                 pprompt();
-                if(shell.sh_term.reading)
-                    inbuff_print(&shell.sh_term.tm_inbuff, true);
+                if(shell.sh_term.tm_reading)
+                    inbuff_redraw(&shell.sh_term.tm_inbuff);
             });
             job->notified = true;
         }

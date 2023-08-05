@@ -114,14 +114,9 @@ typedef struct {
   uint16_t columns;
 } terminal_t;
 
-#define inbuff_clear(inbuff)                                                   \
-  do {                                                                         \
-    (inbuff)->len = 0;                                                         \
-    (inbuff)->curp = 0;                                                        \
-  } while (0)
-
+void inbuff_clear(inbuff_t *buffer);
 void read_input(inbuff_t *buffer);
-void inbuff_print(inbuff_t *buffer, bool interrupted);
+void inbuff_redraw(inbuff_t *buffer);
 void init_rawterm(struct termios *rawterm);
 void init_dflterm(struct termios *dflterm);
 void settmode(struct termios *tmode);

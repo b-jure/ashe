@@ -7,56 +7,46 @@
 #include <signal.h>
 #include <stdbool.h>
 
+void sigwin_handler(__attribute__((unused)) int signum)
+{
+    mask_signal(SIGCHLD, SIG_BLOCK);
+    mask_signal(SIGINT, SIG_BLOCK);
+    shell.sh_intr = true;
+    get_size_or_die(&shell.sh_term.rows, &shell.sh_term.columns);
+    mask_signal(SIGCHLD, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
+}
+
 void sigint_handler(__attribute__((unused)) int signum)
 {
-    block_sigchld();
+    mask_signal(SIGWINCH, SIG_BLOCK);
+    mask_signal(SIGCHLD, SIG_BLOCK);
     shell.sh_intr = true;
     ATOMIC_PRINT({
         fprintf(stderr, "\r\n");
         pprompt();
     });
     inbuff_clear(&shell.sh_term.tm_inbuff);
-    unblock_sigchld();
+    mask_signal(SIGWINCH, SIG_UNBLOCK);
+    mask_signal(SIGCHLD, SIG_UNBLOCK);
 }
 
 void sigchld_handler(int signum)
 {
-    block_sigint();
+    mask_signal(SIGWINCH, SIG_BLOCK);
+    mask_signal(SIGINT, SIG_BLOCK);
     shell.sh_intr = true;
     joblist_update_and_notify(signum);
-    unblock_sigint();
+    mask_signal(SIGWINCH, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
 }
 
-void block_sigint(void)
+void mask_signal(int signum, int how)
 {
-    sigset_t block_sigint;
-    sigemptyset(&block_sigint);
-    sigaddset(&block_sigint, SIGINT);
-    sigprocmask(SIG_BLOCK, &block_sigint, NULL);
-}
-
-void block_sigchld(void)
-{
-    sigset_t block_sigchld;
-    sigemptyset(&block_sigchld);
-    sigaddset(&block_sigchld, SIGCHLD);
-    sigprocmask(SIG_BLOCK, &block_sigchld, NULL);
-}
-
-void unblock_sigint(void)
-{
-    sigset_t ublock_sigint;
-    sigemptyset(&ublock_sigint);
-    sigaddset(&ublock_sigint, SIGINT);
-    sigprocmask(SIG_UNBLOCK, &ublock_sigint, NULL);
-}
-
-void unblock_sigchld(void)
-{
-    sigset_t unblock_sigchld;
-    sigemptyset(&unblock_sigchld);
-    sigaddset(&unblock_sigchld, SIGCHLD);
-    sigprocmask(SIG_UNBLOCK, &unblock_sigchld, NULL);
+    sigset_t signal;
+    sigemptyset(&signal);
+    sigaddset(&signal, signum);
+    sigprocmask(how, &signal, NULL);
 }
 
 void enable_async_joblist_update(void)

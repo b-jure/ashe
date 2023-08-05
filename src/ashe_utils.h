@@ -22,6 +22,7 @@ extern byte **environ;
 #define char_after_ptr(ptr) *((ptr) + 1)
 #define NULL_TERM '\0'
 #define EOL NULL_TERM
+#define unused(x) (void)(x);
 
 #define TERMINAL_FD STDIN_FILENO
 
