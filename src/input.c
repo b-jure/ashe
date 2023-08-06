@@ -107,7 +107,7 @@ typedef struct {
 
 typedef uint16_t termkey_t;
 
-static size_t inbuff_len_to_cur(inbuff_t *buffer);
+static size_t inbuff_lenrel(inbuff_t *buffer);
 static bool is_escaped(byte *bt, size_t curpos);
 static bool in_dq(byte *str, size_t len);
 static void inbuff_cursor_right(inbuff_t *buffer);
@@ -172,11 +172,16 @@ void pprompt(void)
 
 void terminal_init(terminal_t *term)
 {
-    term->tm_reading = 0;
     get_size_or_die(&term->rows, &term->columns);
+    memset(&term->tm_inbuff, 0, sizeof(term->tm_inbuff));
+
+    if(is_null(term->tm_inbuff.in_rows = vec_with_capacity(sizeof(row_t), 1))) {
+        exit(EXIT_FAILURE);
+    }
+
+    term->tm_reading = 0;
     init_rawterm(&term->tm_rawterm);
     init_dflterm(&term->tm_dflterm);
-    memset(&term->tm_inbuff, 0, sizeof(term->tm_inbuff));
 }
 
 void init_rawterm(struct termios *rawterm)
@@ -203,7 +208,7 @@ void settmode(struct termios *tmode)
 int get_window_size(uint16_t *height, uint16_t *width)
 {
     struct winsize ws;
-    if(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0) {
+    if(__glibc_unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
         return get_window_size_fallback(height, width);
     } else {
         if(is_some(height))
@@ -233,9 +238,10 @@ static bool in_dq(byte *str, size_t len)
 
 static bool is_escaped(byte *bt, size_t curpos)
 {
+    byte *at = bt + curpos;
     return (
-        (curpos > 1 && *(bt - 1) == '\\' && *(bt - 2) != '\\')
-        || (curpos == 1 && *(bt - 1) == '\\'));
+        (curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\')
+        || (curpos == 1 && *(at - 1) == '\\'));
 }
 
 static int get_cursor_pos(uint16_t *row, uint16_t *col)
@@ -275,6 +281,7 @@ static void shift_rows_right(inbuff_t *inbuff, size_t start)
     size_t len = vec_len(rows);
 
     for(size_t i = start; i < len; i++) {
+        fflush(stdout);
         ((row_t *) vec_index(rows, i))->start++;
     }
 }
@@ -288,14 +295,62 @@ __attribute__((unused)) static void shift_rows_left(inbuff_t *inbuff, size_t sta
         ((row_t *) vec_index(rows, i))->start--;
     }
 }
+static size_t inbuff_lenrel(inbuff_t *buffer)
+{
+    size_t len = 0;
+    vec_t *rows = buffer->in_rows;
+    row_t *row;
+
+    for(size_t i = 0; i < buffer->in_bcur.cr_row; i++) {
+        row = vec_index(rows, i);
+        len += row->len;
+    }
+
+    len += buffer->in_bcur.cr_col;
+
+    return len;
+}
+
+static bool inbuff_cr(inbuff_t *buffer)
+{
+    uint16_t row_n = buffer->in_bcur.cr_row;
+    vec_t *rows = buffer->in_rows;
+    row_t *backrow = vec_index(rows, row_n);
+
+    if(is_escaped(backrow->start, buffer->in_bcur.cr_col)
+       || in_dq(buffer->in_buffer, inbuff_lenrel(buffer)))
+    {
+        inbuff_insert(buffer, '\n');
+
+        uint16_t column_n = buffer->in_bcur.cr_col;
+        row_t row = {
+            .start = backrow->start + column_n,
+            .len = backrow->len - column_n,
+        };
+
+        backrow->len = column_n;
+        vec_insert(rows, &row, row_n);
+        buffer->in_bcur.cr_row++;
+        buffer->in_bcur.cr_col = 0;
+
+        return false;
+    } else {
+        return true;
+    }
+}
+
+static row_t *inbuff_row_current(inbuff_t *buffer)
+{
+    return vec_index(buffer->in_rows, buffer->in_bcur.cr_row);
+}
 
 static void inbuff_insert(inbuff_t *buffer, char c)
 {
     if(buffer->in_len < MAXLINE - 1) {
         uint16_t maxcol = shell.sh_term.columns;
-        row_t *row = vec_index(buffer->in_rows, buffer->in_bcur.cr_row);
-        size_t len_to_column = inbuff_len_to_cur(buffer);
-        size_t n = buffer->in_len - len_to_column;
+        row_t *row = inbuff_row_current(buffer);
+        size_t lenrel = inbuff_lenrel(buffer);
+        size_t n = buffer->in_len - lenrel;
         byte *src = row->start + buffer->in_bcur.cr_col;
 
         memmove(src + 1, src, n);
@@ -303,25 +358,29 @@ static void inbuff_insert(inbuff_t *buffer, char c)
         shift_rows_right(buffer, buffer->in_bcur.cr_row + 1);
         row->len++;
 
-        size_t cap = n + sizeof("\r\n" mv_cur_down(1) mv_cur_col(1)) + (2 * sizeof(byte));
+        size_t cap = n + sizeof("\r\n") + (2 * sizeof(byte));
         byte buff[cap];
         buff[0] = '\0';
 
         strncat(buff, &c, sizeof(byte));
 
-        if(__glibc_unlikely(++buffer->in_tcur.cr_col >= maxcol)) {
+        if(__glibc_unlikely(buffer->in_tcur.cr_col >= maxcol)) {
             buffer->in_tcur.cr_row++;
             buffer->in_tcur.cr_col = 1;
             strcat(buff, "\r\n");
         } else {
-            buffer->in_tcur.cr_row++;
+            buffer->in_tcur.cr_col++;
         }
+
+        buffer->in_bcur.cr_col++;
+        buffer->in_len++;
 
         strcat(buff, sv_cur_pos);
         strncat(buff, row->start + buffer->in_bcur.cr_col, n);
         strcat(buff, ld_cur_pos);
 
-        buffer->in_bcur.cr_col++;
+        if(c == '\n')
+            strcat(buff, "\r");
 
         write_or_die(buff, strlen(buff));
     }
@@ -338,7 +397,7 @@ void inbuff_redraw(inbuff_t *buffer)
 {
     uint16_t maxcol = shell.sh_term.columns;
     size_t len = buffer->in_len;
-    size_t cursor_pos_from_back = len - inbuff_len_to_cur(buffer);
+    size_t cursor_pos_from_back = len - inbuff_lenrel(buffer);
 
     printf("%*s", (int32_t) len, buffer->in_buffer);
     get_cursor_pos(&buffer->in_tcur.cr_row, &buffer->in_tcur.cr_col);
@@ -348,7 +407,7 @@ void inbuff_redraw(inbuff_t *buffer)
     row_t *row = vec_index(rows, ridx--);
     size_t rown = row->len;
 
-    size_t up;
+    size_t up = 0;
     while(cursor_pos_from_back--) {
         if(rown-- <= 0) {
             row = vec_index(rows, ridx--);
@@ -363,12 +422,25 @@ void inbuff_redraw(inbuff_t *buffer)
             buffer->in_tcur.cr_col--;
     }
 
-    redraw_terminal_cursor(CDIR_UP | CDIR_ABSC, up, buffer->in_tcur.cr_col);
+    byte buff[sizeof(CSI "A+") + UINT_DIGITS];
+    buff[0] = '\0';
+    write_or_die(buff, sprintf(buff, CSI "%luA" CSI "%uG", up, buffer->in_tcur.cr_col));
 }
 
 void inbuff_clear(inbuff_t *buffer)
 {
     vec_clear_capacity(buffer->in_rows, NULL);
+
+    if(!vec_push(
+           buffer->in_rows,
+           &(row_t){
+               .len = 0,
+               .start = buffer->in_buffer,
+           }))
+    {
+        exit(EXIT_FAILURE);
+    }
+
     buffer->in_len = 0;
     buffer->in_bcur.cr_col = 0;
     buffer->in_bcur.cr_row = 0;
@@ -378,8 +450,9 @@ static void inbuff_cursor_left(inbuff_t *buffer)
 {
     cursor_t *buf_cursor = &buffer->in_bcur;
     cursor_t *term_cursor = &buffer->in_tcur;
-
     uint16_t maxcol = shell.sh_term.columns;
+    byte buff[sizeof(CSI CSI "ADG+") + (2 * UINT_DIGITS)];
+    buff[0] = '\0';
 
     if(buf_cursor->cr_col > 0) {
         --buf_cursor->cr_col;
@@ -387,10 +460,10 @@ static void inbuff_cursor_left(inbuff_t *buffer)
         if(term_cursor->cr_col == 1) {
             term_cursor->cr_col = maxcol;
             --term_cursor->cr_row;
-            redraw_terminal_cursor(CDIR_UP | CDIR_ABSC, 1, maxcol);
+            write_or_die(buff, sprintf(buff, CSI "%uA" CSI "%uG", 1, maxcol));
         } else {
             --term_cursor->cr_col;
-            redraw_terminal_cursor(CDIR_LEFT, 0, 1);
+            write_or_die(mv_cur_left(1), sizeof(mv_cur_left(1)));
         }
     } else if(buf_cursor->cr_row > 0) {
         row_t *row = vec_index(buffer->in_rows, --buf_cursor->cr_row);
@@ -403,7 +476,7 @@ static void inbuff_cursor_left(inbuff_t *buffer)
         if(buf_cursor->cr_row == 0)
             term_cursor->cr_col += PLEN;
 
-        redraw_terminal_cursor(CDIR_UP | CDIR_ABSC, 1, term_cursor->cr_col);
+        write_or_die(buff, sprintf(buff, CSI "%uA" CSI "%uG", 1, term_cursor->cr_col));
     }
 } // OK
 
@@ -416,10 +489,10 @@ static void inbuff_cursor_right(inbuff_t *buffer)
 
     uint16_t maxcol = shell.sh_term.columns;
 
-    if(buf_cursor->cr_row < (row->len - 1)) {
+    if(buf_cursor->cr_col < row->len) {
         ++buf_cursor->cr_col;
 
-        if(term_cursor->cr_row < maxcol) {
+        if(term_cursor->cr_col < maxcol) {
             ++term_cursor->cr_col;
             redraw_terminal_cursor(CDIR_RIGHT, 0, 1);
         } else {
@@ -493,8 +566,11 @@ static void inbuff_cursor_up(inbuff_t *buffer)
         redraw = true;
     }
 
-    if(redraw)
-        redraw_terminal_cursor(CDIR_UP | CDIR_ABSC, 1, term_cursor->cr_col);
+    if(redraw) {
+        byte buff[sizeof(CSI CSI "AG++") + (2 * UINT_DIGITS)];
+        buff[0] = '\0';
+        write_or_die(buff, sprintf(buff, CSI "%uA" CSI "%uG", 1, term_cursor->cr_col));
+    }
 } // OK
 
 static void inbuff_cursor_down(inbuff_t *buffer)
@@ -553,8 +629,11 @@ static void inbuff_cursor_down(inbuff_t *buffer)
         }
     }
 
-    if(redraw)
-        redraw_terminal_cursor(CDIR_DOWN | CDIR_ABSC, 1, term_cursor->cr_col);
+    if(redraw) {
+        byte buff[sizeof(CSI CSI "BG++") + (2 * UINT_DIGITS)];
+        buff[0] = '\0';
+        write_or_die(buff, sprintf(buff, CSI "%hdB" CSI "%hdG", 1, term_cursor->cr_col));
+    }
 }
 
 void goto_eol(inbuff_t *buffer)
@@ -579,7 +658,9 @@ void goto_eol(inbuff_t *buffer)
             column = row_len;
         }
 
-        write_or_die(mv_cur_col(column), sizeof(mv_cur_col(column)));
+        byte out[sizeof(mv_cur_col() "+") + UINT_DIGITS];
+        out[0] = '\0';
+        write_or_die(out, sprintf(out, CSI "%uG", column));
     }
 }
 
@@ -592,7 +673,10 @@ void goto_home(inbuff_t *buffer)
     if(current_column % maxcol != 0) {
         current_column = current_column - (current_column % maxcol);
         buffer->in_bcur.cr_col = current_column;
-        write_or_die(mv_cur_col(current_column + 1), sizeof(mv_cur_col(current_column + 1)));
+
+        byte out[sizeof(CSI "G+") + UINT_DIGITS];
+        out[0] = '\0';
+        write_or_die(out, sprintf(out, CSI "%uG", current_column + 1));
     }
 }
 
@@ -668,56 +752,11 @@ static termkey_t read_key(void)
     }
 }
 
-static size_t inbuff_len_to_cur(inbuff_t *buffer)
-{
-    size_t len = 0;
-    vec_t *rows = buffer->in_rows;
-
-    for(size_t i = 0; i < buffer->in_bcur.cr_row; i++) {
-        len += ((row_t *) vec_index(rows, i))->len;
-    }
-
-    len += buffer->in_bcur.cr_col;
-
-    return len;
-}
-
-static bool inbuff_cr(inbuff_t *buffer)
-{
-    uint16_t row_n = buffer->in_bcur.cr_row;
-    vec_t *rows = buffer->in_rows;
-    row_t *backrow = vec_index(rows, row_n);
-
-    if(is_escaped(buffer->in_buffer, buffer->in_len)
-       || in_dq(buffer->in_buffer, inbuff_len_to_cur(buffer)))
-    {
-        inbuff_insert(buffer, '\n');
-
-        uint16_t column_n = buffer->in_bcur.cr_col;
-        row_t row = {
-            .start = backrow->start + column_n,
-            .len = backrow->len - column_n,
-        };
-
-        backrow->len = column_n;
-        vec_insert(rows, &row, row_n);
-        buffer->in_bcur.cr_row++;
-        buffer->in_bcur.cr_col = 0;
-
-        return false;
-    } else {
-        return true;
-    }
-}
-
 static bool inbuff_process_key(inbuff_t *buffer)
 {
     termkey_t c;
-    cursor_t *buffer_cursor = &buffer->in_bcur;
 
     c = read_key();
-
-    get_cursor_pos(&buffer_cursor->cr_row, &buffer_cursor->cr_col);
 
     if((IMPLEMENTED(c))) {
         switch(c) {
@@ -749,19 +788,27 @@ static bool inbuff_process_key(inbuff_t *buffer)
 
 void read_input(inbuff_t *buffer)
 {
+    /* Set reading flag in case we get interrupted */
     shell.sh_term.tm_reading = true;
-
     fflush(stderr);
+    /* Set raw mode */
     settmode(&shell.sh_term.tm_rawterm);
-
+    /* Get terminal size */
+    get_size_or_die(&shell.sh_term.rows, &shell.sh_term.columns);
+    /* Get terminal cursor position */
+    cursor_t *terminal_cursor = &shell.sh_term.tm_inbuff.in_tcur;
+    get_cursor_pos(&terminal_cursor->cr_row, &terminal_cursor->cr_col);
+    /* Loop until newline */
     while(inbuff_process_key(buffer)) {
         mask_signal(SIGCHLD, SIG_UNBLOCK);
         mask_signal(SIGINT, SIG_UNBLOCK);
         mask_signal(SIGWINCH, SIG_UNBLOCK);
     }
-
+    /* Null-Terminate the buffer */
     buffer->in_buffer[buffer->in_len++] = '\0';
+    /* Unset the reading flag */
     shell.sh_term.tm_reading = false;
     fflush(stderr);
+    /* Set default shell terminal mode */
     settmode(&shell.sh_term.tm_dflterm);
 }

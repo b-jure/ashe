@@ -14,10 +14,9 @@
 #endif
 
 #define MAX_VEC_SIZE UINT_MAX
-#define ptr_in_bounds(vec, ptr)                                                          \
-    (is_some((vec)) && is_some((vec)->allocation) && is_some(ptr)                        \
-     && (vec)->allocation + ((vec)->ele_size * (vec)->len) > (ptr)                       \
-     && (ptr) >= (vec)->allocation)
+#define ptr_in_bounds(vec, ptr)                                   \
+    (is_some((vec)) && is_some((vec)->allocation) && is_some(ptr) \
+     && (vec)->allocation + ((vec)->ele_size * (vec)->len) > (ptr) && (ptr) >= (vec)->allocation)
 
 static void *_an_vec_get(const vec_t *self, const size_t index);
 static int _an_vec_ensure(vec_t *self, size_t bytes);
@@ -79,12 +78,7 @@ size_t vec_max_size(void)
     return MAX_VEC_SIZE;
 }
 
-bool vec_splice(
-    vec_t *self,
-    size_t index,
-    size_t remove_n,
-    const void *array,
-    size_t insert_n)
+bool vec_splice(vec_t *self, size_t index, size_t remove_n, const void *array, size_t insert_n)
 {
     if(is_null(self) || is_null(array) || self->len <= index + remove_n
        || __glibc_unlikely((_an_vec_ensure(self, insert_n - remove_n) == -1)))
@@ -123,8 +117,9 @@ static int _an_vec_ensure(vec_t *self, size_t bytes)
     } else
         return 0;
 
-    if(__glibc_unlikely(is_null(new_alloc)))
+    if(__glibc_unlikely(is_null(new_alloc))) {
         return -1;
+    }
 
     self->allocation = new_alloc;
     self->capacity = required;
@@ -228,6 +223,7 @@ void vec_clear_capacity(vec_t *self, FreeFn free_fn)
 
     self->len = 0;
     free(self->allocation);
+    self->allocation = NULL;
     self->capacity = 0;
 }
 

@@ -16,6 +16,9 @@ typedef char byte;
 
 extern byte **environ;
 
+#define INT_DIGITS 10
+#define UINT_DIGITS 20
+
 #define is_null(ptr) ((ptr) == NULL)
 #define is_some(ptr) ((ptr) != NULL)
 #define char_before_ptr(ptr) *((ptr)-1)
@@ -23,13 +26,17 @@ extern byte **environ;
 #define NULL_TERM '\0'
 #define EOL NULL_TERM
 #define unused(x) (void)(x);
+#define SCOPE_GUARD(block)                                                     \
+  do {                                                                         \
+    block                                                                      \
+  } while (0);
 
 #define TERMINAL_FD STDIN_FILENO
 
 /// Concurrently safe printing (advisory lock), async-safe and because
 /// shell is single threaded no need for 'flockfile/funlockfile'.
 #define ATOMIC_PRINT(print_block)                                              \
-  do {                                                                         \
+  SCOPE_GUARD({                                                                \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_EX) < 0 ||                   \
                          flock(STDOUT_FILENO, LOCK_EX) < 0)) {                 \
       perr();                                                                  \
@@ -43,7 +50,7 @@ extern byte **environ;
       perr();                                                                  \
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
-  } while (0)
+  });
 
 /// Exit codes
 #define FAILURE -1

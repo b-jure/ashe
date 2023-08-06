@@ -14,36 +14,39 @@
 #define MAXNAME 1024 /* Maximum size of username */
 
 /// ANSI CSI - Control Sequence Introducer
-#define ESC(seq) "\033[" #seq
+#define CSI "\033["
+#define ESC(seq) CSI #seq
 
 #define FFLUSH(block)                                                          \
-  do {                                                                         \
+  SCOPE_GUARD({                                                                \
     block;                                                                     \
     fflush(stderr);                                                            \
     if (__glibc_unlikely(ferror(stderr) != 0))                                 \
       die();                                                                   \
-  } while (0)
+  })
 
 #define write_or_die(ptr, n)                                                   \
-  do {                                                                         \
+  SCOPE_GUARD({                                                                \
     if (write(STDERR_FILENO, ptr, n) == -1)                                    \
       die();                                                                   \
     fflush(stderr);                                                            \
-  } while (0)
+  })
 
 #define get_size_or_die(row, col)                                              \
-  do {                                                                         \
+  SCOPE_GUARD({                                                                \
     if (__glibc_unlikely(get_window_size((row), (col)) == FAILURE &&           \
                          get_window_size_fallback((row), (col)) == FAILURE))   \
       die();                                                                   \
-  } while (0)
+  })
 
-/// Cursor movement
+/*------------- CURSOR ----------------*/
 #define mv_cur_home ESC(H)
 #define mv_cur_left(n) ESC(n) "D"
 #define mv_cur_right(n) ESC(n) "C"
+#define mv_cur_lastcol ESC(9999) "C"
 #define mv_cur_up(n) ESC(n) "A"
 #define mv_cur_down(n) ESC(n) "B"
+#define mv_cur_lastrow ESC(9999) "B"
 #define mv_cur_col(col) ESC(col) "G"
 #define sv_cur_pos ESC(s)
 #define ld_cur_pos ESC(u)
@@ -51,20 +54,30 @@
 #define req_cur_pos ESC(6n)
 #define hide_cur ESC(?25l)
 #define show_cur ESC(?25h)
-/// Erase functions
-#define clrscr_down ESC(0J)
-#define clrscr_up ESC(1J)
+/*-------------------------------------*/
+/*
+ *
+ */
+/*-------------- ERASE ----------------*/
+#define clrscrd ESC(0J)
+#define clrscru ESC(1J)
 #define clrscr ESC(2J)
-#define erase_cur_to_eol ESC(K)
-#define erase_sol_to_cur ESC(1K)
-#define erase_line(n) ESC(n) "K"
-/// Delete char at cursor
-#define del_char "\b \b"
-
-/// Modes
+#define clrlneol ESC(K)
+#define clrlnsol ESC(1K)
+#define clrln ESC(2K)
+#define delch "\b \b"
+/*-------------------------------------*/
+/*
+ *
+ */
+/*-------------- MODES ----------------*/
 #define bold(text) ESC(1m) text ESC(22m)
 #define italic(text) ESC(3m) text ESC(23m)
-/// Colors
+/*-------------------------------------*/
+/*
+ *
+ */
+/*-------------- COLORS ---------------*/
 #define magenta(text) ESC(35m) text ESC(0m)
 #define yellow(text) ESC(33m) text ESC(0m)
 #define byellow(text) ESC(93m) text ESC(0m)
@@ -76,10 +89,15 @@
 #define bblue(text) ESC(94m) text ESC(0m)
 #define bwhite(text) ESC(97m) text ESC(0m)
 #define byellow(text) ESC(93m) text ESC(0m)
-/// Custom formatting
+/*-------------------------------------*/
+/*
+ *
+ */
+/*-------------- CUSTOM ---------------*/
 #define obrack cyan("[")
 #define cbrack cyan("]")
 #define bracketed(text) obrack text cbrack
+/*-------------------------------------*/
 
 /// Shell prefix format
 #define ASHE_PREFIX bold(bred("ashe"))
