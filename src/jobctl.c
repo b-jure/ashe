@@ -12,6 +12,8 @@
 #include <string.h>
 #include <sys/wait.h>
 
+#undef joblist /* Don't need it here */
+
 #define POLITE(status) (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
 
 #define job_completed_format green("completed") obrack red("-") cbrack
@@ -451,8 +453,7 @@ int job_move_to_fg(job_t *job, bool cont)
     /* If continue flag is set, send SIGCONT signal to the job process group */
     if(cont) {
         if(__glibc_unlikely(
-               tcsetattr(TERMINAL_FD, TCSADRAIN, &job->tmodes) < 0
-               || kill(-job->pgid, SIGCONT) < 0))
+               tcsetattr(TERMINAL_FD, TCSADRAIN, &job->tmodes) < 0 || kill(-job->pgid, SIGCONT) < 0))
         {
             ATOMIC_PRINT(perr());
         }
@@ -513,8 +514,7 @@ void job_continue(job_t *job, bool foreground)
         job_move_to_fg(job, true);
         if(__glibc_unlikely(job_completed(job) && !joblist_remove_job(&shell.sh_jlist, job))) {
             /// Invariant broken
-            ATOMIC_PRINT(
-                pwarn("FIX ME: tried removing background job that was not in the joblist!"));
+            ATOMIC_PRINT(pwarn("FIX ME: tried removing background job that was not in the joblist!"));
             exit(EXIT_FAILURE);
         }
     } else

@@ -12,7 +12,7 @@ void sigwin_handler(__attribute__((unused)) int signum)
     mask_signal(SIGCHLD, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
     shell.sh_intr = true;
-    get_size_or_die(&shell.sh_term.rows, &shell.sh_term.columns);
+    get_size_or_die(&terminal.tm_rows, &terminal.tm_columns);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
     mask_signal(SIGINT, SIG_UNBLOCK);
 }
@@ -26,7 +26,7 @@ void sigint_handler(__attribute__((unused)) int signum)
         fprintf(stderr, "\r\n");
         pprompt();
     });
-    inbuff_clear(&shell.sh_term.tm_inbuff);
+    inbuff_clear(&terminal.tm_inbuff);
     mask_signal(SIGWINCH, SIG_UNBLOCK);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
 }

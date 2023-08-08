@@ -62,7 +62,7 @@
 #define clrscrd ESC(0J)
 #define clrscru ESC(1J)
 #define clrscr ESC(2J)
-#define clrlneol ESC(K)
+#define clrlneol ESC(0K)
 #define clrlnsol ESC(1K)
 #define clrln ESC(2K)
 #define delch "\b \b"
@@ -119,8 +119,7 @@ typedef struct {
   byte in_buffer[MAXLINE];
   vec_t *in_rows; /* Buffer rows as slices of bytes */
   size_t in_len;
-  cursor_t in_bcur; /* Buffer cursor */
-  cursor_t in_tcur; /* Terminal cursor */
+  cursor_t in_cur; /* Buffer cursor */
 } inbuff_t;
 
 typedef struct {
@@ -128,8 +127,9 @@ typedef struct {
   struct termios tm_dflterm; /* Default terminal modes */
   struct termios tm_rawterm; /* Raw (input reading) terminal modes */
   inbuff_t tm_inbuff;        /* User input/state storage */
-  uint16_t rows;
-  uint16_t columns;
+  uint16_t tm_rows;
+  uint16_t tm_columns;
+  uint16_t tm_col;
 } terminal_t;
 
 void inbuff_clear(inbuff_t *buffer);

@@ -9,13 +9,13 @@
 #include "shell.h"
 #include "vec.h"
 
-/// TODO: Implement rows in inbuff_t structure
-
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
 #include <stdlib.h>
+
+#undef cmdline /* Don't need it here */
 
 #define PIPE_R             0                 /* Read  end of a pipe */
 #define PIPE_W             1                 /* Write end of a pipe */
@@ -178,7 +178,7 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
     if(job.foreground) {
         status = job_move_to_fg(&job, false);
     } else {
-        if(__glibc_unlikely(!joblist_push(&shell.sh_jlist, &job))) {
+        if(__glibc_unlikely(!joblist_push(&joblist, &job))) {
             ATOMIC_PRINT(PW_ADDJ(&job));
             exit(EXIT_FAILURE);
         }
@@ -333,8 +333,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
     err = STDERR_FILENO;
 
     if(__glibc_unlikely(
-           (in = dup(STDIN_FILENO)) < 0 || (out = dup(STDOUT_FILENO)) < 0
-           || (err = dup(STDERR_FILENO)) < 0))
+           (in = dup(STDIN_FILENO)) < 0 || (out = dup(STDOUT_FILENO)) < 0 || (err = dup(STDERR_FILENO)) < 0))
     {
         die();
     }
@@ -343,8 +342,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
     status = run_builtin(argv[0], argv, true);
 
     if(__glibc_unlikely(
-           dup2(in, STDIN_FILENO) < 0 || dup2(out, STDOUT_FILENO) < 0
-           || dup2(err, STDERR_FILENO) < 0))
+           dup2(in, STDIN_FILENO) < 0 || dup2(out, STDOUT_FILENO) < 0 || dup2(err, STDERR_FILENO) < 0))
     {
         PW_SHDUP;
         die();
@@ -378,15 +376,17 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
         /// exact copy of joblist structure which holds valid
         /// PGIDs inside. This in combination that atexit registered
         /// shell cleanup function sends a kill signal to all the processes inside
-        /// a joblist therefore removing and harvesting all the jobs
-        /// each time a fork exits without calling exec successfully.
+        /// a joblist therefore removing and harvesting all the jobs.
+        /// Because we are also running builtin commands in the fork and/or
+        /// something might fail such as exec call then the program might/will exit
+        /// triggering atexit registered functions.
 
         /// If no command were provided and only
         /// env vars then exit immediately
-        if(is_null(argv[0]))
+        if(__glibc_unlikely(is_null(argv[0])))
             _exit(EXIT_SUCCESS);
 
-        /// Add environment variables to environ
+        /// Export env variables
         if(__glibc_unlikely(add_envs_to_environ(env) < 0))
             _exit(EXIT_FAILURE);
 
@@ -403,6 +403,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
                 });
             }
         }
+
         /// Move this process into the new process group
         if(__glibc_unlikely(setpgid(pid, job->pgid) < 0)) {
             ATOMIC_PRINT({
@@ -411,17 +412,18 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
             });
         }
 
-        /// Reset signal handling to default
+        /// Reset signal handling to default (async)
         reset_signal_handling();
         /// Connect stdin and stdout to pipe
         connect_io_with_pipe(ctx);
-        /// Parse and configure all the redirections (<, >, >>, 2>)
+        /// Parse and configure all the redirections
         resolve_redirections(argv);
-        /// Try execute builtin command
-        if(is_builtin(argv[0])) {
+
+        /// If builtin then execute
+        if(is_builtin(argv[0]))
             _exit(run_builtin(argv[0], argv, false));
-        }
-        /// Execute the non-builtin command
+
+        /// Try exec the non-builtin command
         if(execvp(argv[0], argv) < 0) {
             ATOMIC_PRINT({
                 PW_EXECERR(argv[0]);
@@ -437,6 +439,8 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
     if(job->pgid == 0)
         job->pgid = childPID;
 
+    /// Same here, move the process into job process group
+    /// this is also done in the fork to prevent race
     if(__glibc_unlikely(setpgid(childPID, job->pgid) < 0)) {
         ATOMIC_PRINT({
             PW_PGRPSET(childPID, job->pgid);
@@ -450,8 +454,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
 static void connect_io_with_pipe(context_t *ctx)
 {
     if(__glibc_unlikely(
-           dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
-           || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
+           dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
            || (ctx->closefd != -1 && close(ctx->closefd) < 0)))
     {
         ATOMIC_PRINT(die());

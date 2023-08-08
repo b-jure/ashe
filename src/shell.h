@@ -14,7 +14,23 @@ typedef struct {
   terminal_t sh_term;       /* Shell terminal settings and raw input buffer */
 } shell_t;
 
-extern shell_t shell; /* Shell */
+extern shell_t shell; /* Shell global */
+
+#ifndef terminal
+#define terminal shell.sh_term
+#endif
+
+#ifndef joblist
+#define joblist shell.sh_jlist
+#endif
+
+#ifndef cmdline
+#define cmdline shell.sh_cmdline
+#endif
+
+#ifndef inbuff
+#define inbuff shell.sh_term.tm_inbuff
+#endif
 
 void shell_init(void);
 
