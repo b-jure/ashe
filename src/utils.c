@@ -18,7 +18,7 @@ void _die(void)
     _exit(EXIT_FAILURE);
 }
 
-void pwarn(const byte *fmt, ...)
+void pwarn(const byte* fmt, ...)
 {
     va_list argp;
     va_start(argp, fmt);
@@ -29,9 +29,9 @@ void pwarn(const byte *fmt, ...)
     va_end(argp);
 }
 
-void pinfo(info_t type, const byte *str)
+void pinfo(info_t type, const byte* str)
 {
-    byte *info = NULL;
+    byte* info = NULL;
 
     switch(type) {
         case INF_NAME: info = "NAME"; break;
@@ -48,11 +48,26 @@ void pinfo(info_t type, const byte *str)
     fflush(stderr);
 }
 
-void pmanpage(const byte *name, const byte *usage, const byte *desc)
+void pmanpage(const byte* name, const byte* usage, const byte* desc)
 {
     pinfo(INF_NAME, name);
     pinfo(INF_USAGE, usage);
     pinfo(INF_DESC, desc);
+}
+
+bool in_dq(byte* str, size_t len)
+{
+    bool dq = false;
+    while(len--)
+        if(*str++ == '"')
+            dq ^= true;
+    return dq;
+}
+
+bool is_escaped(byte* bt, size_t curpos)
+{
+    byte* at = bt + curpos;
+    return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') || (curpos == 1 && *(at - 1) == '\\'));
 }
 
 void perr(void)

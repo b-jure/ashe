@@ -1,3 +1,4 @@
+#include "ashe_utils.h"
 #include "lexer.h"
 
 #include <ctype.h>
@@ -15,6 +16,55 @@ static void    lexer_skip_ws(lexer_t* lexer);
 lexer_t lexer_new(const byte* start, size_t len)
 {
     return (lexer_t){.token = {0}, .iter = chariter_new((byte*) start, len)};
+}
+
+static void expand_vars(byte** word)
+{
+    size_t      len   = strlen(*word);
+    byte*       ptr   = *word;
+    byte*       start = NULL;
+    byte*       end   = NULL;
+    const byte* value = NULL;
+
+    for(; is_some((ptr = strchr(ptr, '$'))); ptr++) {
+        if(is_escaped(ptr, ptr - *word)) {
+            continue;
+        }
+
+        size_t offset = strspn(ptr + 1, PORTABLE_CHARACTER_SET);
+
+        if(offset == 0 || __glibc_unlikely((end = (start = ptr + 1) + offset) - *word >= ARG_MAX)) {
+            continue;
+        }
+
+        byte cached     = *end;
+        *end            = NULL_TERM;
+        int32_t key_len = strlen(start) + 1; // Account for '$'
+        *end            = cached;
+
+        value = getenv(start);
+
+        if(is_some(value)) {
+            int32_t var_len = strlen(value);
+            int32_t diff    = var_len - key_len;
+
+            if(diff > 0) {
+                if(__glibc_likely(len + diff < ARG_MAX)) {
+                    memcpy(end, end + diff, diff);
+                } else {
+                    continue;
+                }
+            } else {
+                diff = abs(diff);
+                memcpy(end - diff, end, diff);
+            }
+
+            memcpy(ptr, value, var_len);
+        } else {
+            /* If no variable found remove the whole key indicated with '$' */
+            memcpy(ptr, end, key_len);
+        }
+    }
 }
 
 static void lexer_get_string(lexer_t* lexer)
@@ -46,11 +96,15 @@ static void lexer_get_string(lexer_t* lexer)
     word[i] = '\0';
     ttype   = WORD_TOKEN;
 
+    ptr = word;
+    expand_vars(&ptr);
+
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
         old  = *ptr;
         *ptr = NULL_TERM;
-        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word))
+        if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word)) {
             ttype = KVPAIR_TOKEN;
+        }
         *ptr = old;
     }
 

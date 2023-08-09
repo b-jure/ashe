@@ -103,8 +103,6 @@ typedef struct {
 typedef uint16_t termkey_t;
 
 static size_t    inbuff_lenrel(inbuff_t* buffer);
-static bool      is_escaped(byte* bt, size_t curpos);
-static bool      in_dq(byte* str, size_t len);
 static bool      inbuff_cursor_right(inbuff_t* buffer);
 static bool      inbuff_cursor_left(inbuff_t* buffer);
 static bool      inbuff_cursor_up(inbuff_t* buffer);
@@ -223,21 +221,6 @@ int get_window_size_fallback(uint16_t* height, uint16_t* width)
     size_t n = sizeof(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos);
     write_or_die(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos, n);
     return get_cursor_pos(height, width);
-}
-
-static bool in_dq(byte* str, size_t len)
-{
-    bool dq = false;
-    while(len--)
-        if(*str++ == '"')
-            dq ^= true;
-    return dq;
-}
-
-static bool is_escaped(byte* bt, size_t curpos)
-{
-    byte* at = bt + curpos;
-    return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') || (curpos == 1 && *(at - 1) == '\\'));
 }
 
 static int get_cursor_pos(uint16_t* row, uint16_t* col)
