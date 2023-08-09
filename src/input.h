@@ -65,7 +65,6 @@
 #define clrlneol ESC(0K)
 #define clrlnsol ESC(1K)
 #define clrln ESC(2K)
-#define delch "\b \b"
 /*-------------------------------------*/
 /*
  *
@@ -142,5 +141,6 @@ void pprompt(void);
 int get_window_size(uint16_t *height, uint16_t *width);
 int get_window_size_fallback(uint16_t *height, uint16_t *width);
 void terminal_init(terminal_t *term);
+void inbuff_goto_end(inbuff_t *buffer);
 
 #endif

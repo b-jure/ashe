@@ -23,12 +23,27 @@ void sigint_handler(__attribute__((unused)) int signum)
     mask_signal(SIGCHLD, SIG_BLOCK);
     shell.sh_intr = true;
     ATOMIC_PRINT({
+        inbuff_goto_end(&inbuff);
         fprintf(stderr, "\r\n");
         pprompt();
     });
     inbuff_clear(&terminal.tm_inbuff);
     mask_signal(SIGWINCH, SIG_UNBLOCK);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
+}
+
+void unblock_signals(void)
+{
+    mask_signal(SIGCHLD, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
+    mask_signal(SIGWINCH, SIG_UNBLOCK);
+}
+
+void block_signals(void)
+{
+    mask_signal(SIGCHLD, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
+    mask_signal(SIGWINCH, SIG_UNBLOCK);
 }
 
 void sigchld_handler(int signum)
@@ -70,7 +85,7 @@ void setup_default_signal_handling(void)
     struct sigaction default_action;
     sigemptyset(&default_action.sa_mask);
     default_action.sa_handler = sigint_handler;
-    default_action.sa_flags = 0;
+    default_action.sa_flags   = 0;
 
     if(__glibc_unlikely(sigaction(SIGINT, &default_action, NULL) < 0)) {
         ATOMIC_PRINT({
@@ -91,10 +106,8 @@ void setup_default_signal_handling(void)
     default_action.sa_handler = SIG_IGN;
 
     if(__glibc_unlikely(
-           sigaction(SIGTTIN, &default_action, NULL) < 0
-           || sigaction(SIGTTOU, &default_action, NULL) < 0
-           || sigaction(SIGTSTP, &default_action, NULL) < 0
-           || sigaction(SIGQUIT, &default_action, NULL) < 0))
+           sigaction(SIGTTIN, &default_action, NULL) < 0 || sigaction(SIGTTOU, &default_action, NULL) < 0
+           || sigaction(SIGTSTP, &default_action, NULL) < 0 || sigaction(SIGQUIT, &default_action, NULL) < 0))
     {
         ATOMIC_PRINT({
             PW_SIGINIT;

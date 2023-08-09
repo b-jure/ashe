@@ -18,7 +18,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define cmd_is_null(command) (command.env == NULL || command.argv == NULL)
+#define cmd_is_null(command)             ((command).env == NULL || (command).argv == NULL)
+#define conditional_is_null(conditional) ((conditional).pipelines == NULL)
 
 ///*************  SHELL-COMMAND  ******************///
 static command_t command_new(void);
@@ -45,9 +46,16 @@ int parse_commandline(const byte *line, commandline_t *out)
     lexer_t lexer = lexer_new(line, strlen(line));
     token_t token = lexer_next(&lexer);
 
-    /// Empty cmdline
-    if(token.type == EOL_TOKEN)
-        return SUCCESS;
+    switch(token.type) {
+        case EOL_TOKEN: return SUCCESS;
+        case OOM_TOKEN: return FAILURE;
+        case WORD_TOKEN:
+        case KVPAIR_TOKEN: break;
+        default:
+            PW_SYNTAX(string_ref(token.contents));
+            string_drop(token.contents);
+            return FAILURE;
+    }
 
     return _parse_commandline(&lexer, out);
 }
@@ -60,16 +68,12 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
     int status;
 
     while(1) {
-        if((token.type & (WORD_TOKEN | KVPAIR_TOKEN)) == 0) {
-            if(__glibc_unlikely(token.type != OOM_TOKEN))
-                PW_PARSINVALTOK(string_ref(token.contents));
-            else
-                string_drop(token.contents);
-
+        if(token.type == OOM_TOKEN) {
+            string_drop(token.contents);
             return FAILURE;
         }
 
-        if(is_null((cond = conditional_new()).pipelines))
+        if(conditional_is_null((cond = conditional_new())))
             return FAILURE;
 
         status = parse_conditional(lexer, &cond);
@@ -85,8 +89,18 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
             if(token.type == BG_TOKEN)
                 lastcond->is_background = true;
             free(token.contents);
-            if((token = lexer_next(lexer)).type == EOL_TOKEN)
+            if((token = lexer_next(lexer)).type == EOL_TOKEN) {
                 break;
+            } else if(!(token.type & (KVPAIR_TOKEN | WORD_TOKEN))) {
+                if(is_some(token.contents)) {
+                    PW_SYNTAX(string_ref(token.contents));
+                    string_drop(token.contents);
+                } else if(token.type == EOL_TOKEN) {
+                    PW_SYNTAX_EOL;
+                }
+
+                return FAILURE;
+            }
         } else {
             break;
         }
@@ -119,12 +133,26 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond)
 
         if(token.type & (AND_TOKEN | OR_TOKEN)) {
             lastpipe = vec_back(cond->pipelines);
-            if(token.type == AND_TOKEN)
+
+            if(token.type == AND_TOKEN) {
                 lastpipe->connection = ASH_AND;
-            else
+            } else {
                 lastpipe->connection = ASH_OR;
+            }
+
             free(token.contents);
             token = lexer_next(lexer);
+
+            if(!(token.type & (KVPAIR_TOKEN | WORD_TOKEN))) {
+                if(is_some(token.contents)) {
+                    PW_SYNTAX(string_ref(token.contents));
+                    string_drop(token.contents);
+                } else if(token.type == EOL_TOKEN) {
+                    PW_SYNTAX_EOL;
+                }
+
+                return FAILURE;
+            }
         } else {
             break;
         }
@@ -154,6 +182,16 @@ static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline)
         if(token.type == PIPE_TOKEN) {
             free(token.contents);
             token = lexer_next(lexer);
+            if((token.type & (KVPAIR_TOKEN | WORD_TOKEN)) == 0) {
+                if(is_some(token.contents)) {
+                    PW_SYNTAX(string_ref(token.contents));
+                    string_drop(token.contents);
+                } else if(token.type == EOL_TOKEN) {
+                    PW_SYNTAX_EOL;
+                }
+
+                return FAILURE;
+            }
         } else {
             break;
         }

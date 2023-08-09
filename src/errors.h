@@ -4,6 +4,15 @@
 #include "ashe_utils.h"
 #include "input.h"
 
+#define PW_SYNTAX_EOL                                                          \
+  pwarn("expected " bold(green("command/var")) " instead got " bold(           \
+      bred("eol")) ".")
+
+#define PW_SYNTAX(str)                                                         \
+  pwarn("expected " bold(green("command/var")) " instead got " bold(           \
+            bred("%s")) ".",                                                   \
+        str)
+
 #define PW_JOBMV_ID(prog, id)                                                  \
   pwarn(                                                                       \
       bold(bred("%s")) ": there is no suitable job with ID " bold(bred("%d")), \
@@ -99,8 +108,6 @@
         (signalp))
 
 #define PW_PARSINVALTOK(token_contents)                                        \
-  pwarn("expected" bold(green(" && ")) "or" bold(                              \
-            green(" || ")) "instead got" bold(bred(" %s")),                    \
-        (token_contents))
+  pwarn("syntax error near token contents " bold(bred(" %s")), (token_contents))
 
 #endif

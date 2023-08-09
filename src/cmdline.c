@@ -36,27 +36,25 @@ typedef struct {
     int closefd;
 } context_t;
 
-/// TODO: move some functions declarations into builtin.c module
-/// Internal functions
 static context_t context_new(void);
-static int conditional_execute(conditional_t *cond);
-static int pipeline_execute(pipeline_t *pipeline, bool bg);
-static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *job);
-static void command_get_argv(command_t *cmd, byte *out[], size_t len);
-static void command_get_env(command_t *cmd, byte *out[], size_t len);
-static int close_pipe(int *pp);
-static int add_envs_to_environ(byte *const *envp);
-static void reset_signal_handling(void);
-static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx);
-static void resolve_redirections(byte *const *argvp);
-static void connect_io_with_pipe(context_t *ctx);
-static int run_cmd_nofork(byte **argv, byte **env);
-static void fargvs(vec_t *argv, byte **out);
+static int       conditional_execute(conditional_t* cond);
+static int       pipeline_execute(pipeline_t* pipeline, bool bg);
+static int       run_cmd(byte* const* argv, byte* const* env, context_t* ctx, job_t* job);
+static void      command_get_argv(command_t* cmd, byte* out[], size_t len);
+static void      command_get_env(command_t* cmd, byte* out[], size_t len);
+static int       close_pipe(int* pp);
+static int       add_envs_to_environ(byte* const* envp);
+static void      reset_signal_handling(void);
+static void      configure_pipes(size_t i, int* pipes, size_t cmdn, context_t* ctx);
+static void      resolve_redirections(byte* const* argvp);
+static void      connect_io_with_pipe(context_t* ctx);
+static int       run_cmd_nofork(byte** argv, byte** env);
+static void      fargvs(vec_t* argv, byte** out);
 
 static context_t context_new(void)
 {
     return (context_t){
-        .pipefd = {STDIN_FILENO, STDOUT_FILENO},
+        .pipefd  = {STDIN_FILENO, STDOUT_FILENO},
         .closefd = -1,
     };
 }
@@ -68,42 +66,42 @@ commandline_t commandline_new(void)
     };
 }
 
-void commandline_clear(commandline_t *cmdline)
+void commandline_clear(commandline_t* cmdline)
 {
     if(is_some(cmdline)) {
         vec_clear(cmdline->conditionals, (FreeFn) conditional_drop);
     }
 }
 
-void commandline_drop(commandline_t *cmdline)
+void commandline_drop(commandline_t* cmdline)
 {
     if(is_some(cmdline)) {
         vec_clear(cmdline->conditionals, (FreeFn) conditional_drop);
     }
 }
 
-void commandline_execute(commandline_t *cmdline, int *status)
+void commandline_execute(commandline_t* cmdline, int* status)
 {
-    vec_t *cnds = cmdline->conditionals;
+    vec_t* cnds = cmdline->conditionals;
     size_t cndn = vec_len(cnds);
-    int ret;
+    int    ret;
 
     for(size_t i = 0; i < cndn; i++) {
-        ret = conditional_execute(vec_index(cnds, i));
+        ret     = conditional_execute(vec_index(cnds, i));
         *status = (ret == FAILURE) ? 1 : ret;
     }
 }
 
-static int conditional_execute(conditional_t *cond)
+static int conditional_execute(conditional_t* cond)
 {
-    vec_t *pips = cond->pipelines;
-    size_t pipn = vec_len(pips);
-    pipeline_t *pipeline = NULL;
-    int status = SUCCESS;
+    vec_t*      pips     = cond->pipelines;
+    size_t      pipn     = vec_len(pips);
+    pipeline_t* pipeline = NULL;
+    int         status   = SUCCESS;
 
     for(size_t i = 0; i < pipn; i++) {
         pipeline = vec_index(pips, i);
-        status = pipeline_execute(pipeline, cond->is_background);
+        status   = pipeline_execute(pipeline, cond->is_background);
 
         if(status == FAILURE && IS_AND(pipeline->connection)) {
             return FAILURE;
@@ -115,21 +113,21 @@ static int conditional_execute(conditional_t *cond)
     return status;
 }
 
-static int pipeline_execute(pipeline_t *pipeline, bool bg)
+static int pipeline_execute(pipeline_t* pipeline, bool bg)
 {
-    context_t ctx; /* Context, instructs forked proc which pipe stream to dup and close */
-    vec_t *commands = pipeline->commands; /* All of the commands for this pipeline */
-    size_t cmdn = vec_len(commands);      /* Amount of commands in this pipeline */
-    int status = SUCCESS;                 /* Return status of this pipeline */
-    pid_t cpid;                           /* child Process ID */
-    command_t *cmd = NULL;
-    job_t job = job_new(pipeline->connection, bg); /* New job for this pipeline */
+    context_t  ctx; /* Context, instructs forked proc which pipe stream to dup and close */
+    vec_t*     commands = pipeline->commands; /* All of the commands for this pipeline */
+    size_t     cmdn     = vec_len(commands);  /* Amount of commands in this pipeline */
+    int        status   = SUCCESS;            /* Return status of this pipeline */
+    pid_t      cpid;                          /* child Process ID */
+    command_t* cmd = NULL;
+    job_t      job = job_new(pipeline->connection, bg); /* New job for this pipeline */
 
     if(__glibc_unlikely(is_null(job.processes)))
         exit(EXIT_FAILURE);
 
     unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
-    int pipes[pn];                  /* Pipe storage */
+    int      pipes[pn];             /* Pipe storage */
 
     /// Run the entire pipeline
     for(size_t i = 0; i < cmdn; i++) {
@@ -138,13 +136,13 @@ static int pipeline_execute(pipeline_t *pipeline, bool bg)
         cmd = vec_index(commands, i);
 
         size_t argc = vec_len(cmd->argv);
-        byte *argv[argc + 1];
+        byte*  argv[argc + 1];
         argv[0] = NULL;
         if(argc > 0)
             command_get_argv(cmd, argv, argc);
 
         size_t envc = vec_len(cmd->env);
-        byte *env[envc + 1];
+        byte*  env[envc + 1];
         env[0] = NULL;
         if(envc > 0)
             command_get_env(cmd, env, envc);
@@ -192,7 +190,7 @@ static void reset_signal_handling(void)
 {
     struct sigaction sigdfl_ac;
     sigemptyset(&sigdfl_ac.sa_mask);
-    sigdfl_ac.sa_flags = 0;
+    sigdfl_ac.sa_flags   = 0;
     sigdfl_ac.sa_handler = SIG_DFL;
     sigaction(SIGINT, &sigdfl_ac, NULL);
     sigaction(SIGQUIT, &sigdfl_ac, NULL);
@@ -202,31 +200,29 @@ static void reset_signal_handling(void)
     sigaction(SIGCHLD, &sigdfl_ac, NULL);
 }
 
-static void command_get_argv(command_t *cmd, byte *out[], size_t len)
+static void command_get_argv(command_t* cmd, byte* out[], size_t len)
 {
     size_t i;
-    vec_t *argv = cmd->argv;
+    vec_t* argv = cmd->argv;
 
     if(is_some(argv)) {
-        for(i = 0; i < len; i++)
-            out[i] = string_slice(vec_index(argv, i), 0);
+        for(i = 0; i < len; i++) out[i] = string_slice(vec_index(argv, i), 0);
         out[i] = NULL;
     }
 }
 
-static void command_get_env(command_t *cmd, byte *out[], size_t len)
+static void command_get_env(command_t* cmd, byte* out[], size_t len)
 {
     size_t i;
-    vec_t *env = cmd->env;
+    vec_t* env = cmd->env;
 
     if(!is_some(env)) {
-        for(i = 0; i < len; i++)
-            out[i] = string_slice(vec_index(env, i), 0);
+        for(i = 0; i < len; i++) out[i] = string_slice(vec_index(env, i), 0);
         out[i] = NULL;
     }
 }
 
-static int close_pipe(int *pp)
+static int close_pipe(int* pp)
 {
     if(__glibc_unlikely(close(*pp) < 0 || close(*(pp + 1)) < 0)) {
         ATOMIC_PRINT({
@@ -238,7 +234,7 @@ static int close_pipe(int *pp)
     return SUCCESS;
 }
 
-static int add_envs_to_environ(byte *const *envp)
+static int add_envs_to_environ(byte* const* envp)
 {
     while(is_some(*envp))
         if(__glibc_unlikely(putenv(*envp++) < 0)) {
@@ -252,12 +248,12 @@ static int add_envs_to_environ(byte *const *envp)
     return SUCCESS;
 }
 
-static int rm_envs_from_environ(byte *const *envp)
+static int rm_envs_from_environ(byte* const* envp)
 {
     while(is_some(*envp)) {
-        byte *temp = strchr(*envp, '=');
-        byte c = *temp;
-        *temp = NULL_TERM;
+        byte* temp = strchr(*envp, '=');
+        byte  c    = *temp;
+        *temp      = NULL_TERM;
         if(__glibc_unlikely(unsetenv(*envp) < 0)) {
             *temp = c;
             ATOMIC_PRINT({
@@ -273,29 +269,29 @@ static int rm_envs_from_environ(byte *const *envp)
     return SUCCESS;
 }
 
-static void configure_pipes(size_t i, int *pipes, size_t cmdn, context_t *ctx)
+static void configure_pipes(size_t i, int* pipes, size_t cmdn, context_t* ctx)
 {
     if(first(i)) {
         if(__glibc_unlikely(pipe(pipes) < 0))
             ATOMIC_PRINT(die());
         ctx->pipefd[PIPE_W] = pipes[PIPE_W];
-        ctx->closefd = pipes[PIPE_R];
+        ctx->closefd        = pipes[PIPE_R];
     } else if(not_first(i) && not_last(i, cmdn)) {
         if(__glibc_unlikely(pipe(pipe_at(CURR(i), pipes)) < 0))
             ATOMIC_PRINT(die());
         ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
         ctx->pipefd[PIPE_W] = *(pipe_at(CURR(i), pipes) + PIPE_W);
-        ctx->closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
+        ctx->closefd        = *(pipe_at(PREV(i), pipes) + PIPE_W);
     } else {
         ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
-        ctx->closefd = *(pipe_at(PREV(i), pipes) + PIPE_W);
+        ctx->closefd        = *(pipe_at(PREV(i), pipes) + PIPE_W);
     }
 }
 
-static void fargvs(vec_t *argv, byte **out)
+static void fargvs(vec_t* argv, byte** out)
 {
     size_t len = vec_len(argv);
-    byte commandline[ARG_MAX];
+    byte   commandline[ARG_MAX];
     commandline[0] = NULL_TERM;
 
     for(size_t i = 0; i < len; i++) {
@@ -314,7 +310,7 @@ static void fargvs(vec_t *argv, byte **out)
     }
 }
 
-static int run_cmd_nofork(byte **argv, byte **env)
+static int run_cmd_nofork(byte** argv, byte** env)
 {
     int status = SUCCESS;
     int out, err, in;
@@ -328,7 +324,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
     if(is_null(argv[0]))
         return status;
 
-    in = STDIN_FILENO;
+    in  = STDIN_FILENO;
     out = STDOUT_FILENO;
     err = STDERR_FILENO;
 
@@ -357,7 +353,7 @@ static int run_cmd_nofork(byte **argv, byte **env)
     return status;
 }
 
-static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *job)
+static int run_cmd(byte* const* argv, byte* const* env, context_t* ctx, job_t* job)
 {
     pid_t childPID = fork();
 
@@ -451,7 +447,7 @@ static int run_cmd(byte *const *argv, byte *const *env, context_t *ctx, job_t *j
     return childPID;
 }
 
-static void connect_io_with_pipe(context_t *ctx)
+static void connect_io_with_pipe(context_t* ctx)
 {
     if(__glibc_unlikely(
            dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
@@ -461,18 +457,18 @@ static void connect_io_with_pipe(context_t *ctx)
     }
 }
 
-static void resolve_redirections(byte *const *argvp)
+static void resolve_redirections(byte* const* argvp)
 {
     /// Default streams
-    int infd = STDIN_FILENO;   /* Default input stream */
+    int infd  = STDIN_FILENO;  /* Default input stream */
     int outfd = STDOUT_FILENO; /* Default output stream */
     int errfd = STDERR_FILENO; /* Default err stream */
     int redfd = -1;            /* Redirections fd */
 
     /// Parse redirections and also prune out argv leaving
     /// only command and its arguments without redirections
-    bool append = false;
-    const byte **pargvp = (const byte **) argvp;
+    bool         append = false;
+    const byte** pargvp = (const byte**) argvp;
 
     for(; is_some(*argvp); argvp++) {
         switch(**argvp) {

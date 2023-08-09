@@ -16,4 +16,7 @@ token_t lexer_next(lexer_t *lexer);
 
 token_t lexer_peek(lexer_t *lexer);
 
+/// Debug
+void print_token(token_t *token);
+
 #endif

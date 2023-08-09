@@ -10,5 +10,7 @@ void enable_async_joblist_update(void);
 void sigchld_handler(int signum);
 void sigint_handler(__attribute__((unused)) int signum);
 void try_wait_missed_sigchld_signals(void);
+void unblock_signals(void);
+void block_signals(void);
 
 #endif

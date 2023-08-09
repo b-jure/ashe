@@ -8,8 +8,8 @@ shell_t shell = {0};
 
 void shell_init(void)
 {
-    pid_t sh_pgid = getpgrp();
-    int shell_is_interactive = isatty(STDIN_FILENO);
+    pid_t sh_pgid              = getpgrp();
+    int   shell_is_interactive = isatty(STDIN_FILENO);
 
     if(shell_is_interactive) {
         /* Initialize the parser storage */
@@ -46,8 +46,7 @@ void shell_init(void)
 
         /* Loop and stop this process group until shell
          * process group is in control of the terminal */
-        while(tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp()))
-            kill(-sh_pgid, SIGTTIN);
+        while(tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp())) kill(-sh_pgid, SIGTTIN);
 
         /* Move shell process into its own process group */
         if(__glibc_unlikely(setpgid(getpid(), sh_pgid) < 0)) {

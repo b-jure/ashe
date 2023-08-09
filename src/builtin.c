@@ -19,11 +19,11 @@
 #define P_ALL   4 /* Print all environ */
 
 #define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
-#define phelp_opts                                                                                 \
+#define phelp_opts \
     fprintf(stderr, "\r\nThe -h or --help options display help information for this command\n\r")
 
 /// Built-in commands
-byte *builtin[] = {
+byte* builtin[] = {
     "exit",
     "pwd",
     "clear",
@@ -45,46 +45,46 @@ byte *builtin[] = {
 
 /// TODO: Maybe refactor this, ugly as shit
 #define jobheaderf printf("\r\n%-*s %-*s %-*s\r\n", 10, "Job", 10, "Group", 10, "State")
-#define joboutf(job)                                                                               \
-    printf(                                                                                        \
-        "%-*ld %-*d %-*s\r\n",                                                                     \
-        10,                                                                                        \
-        (job)->id,                                                                                 \
-        10,                                                                                        \
-        (job)->pgid,                                                                               \
-        10,                                                                                        \
-        job_completed((job)) ? green("completed")                                                  \
-        : job_stopped((job)) ? red("stopped")                                                      \
+#define joboutf(job)                              \
+    printf(                                       \
+        "%-*ld %-*d %-*s\r\n",                    \
+        10,                                       \
+        (job)->id,                                \
+        10,                                       \
+        (job)->pgid,                              \
+        10,                                       \
+        job_completed((job)) ? green("completed") \
+        : job_stopped((job)) ? red("stopped")     \
                              : yellow("running"))
 
 /// Internal functions
-static int argv_len(byte *const *argv);
+static int  argv_len(byte* const* argv);
 static void pbuiltin(void);
 static void penviron(void);
-static int envcmd(byte *const *argv, int option);
-static int exit_builtin(byte *const *argv, bool shell);
-static int change_dir(byte *const *argv);
-static int print_variable(byte *const *argv);
-static int remove_variable(byte *const *argv);
-static int pwd(byte *const *argv);
-static int clear(byte *const *argv);
-static int builtin_names(byte *const *argv);
-static int get_integers(byte *const *argv, int32_t *out, size_t len);
+static int  envcmd(byte* const* argv, int option);
+static int  exit_builtin(byte* const* argv, bool shell);
+static int  change_dir(byte* const* argv);
+static int  print_variable(byte* const* argv);
+static int  remove_variable(byte* const* argv);
+static int  pwd(byte* const* argv);
+static int  clear(byte* const* argv);
+static int  builtin_names(byte* const* argv);
+static int  get_integers(byte* const* argv, int32_t* out, size_t len);
 static void fg_last(void);
 static void fg_pid(pid_t pid);
 static void fg_id(int32_t id);
-static int fg(byte *const *argv);
+static int  fg(byte* const* argv);
 static void bg_last(void);
 static void bg_id(int32_t id);
 static void bg_pid(pid_t pid);
-static int bg(byte *const *argv);
-static int jobs(byte *const *argv);
+static int  bg(byte* const* argv);
+static int  jobs(byte* const* argv);
 
 /// This is used in 'bg' builtin command when parsing and storing combination
 /// of id and pid integers in the same array to later distinguish them by their sign bit.
 /// All valid PID's and ID's are positive so by flipping a sign bit we can differentiate
 /// them while also storing them in the same array without storing each inside a tagged union.
-#define FLIP_SIGN_BIT(integer)                                                                     \
+#define FLIP_SIGN_BIT(integer) \
     ((int32_t) (((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1))))
 
 // clang-format off

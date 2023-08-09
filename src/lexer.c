@@ -6,28 +6,27 @@
 
 #define iter_peek_next(iter) ((iter)->next + 1)
 
-#define is_reserved_symbol(ch)                                                           \
-    ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
+#define is_reserved_symbol(ch) ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
 
-static token_t token_without_quotes(tokentype_t ttype, byte *word);
-static void lexer_get_string(lexer_t *lexer);
-static void lexer_skip_ws(lexer_t *lexer);
+static token_t token_without_quotes(tokentype_t ttype, byte* word);
+static void    lexer_get_string(lexer_t* lexer);
+static void    lexer_skip_ws(lexer_t* lexer);
 
-lexer_t lexer_new(const byte *start, size_t len)
+lexer_t lexer_new(const byte* start, size_t len)
 {
-    return (lexer_t){.token = {0}, .iter = chariter_new((byte *) start, len)};
+    return (lexer_t){.token = {0}, .iter = chariter_new((byte*) start, len)};
 }
 
-static void lexer_get_string(lexer_t *lexer)
+static void lexer_get_string(lexer_t* lexer)
 {
     static byte word[ARG_MAX];
 
-    int c, i;
-    byte *ptr;
-    byte old;
-    bool dquote = false;
-    bool escape = false;
-    chariter_t *iter = &lexer->iter;
+    int         c, i;
+    byte*       ptr;
+    byte        old;
+    bool        dquote = false;
+    bool        escape = false;
+    chariter_t* iter   = &lexer->iter;
     tokentype_t ttype;
 
     for(i = 0; ((c = chariter_peek(iter)) != EOL); i++) {
@@ -45,10 +44,10 @@ static void lexer_get_string(lexer_t *lexer)
     }
 
     word[i] = '\0';
-    ttype = WORD_TOKEN;
+    ttype   = WORD_TOKEN;
 
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
-        old = *ptr;
+        old  = *ptr;
         *ptr = NULL_TERM;
         if(strspn(word, PORTABLE_CHARACTER_SET) == strlen(word))
             ttype = KVPAIR_TOKEN;
@@ -58,16 +57,16 @@ static void lexer_get_string(lexer_t *lexer)
     lexer->token = token_without_quotes(ttype, word);
 }
 
-static token_t token_without_quotes(tokentype_t ttype, byte *word)
+static token_t token_without_quotes(tokentype_t ttype, byte* word)
 {
-    token_t token;
-    string_t *string = string_from(word);
-    byte *ptr = string_slice(string, 0);
+    token_t   token;
+    string_t* string = string_from(word);
+    byte*     ptr    = string_slice(string, 0);
 
     if(__glibc_unlikely(is_null(string)))
         return token_new(OOM_TOKEN, NULL);
 
-    token.type = ttype;
+    token.type     = ttype;
     token.contents = string;
 
     while(is_some(ptr = strchr(ptr, '"'))) {
@@ -80,55 +79,34 @@ static token_t token_without_quotes(tokentype_t ttype, byte *word)
     return token;
 }
 
-static void lexer_skip_ws(lexer_t *lexer)
+static void lexer_skip_ws(lexer_t* lexer)
 {
-    int c;
-    chariter_t *iter = &lexer->iter;
-    while(isspace((c = chariter_peek(iter))))
-        chariter_next(iter);
+    int         c;
+    chariter_t* iter = &lexer->iter;
+    while(isspace((c = chariter_peek(iter)))) chariter_next(iter);
 }
 
 /// Debug
-__attribute__((unused)) static void print_token(token_t *token)
+__attribute__((unused)) void print_token(token_t* token)
 {
     switch(token->type) {
-        case REDIROP_TOKEN:
-            fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents));
-            break;
-        case WORD_TOKEN:
-            fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents));
-            break;
-        case KVPAIR_TOKEN:
-            fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents));
-            break;
-        case PIPE_TOKEN:
-            fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents));
-            break;
-        case AND_TOKEN:
-            fprintf(stderr, "AND : '%s'\n", string_ref(token->contents));
-            break;
-        case OR_TOKEN:
-            fprintf(stderr, "OR : '%s'\n", string_ref(token->contents));
-            break;
-        case BG_TOKEN:
-            fprintf(stderr, "BG : '%s'\n", string_ref(token->contents));
-            break;
-        case FG_TOKEN:
-            fprintf(stderr, "FG : '%s'\n", string_ref(token->contents));
-            break;
-        case EOL_TOKEN:
-            fprintf(stderr, "EOL : 'NULL'\n");
-            break;
-        case OOM_TOKEN:
-            fprintf(stderr, "OOM : 'NULL'\n");
-            break;
+        case REDIROP_TOKEN: fprintf(stderr, "REDIROP : '%s'\n", string_ref(token->contents)); break;
+        case WORD_TOKEN: fprintf(stderr, "WORD : '%s'\n", string_ref(token->contents)); break;
+        case KVPAIR_TOKEN: fprintf(stderr, "KVPAIR : '%s'\n", string_ref(token->contents)); break;
+        case PIPE_TOKEN: fprintf(stderr, "PIPE : '%s'\n", string_ref(token->contents)); break;
+        case AND_TOKEN: fprintf(stderr, "AND : '%s'\n", string_ref(token->contents)); break;
+        case OR_TOKEN: fprintf(stderr, "OR : '%s'\n", string_ref(token->contents)); break;
+        case BG_TOKEN: fprintf(stderr, "BG : '%s'\n", string_ref(token->contents)); break;
+        case FG_TOKEN: fprintf(stderr, "FG : '%s'\n", string_ref(token->contents)); break;
+        case EOL_TOKEN: fprintf(stderr, "EOL : 'NULL'\n"); break;
+        case OOM_TOKEN: fprintf(stderr, "OOM : 'NULL'\n"); break;
     }
 }
 
-token_t lexer_next(lexer_t *lexer)
+token_t lexer_next(lexer_t* lexer)
 {
-    int c;
-    chariter_t *iter = &lexer->iter;
+    int         c;
+    chariter_t* iter = &lexer->iter;
 
     lexer_skip_ws(lexer);
 
@@ -155,9 +133,7 @@ token_t lexer_next(lexer_t *lexer)
                 lexer->token = token_new(REDIROP_TOKEN, ">");
             }
             break;
-        case '<':
-            lexer->token = token_new(REDIROP_TOKEN, "<");
-            break;
+        case '<': lexer->token = token_new(REDIROP_TOKEN, "<"); break;
         case '&':
             if(*(iter_peek_next(iter)) == '&') {
                 chariter_next(iter);
@@ -174,23 +150,16 @@ token_t lexer_next(lexer_t *lexer)
                 lexer->token = token_new(PIPE_TOKEN, "|");
             }
             break;
-        case ';':
-            lexer->token = token_new(FG_TOKEN, ";");
-            break;
-        case '\0':
-            lexer->token = token_new(EOL_TOKEN, NULL);
-            break;
-        default:
-            lexer_get_string(lexer);
-            return lexer->token;
-            break;
+        case ';': lexer->token = token_new(FG_TOKEN, ";"); break;
+        case '\0': lexer->token = token_new(EOL_TOKEN, NULL); break;
+        default: lexer_get_string(lexer); return lexer->token;
     }
 
     chariter_next(iter);
     return lexer->token;
 }
 
-token_t lexer_peek(lexer_t *lexer)
+token_t lexer_peek(lexer_t* lexer)
 {
     return lexer->token;
 }
