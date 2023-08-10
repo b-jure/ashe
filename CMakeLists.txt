@@ -33,11 +33,16 @@ add_executable(${BIN} ${SRCFILES})
 target_compile_options(${BIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} ${OPTS})
 target_include_directories(${BIN} PRIVATE ${INCDIR})
 
-add_executable(${GDBBIN} ${SRCFILES})
-target_compile_options(${GDBBIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} -g)
-target_include_directories(${GDBBIN} PRIVATE ${INCDIR})
+# Install rule
+install(TARGETS ${BIN} DESTINATION /usr/local/bin)
 
+if(DEFINED ASHE_DBUG AND ASHE_DBUG STREQUAL "ON")
+    add_executable(${GDBBIN} ${SRCFILES})
+    target_compile_options(${GDBBIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} -g)
+    target_include_directories(${GDBBIN} PRIVATE ${INCDIR})
+endif()
+
+# Testing is for schmucks
 if(DEFINED ASHE_GTEST AND ASHE_GTEST STREQUAL "ON")
-    enable_testing()
-    add_subdirectory(tests)
+    # TODO: no testing srsly?? yes.
 endif()
