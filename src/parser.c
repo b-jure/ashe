@@ -23,25 +23,25 @@
 
 ///*************  SHELL-COMMAND  ******************///
 static command_t command_new(void);
-static int parse_command(lexer_t *lexer, command_t *out);
-static void command_drop(command_t *cmd);
+static int       parse_command(lexer_t* lexer, command_t* out);
+static void      command_drop(command_t* cmd);
 ///----------------------------------------------///
 
 ///***************  PIPELINE  *******************///
 static pipeline_t pipeline_new(void);
-static int parse_pipeline(lexer_t *lexer, pipeline_t *out);
-static void pipeline_drop(pipeline_t *pipeline);
+static int        parse_pipeline(lexer_t* lexer, pipeline_t* out);
+static void       pipeline_drop(pipeline_t* pipeline);
 ///----------------------------------------------///
 
 ///*************  CONDITIONAL  ******************///
 static conditional_t conditional_new(void);
-static int parse_conditional(lexer_t *lexer, conditional_t *out);
-void conditional_drop(conditional_t *cond);
+static int           parse_conditional(lexer_t* lexer, conditional_t* out);
+void                 conditional_drop(conditional_t* cond);
 ///----------------------------------------------///
 
-static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline);
+static int _parse_commandline(lexer_t* lexer, commandline_t* cmdline);
 
-int parse_commandline(const byte *line, commandline_t *out)
+int parse_commandline(const byte* line, commandline_t* out)
 {
     lexer_t lexer = lexer_new(line, strlen(line));
     token_t token = lexer_next(&lexer);
@@ -60,12 +60,12 @@ int parse_commandline(const byte *line, commandline_t *out)
     return _parse_commandline(&lexer, out);
 }
 
-static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
+static int _parse_commandline(lexer_t* lexer, commandline_t* cmdline)
 {
-    conditional_t cond;
-    conditional_t *lastcond;
-    token_t token = lexer->token;
-    int status;
+    conditional_t  cond;
+    conditional_t* lastcond;
+    token_t        token = lexer->token;
+    int            status;
 
     while(1) {
         if(token.type == OOM_TOKEN) {
@@ -77,7 +77,7 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
             return FAILURE;
 
         status = parse_conditional(lexer, &cond);
-        token = lexer->token;
+        token  = lexer->token;
 
         if(status == FAILURE || __glibc_unlikely(!vec_push(cmdline->conditionals, &cond))) {
             conditional_drop(&cond);
@@ -111,12 +111,12 @@ static int _parse_commandline(lexer_t *lexer, commandline_t *cmdline)
     return SUCCESS;
 }
 
-static int parse_conditional(lexer_t *lexer, conditional_t *cond)
+static int parse_conditional(lexer_t* lexer, conditional_t* cond)
 {
-    pipeline_t pipeline;
-    pipeline_t *lastpipe;
-    token_t token = lexer->token;
-    int status;
+    pipeline_t  pipeline;
+    pipeline_t* lastpipe;
+    token_t     token = lexer->token;
+    int         status;
 
     while(1) {
         pipeline = pipeline_new();
@@ -124,7 +124,7 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond)
             return FAILURE;
 
         status = parse_pipeline(lexer, &pipeline);
-        token = lexer->token;
+        token  = lexer->token;
 
         if(status == FAILURE || __glibc_unlikely(!vec_push(cond->pipelines, &pipeline))) {
             pipeline_drop(&pipeline);
@@ -161,18 +161,18 @@ static int parse_conditional(lexer_t *lexer, conditional_t *cond)
     return SUCCESS;
 }
 
-static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline)
+static int parse_pipeline(lexer_t* lexer, pipeline_t* pipeline)
 {
-    token_t token = lexer->token;
+    token_t   token = lexer->token;
     command_t command;
-    int status;
+    int       status;
 
     while(1) {
         if(__glibc_unlikely(cmd_is_null((command = command_new()))))
             return FAILURE;
 
         status = parse_command(lexer, &command);
-        token = lexer->token;
+        token  = lexer->token;
 
         if(status == FAILURE || __glibc_unlikely(!vec_push(pipeline->commands, &command))) {
             command_drop(&command);
@@ -200,10 +200,10 @@ static int parse_pipeline(lexer_t *lexer, pipeline_t *pipeline)
     return SUCCESS;
 }
 
-static int parse_command(lexer_t *lexer, command_t *command)
+static int parse_command(lexer_t* lexer, command_t* command)
 {
     token_t token = lexer->token;
-    bool env = false;
+    bool    env   = false;
 
     if(token.type == KVPAIR_TOKEN)
         env = true;
@@ -228,12 +228,12 @@ static int parse_command(lexer_t *lexer, command_t *command)
 static conditional_t conditional_new(void)
 {
     return (conditional_t){
-        .pipelines = vec_new(sizeof(pipeline_t)),
+        .pipelines     = vec_new(sizeof(pipeline_t)),
         .is_background = false,
     };
 }
 
-void conditional_drop(conditional_t *cond)
+void conditional_drop(conditional_t* cond)
 {
     if(is_some(cond))
         vec_drop(&cond->pipelines, (FreeFn) pipeline_drop);
@@ -242,12 +242,12 @@ void conditional_drop(conditional_t *cond)
 static pipeline_t pipeline_new(void)
 {
     return (pipeline_t){
-        .commands = vec_new(sizeof(command_t)),
+        .commands   = vec_new(sizeof(command_t)),
         .connection = ASH_NONE,
     };
 }
 
-static void pipeline_drop(pipeline_t *pipeline)
+static void pipeline_drop(pipeline_t* pipeline)
 {
     if(is_some(pipeline))
         vec_drop(&pipeline->commands, (FreeFn) command_drop);
@@ -255,19 +255,19 @@ static void pipeline_drop(pipeline_t *pipeline)
 
 static command_t command_new(void)
 {
-    command_t cmd = {.env = NULL, .argv = NULL};
-    vec_t *envp = vec_new(sizeof(string_t *));
+    command_t cmd  = {.env = NULL, .argv = NULL};
+    vec_t*    envp = vec_new(sizeof(string_t*));
     if(__glibc_unlikely(is_null(envp)))
         return cmd;
-    vec_t *argv = vec_new(sizeof(string_t *));
+    vec_t* argv = vec_new(sizeof(string_t*));
     if(__glibc_unlikely(is_null(argv)))
         return cmd;
-    cmd.env = envp;
+    cmd.env  = envp;
     cmd.argv = argv;
     return cmd;
 }
 
-static void command_drop(command_t *cmd)
+static void command_drop(command_t* cmd)
 {
     if(is_some(cmd)) {
         vec_drop(&cmd->argv, (FreeFn) string_drop_inner);

@@ -1,6 +1,8 @@
 #include "ashe_utils.h"
 #include "input.h"
+#include "shell.h"
 
+#include <assert.h>
 #include <stdarg.h>
 #include <string.h>
 
@@ -39,12 +41,45 @@ void pinfo(info_t type, const byte* str)
         case INF_DESC: info = "DESCRIPTION"; break;
     }
 
-    /// HEADER
-    fprintf(stderr, "\n\r" yellow(bold("%s")) "\n\r", info);
-    /// PARAGRAPH
-    fprintf(stderr, "%-s", str);
+    size_t len = strlen(str);
+    byte   str_mut[len + 1];
+    memcpy(str_mut, str, len + 1);
 
-    fprintf(stderr, "\r\n");
+    uint16_t col_limit = terminal.tm_columns - 10;
+
+    size_t cap = len + (len / col_limit) + 2;
+    byte   buff[cap]; /* 2 for good measure LOOOL ??? */
+    byte*  target = buff;
+    buff[0]       = '\0';
+    memset(buff, 0, cap);
+
+    /// HEADER
+    fprintf(stderr, "\n" yellow(bold("%s")) "\n\r", info);
+
+    uint16_t    remaining_space = col_limit;
+    const byte* delimiter       = " ";
+    const byte* word            = strtok(str_mut, delimiter);
+    byte*       ptr             = NULL;
+
+    while(is_some(word)) {
+        size_t word_len = len_without_seq(word);
+
+        if(remaining_space > word_len) {
+            target += sprintf(target, "%s ", word);
+            remaining_space -= (word_len + 1); // Account for delimiter (1)
+        } else {
+            target += sprintf(target, "\n%s ", word);
+            remaining_space = col_limit - word_len - 1; // Account for delimiter (1)
+        }
+
+        if(is_some((ptr = strchr(word, '\n')))) {
+            remaining_space = col_limit - strlen(ptr + 1);
+        }
+
+        word = strtok(NULL, delimiter);
+    }
+
+    fprintf(stderr, "%-s\r\n", buff);
     fflush(stderr);
 }
 
@@ -53,6 +88,25 @@ void pmanpage(const byte* name, const byte* usage, const byte* desc)
     pinfo(INF_NAME, name);
     pinfo(INF_USAGE, usage);
     pinfo(INF_DESC, desc);
+}
+
+size_t len_without_seq(const byte* ptr)
+{
+    size_t len        = 0;
+    bool   escape_seq = false;
+
+    for(size_t i = 0; ptr[i]; i++) {
+        if(escape_seq) {
+            if(ptr[i] == 'm')
+                escape_seq = false;
+        } else if(ptr[i] == '\033') {
+            escape_seq = true;
+        } else {
+            len++;
+        }
+    }
+
+    return len;
 }
 
 bool in_dq(byte* str, size_t len)

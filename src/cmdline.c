@@ -216,7 +216,7 @@ static void command_get_env(command_t* cmd, byte* out[], size_t len)
     size_t i;
     vec_t* env = cmd->env;
 
-    if(!is_some(env)) {
+    if(is_some(env)) {
         for(i = 0; i < len; i++) out[i] = string_slice(vec_index(env, i), 0);
         out[i] = NULL;
     }
@@ -236,14 +236,20 @@ static int close_pipe(int* pp)
 
 static int add_envs_to_environ(byte* const* envp)
 {
-    while(is_some(*envp))
-        if(__glibc_unlikely(putenv(*envp++) < 0)) {
+    for(; is_some(*envp); envp++) {
+        byte* name  = *envp;
+        byte* sep   = strchr(name, '=');
+        byte* value = sep + 1;
+        *sep        = '\0';
+
+        if(__glibc_unlikely(setenv(name, value, 1) < 0)) {
             ATOMIC_PRINT({
                 PW_VAREXPO(envp - 1);
                 perr();
             });
             return FAILURE;
         }
+    }
 
     return SUCCESS;
 }
@@ -254,6 +260,7 @@ static int rm_envs_from_environ(byte* const* envp)
         byte* temp = strchr(*envp, '=');
         byte  c    = *temp;
         *temp      = NULL_TERM;
+
         if(__glibc_unlikely(unsetenv(*envp) < 0)) {
             *temp = c;
             ATOMIC_PRINT({
@@ -315,14 +322,16 @@ static int run_cmd_nofork(byte** argv, byte** env)
     int status = SUCCESS;
     int out, err, in;
 
-    if(__glibc_unlikely(add_envs_to_environ(env) < 0))
+    if(__glibc_unlikely(add_envs_to_environ(env) < 0)) {
         exit(EXIT_FAILURE);
+    }
 
     /// Early return if only env vars are supplied in
     /// the commandline (no pipes, conditionals, args)
     /// by only exporting variables
-    if(is_null(argv[0]))
+    if(is_null(argv[0])) {
         return status;
+    }
 
     in  = STDIN_FILENO;
     out = STDOUT_FILENO;

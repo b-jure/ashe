@@ -112,27 +112,7 @@ static void      inbuff_insert(inbuff_t* inbuff, char c);
 static bool      inbuff_process_key(inbuff_t* buffer);
 static int       get_cursor_pos(uint16_t* row, uint16_t* col);
 static termkey_t read_key();
-static size_t    prompt_len(const byte* prompt);
 static void      inbuff_debug_print(inbuff_t* buffer);
-
-static size_t prompt_len(const byte* prompt)
-{
-    size_t len        = 0;
-    bool   escape_seq = false;
-
-    for(size_t i = 0; prompt[i]; i++) {
-        if(escape_seq) {
-            if(prompt[i] == 'm')
-                escape_seq = false;
-        } else if(prompt[i] == '\033') {
-            escape_seq = true;
-        } else {
-            len++;
-        }
-    }
-
-    return len;
-}
 
 void pprompt(void)
 {
@@ -158,7 +138,7 @@ void pprompt(void)
         sprintf(prompt, ASH_P_WJOBCOUNT, jobn, "ashe", username, "@", system.sysname, ": ");
     }
 
-    _prompt_len = prompt_len(prompt);
+    _prompt_len = len_without_seq(prompt);
 
     fprintf(stderr, "\r\n%s", prompt);
     fflush(stderr);

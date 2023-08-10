@@ -32,6 +32,16 @@ void sigint_handler(__attribute__((unused)) int signum)
     mask_signal(SIGCHLD, SIG_UNBLOCK);
 }
 
+void sigchld_handler(int signum)
+{
+    mask_signal(SIGWINCH, SIG_BLOCK);
+    mask_signal(SIGINT, SIG_BLOCK);
+    shell.sh_intr = true;
+    joblist_update_and_notify(signum);
+    mask_signal(SIGWINCH, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
+}
+
 void unblock_signals(void)
 {
     mask_signal(SIGCHLD, SIG_UNBLOCK);
@@ -44,16 +54,6 @@ void block_signals(void)
     mask_signal(SIGCHLD, SIG_UNBLOCK);
     mask_signal(SIGINT, SIG_UNBLOCK);
     mask_signal(SIGWINCH, SIG_UNBLOCK);
-}
-
-void sigchld_handler(int signum)
-{
-    mask_signal(SIGWINCH, SIG_BLOCK);
-    mask_signal(SIGINT, SIG_BLOCK);
-    shell.sh_intr = true;
-    joblist_update_and_notify(signum);
-    mask_signal(SIGWINCH, SIG_UNBLOCK);
-    mask_signal(SIGINT, SIG_UNBLOCK);
 }
 
 void mask_signal(int signum, int how)
