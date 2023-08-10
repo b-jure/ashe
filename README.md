@@ -41,9 +41,12 @@ while in `build` directory to install run (_default installation path_ -> `/usr/
 sudo cmake --install .
 ```
 
-### AUR/Arch
-If you are on arch-based distribution using `pacman` package manager there
-is `AUR` package that I am maintaining, simply install using `pacman`:
+### AUR/Arch/Manjaro
+If you are on arch-based distribution there is `AUR` package that I am maintaining, install using `pamac`:
 ```
-sudo pacman -S ashe-git
+pamac install ashe
+```
+or with `yay`:
+```
+yay -S ashe
 ```
