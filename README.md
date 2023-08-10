@@ -15,8 +15,8 @@ What this enables is text-editor-like movement inside the shell. Now why is this
 important, shouldn't the user just create a shell script for longer commandlines? Yes that
 is a good point but let's say you just want to run a big commandline once, or want it to
 be saved in the recent commands history, then the fast and easy text editing and movement
-in shell really helps, and more important it does not hurt even if it is not 
-used as much.
+in shell really helps. Personally I think having ergonomic cursor movement inside
+a shell is a simple thing to do with no clear negative tradeoffs.
 
 That being said this shell was made primarily for educational purposes and thus it lacks
 the real interpreter outside the shell's commandline to even create `ashe` scripts. This
