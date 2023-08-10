@@ -244,7 +244,7 @@ static void shift_rows_right(inbuff_t* inbuff, size_t start)
     }
 }
 
-__attribute__((unused)) static void shift_rows_left(inbuff_t* inbuff, size_t start)
+static void shift_rows_left(inbuff_t* inbuff, size_t start)
 {
     vec_t* rows = inbuff->in_rows;
     size_t len  = vec_len(rows);
@@ -918,7 +918,7 @@ static bool inbuff_process_key(inbuff_t* buffer)
             case U_ARW: inbuff_cursor_up(buffer); break;
             case D_ARW: inbuff_cursor_down(buffer); break;
             /// Unimplemented stuff
-            case CTRL_KEY('h'): inbuff_debug_print(buffer); break;
+            case CTRL_KEY('h'):
             case CTRL_KEY('x'):
             case CTRL_KEY('j'):
             case CTRL_KEY('k'):
@@ -959,8 +959,8 @@ void read_input(inbuff_t* buffer)
     fflush(stderr);
     /* Unset the reading flag */
     terminal.tm_reading = false;
-    /* Unblock signals */
-    unblock_signals();
     /* Set default shell terminal mode */
     settmode(&terminal.tm_dflterm);
+    /* Unblock signals */
+    unblock_signals();
 }

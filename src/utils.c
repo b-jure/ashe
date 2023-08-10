@@ -79,7 +79,7 @@ void pinfo(info_t type, const byte* str)
         word = strtok(NULL, delimiter);
     }
 
-    fprintf(stderr, "%-s\r\n", buff);
+    fprintf(stderr, "\n" yellow(bold("%s")) "\n%-s\n", info, buff);
     fflush(stderr);
 }
 
