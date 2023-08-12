@@ -22,7 +22,7 @@ That being said this shell was made primarily for educational purposes and thus 
 the real interpreter outside the shell's commandline to even create `ashe` scripts. This
 means `ashe` lacks its own _language_ therefore it doesn't support/have `.ashe` scripts, of
 course this is a thing that I aim implementing down the road. And there are a lot of
-other things that need implementing (history, vim-motions, sytnax highlighting, 
+other things that need implementing (regex, history, vim-motions, sytnax highlighting, 
 autocompletion, system-wide clipboard manipulation....).
 
 ## Build/Install
