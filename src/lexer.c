@@ -1,17 +1,56 @@
 #include "ashe_utils.h"
+#include "errors.h"
 #include "lexer.h"
 
 #include <ctype.h>
+#include <glob.h>
 #include <stdio.h>
 #include <string.h>
 
 #define iter_peek_next(iter) ((iter)->next + 1)
 
-#define is_reserved_symbol(ch) ((ch) == '&' || (ch) == '|' || (ch) == '>' || (ch) == '<' || (ch) == ';')
+// TODO: Implement ****GLOB OPERATOR****, and rest of the regular expressions
 
 static token_t token_without_quotes(tokentype_t ttype, byte* word);
 static void    lexer_get_string(lexer_t* lexer);
 static void    lexer_skip_ws(lexer_t* lexer);
+static bool    is_reserved(byte c);
+static void    plexerr(uint err);
+
+static bool is_reserved(byte c)
+{
+    static bool reserved_table[256] = {false};
+
+    reserved_table['&'] = true;
+    reserved_table['|'] = true;
+    reserved_table['>'] = true;
+    reserved_table['<'] = true;
+    reserved_table[';'] = true;
+    reserved_table['['] = true;
+    reserved_table[']'] = true;
+    reserved_table['?'] = true;
+    reserved_table['*'] = true;
+    reserved_table['!'] = true;
+    reserved_table['{'] = true;
+    reserved_table['}'] = true;
+
+    return reserved_table[(unsigned char) c];
+}
+
+// TODO: Make use of lexer errors when regular expression handling gets implemented
+#define LE_EOSBRM 0
+#define LE_EOSPEX 1
+#define LE_PARAME 2
+__attribute__((unused)) static void plexerr(uint err)
+{
+    static byte* lexer_err_table[] = {
+        "Unexpected end of string, square brackets do not match",
+        "Unexpected end of string, incomplete parameter expansion",
+        "Unexpected '}' for unopened brace expansion",
+    };
+
+    pwarn("%s", lexer_err_table[err]);
+}
 
 lexer_t lexer_new(const byte* start, size_t len)
 {
@@ -20,11 +59,11 @@ lexer_t lexer_new(const byte* start, size_t len)
 
 static void expand_vars(byte** word)
 {
-    size_t      len   = strlen(*word);
-    byte*       ptr   = *word;
-    byte*       start = NULL;
-    byte*       end   = NULL;
-    const byte* value = NULL;
+    size_t         len   = strlen(*word);
+    register byte* ptr   = *word;
+    register byte* start = NULL;
+    register byte* end   = NULL;
+    const byte*    value = NULL;
 
     for(; is_some((ptr = strchr(ptr, '$'))); ptr++) {
         if(is_escaped(ptr, ptr - *word)) {
@@ -67,7 +106,7 @@ static void expand_vars(byte** word)
     }
 }
 
-static void lexer_get_string(lexer_t* lexer)
+void lexer_get_string(lexer_t* lexer)
 {
     static byte word[ARG_MAX];
 
@@ -80,7 +119,7 @@ static void lexer_get_string(lexer_t* lexer)
     tokentype_t ttype;
 
     for(i = 0; ((c = chariter_peek(iter)) != EOL); i++) {
-        if(!dquote && !escape && ((isspace(c)) || is_reserved_symbol(c))) {
+        if(!dquote && !escape && ((isspace(c)) || is_reserved(c))) {
             break;
         }
 
@@ -97,6 +136,7 @@ static void lexer_get_string(lexer_t* lexer)
     ttype   = WORD_TOKEN;
 
     ptr = word;
+    // unescape(ptr);
     expand_vars(&ptr);
 
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
@@ -117,17 +157,14 @@ static token_t token_without_quotes(tokentype_t ttype, byte* word)
     string_t* string = string_from(word);
     byte*     ptr    = string_slice(string, 0);
 
-    if(__glibc_unlikely(is_null(string)))
-        return token_new(OOM_TOKEN, NULL);
+    if(__glibc_unlikely(is_null(string))) return token_new(OOM_TOKEN, NULL);
 
     token.type     = ttype;
     token.contents = string;
 
     while(is_some(ptr = strchr(ptr, '"'))) {
-        if(char_before_ptr(ptr) != '\\')
-            string_remove_at_ptr(string, ptr);
-        else
-            ptr++;
+        if(char_before_ptr(ptr) != '\\') string_remove_at_ptr(string, ptr);
+        else ptr++;
     }
 
     return token;
@@ -154,6 +191,7 @@ __attribute__((unused)) void print_token(token_t* token)
         case FG_TOKEN: fprintf(stderr, "FG : '%s'\n", string_ref(token->contents)); break;
         case EOL_TOKEN: fprintf(stderr, "EOL : 'NULL'\n"); break;
         case OOM_TOKEN: fprintf(stderr, "OOM : 'NULL'\n"); break;
+        case SYNTAX_ERR_TOKEN: fprintf(stderr, "SYNTAX ERR : 'NULL'\n"); break;
     }
 }
 

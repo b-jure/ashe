@@ -72,6 +72,7 @@
 /*-------------- MODES ----------------*/
 #define bold(text) ESC(1m) text ESC(22m)
 #define italic(text) ESC(3m) text ESC(23m)
+#define blink(text) ESC(5m) text ESC(25m)
 /*-------------------------------------*/
 /*
  *

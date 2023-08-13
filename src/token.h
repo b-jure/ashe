@@ -15,6 +15,7 @@ typedef enum {
   FG_TOKEN = 128,
   EOL_TOKEN = 256,
   OOM_TOKEN = 512,
+  SYNTAX_ERR_TOKEN = 1024,
 } tokentype_t;
 
 typedef struct {

@@ -187,10 +187,8 @@ int get_window_size(uint16_t* height, uint16_t* width)
     if(__glibc_unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
         return get_window_size_fallback(height, width);
     } else {
-        if(is_some(height))
-            *height = ws.ws_row;
-        if(is_some(width))
-            *width = ws.ws_col;
+        if(is_some(height)) *height = ws.ws_row;
+        if(is_some(width)) *width = ws.ws_col;
 
         return SUCCESS;
     }
@@ -214,8 +212,7 @@ static int get_cursor_pos(uint16_t* row, uint16_t* col)
     write_or_die(req_cur_pos, sizeof(req_cur_pos));
 
     while(i < sizeof(buf) && (nread = read(STDIN_FILENO, &c, 1)) == 1) {
-        if(c == 'R')
-            break;
+        if(c == 'R') break;
         buf[i++] = c;
     }
 
@@ -226,10 +223,8 @@ static int get_cursor_pos(uint16_t* row, uint16_t* col)
 
     sscanf(buf, "\033[%hu;%hu", &srow, &scol);
 
-    if(is_some(row))
-        *row = srow;
-    if(is_some(col))
-        *col = scol;
+    if(is_some(row)) *row = srow;
+    if(is_some(col)) *col = scol;
 
     return SUCCESS;
 }
@@ -318,14 +313,13 @@ static void inbuff_insert(inbuff_t* buffer, char c)
         shift_rows_right(buffer, cursor->cr_row + 1);
         row->len++;
 
-        size_t cap = n + sizeof("\r\n" clrlneol clrscrd) + (2 * sizeof(byte));
+        size_t cap = n + sizeof("\r\n" clrlneol clrscrd) + 10;
         byte   buff[cap];
         buff[0] = '\0';
 
         strcat(buff, clrlneol clrscrd);
 
-        if(c != '\n')
-            strncat(buff, &c, sizeof(byte));
+        if(c != '\n') strncat(buff, &c, sizeof(byte));
 
         if(terminal.tm_col >= maxcol || c == '\n') {
             terminal.tm_col = 1;
@@ -447,8 +441,7 @@ void inbuff_redraw(inbuff_t* buffer)
     buff[0]      = '\0';
 
     target += sprintf(target, hide_cur "%.*s", (int32_t) buffer->in_len, buffer->in_buffer);
-    if(up > 0)
-        target += sprintf(target, CSI "%luA", up);
+    if(up > 0) target += sprintf(target, CSI "%luA", up);
     target += sprintf(target, CSI "%uG" show_cur, terminal.tm_col);
 
     terminal.tm_rawterm.c_oflag |= (OPOST);
@@ -813,15 +806,12 @@ static termkey_t read_key(void)
     if(c == ESCAPE) {
         byte seq[3];
 
-        if(read(STDIN_FILENO, &seq[0], 1) != 1)
-            return ESCAPE;
-        if(read(STDIN_FILENO, &seq[1], 1) != 1)
-            return ESCAPE;
+        if(read(STDIN_FILENO, &seq[0], 1) != 1) return ESCAPE;
+        if(read(STDIN_FILENO, &seq[1], 1) != 1) return ESCAPE;
 
         if(seq[0] == '[') {
             if(isdigit(seq[1])) {
-                if(read(STDIN_FILENO, &seq[2], 1) != 1)
-                    return ESCAPE;
+                if(read(STDIN_FILENO, &seq[2], 1) != 1) return ESCAPE;
                 if(seq[2] == '~') {
                     switch(seq[1]) {
                         case '3': return DEL_KEY;
@@ -905,8 +895,7 @@ static bool inbuff_process_key(inbuff_t* buffer)
     if((IMPLEMENTED(c))) {
         switch(c) {
             case CR:
-                if(inbuff_cr(buffer))
-                    return false;
+                if(inbuff_cr(buffer)) return false;
                 break;
             case DEL_KEY:
             case BACKSPACE: inbuff_remove(buffer); break;

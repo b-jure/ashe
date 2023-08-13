@@ -97,8 +97,7 @@ size_t len_without_seq(const byte* ptr)
 
     for(size_t i = 0; ptr[i]; i++) {
         if(escape_seq) {
-            if(ptr[i] == 'm')
-                escape_seq = false;
+            if(ptr[i] == 'm') escape_seq = false;
         } else if(ptr[i] == '\033') {
             escape_seq = true;
         } else {
@@ -113,8 +112,7 @@ bool in_dq(byte* str, size_t len)
 {
     bool dq = false;
     while(len--)
-        if(*str++ == '"')
-            dq ^= true;
+        if(*str++ == '"') dq ^= true;
     return dq;
 }
 
@@ -122,6 +120,53 @@ bool is_escaped(byte* bt, size_t curpos)
 {
     byte* at = bt + curpos;
     return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') || (curpos == 1 && *(at - 1) == '\\'));
+}
+
+int unescape(byte* str)
+{
+    static const byte escape[256] = {
+        ['a']  = '\a',
+        ['b']  = '\b',
+        ['f']  = '\f',
+        ['n']  = '\n',
+        ['r']  = '\r',
+        ['t']  = '\t',
+        ['v']  = '\v',
+        ['\\'] = '\\',
+        ['\''] = '\'',
+        ['"']  = '\"',
+        ['?']  = '\?',
+    };
+
+    byte* ptr = str;
+    byte* q   = str;
+
+    while(*ptr) {
+        int c = *(unsigned char*) ptr++;
+
+        if(c == '\\' || c == '"') {
+
+            if(c == '"') {
+                continue;
+            }
+
+            c = *(unsigned char*) ptr;
+
+            if(c == '\0') {
+                break;
+            } else if(c == '0' && *(ptr + 1) == '3' && *(ptr + 2) == '3') {
+                c = '\033';
+                ptr += 3;
+            } else if(escape[c]) {
+                c = escape[c];
+            }
+        }
+
+        *q++ = c;
+    }
+
+    *q = '\0';
+    return ptr - q;
 }
 
 void perr(void)

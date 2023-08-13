@@ -26,6 +26,7 @@ set(SRCFILES
     ${SRCDIR}/vec.c)
 
 set(WARNING_FLAGS -Wall -Werror -Wextra -Wpedantic)
+set(SANITIZER_FLAGS -fsanitize=address -fsanitize=undefined)
 set(STANDARD -std=c11)
 set(OPTS -Os)
 
@@ -38,7 +39,9 @@ install(TARGETS ${BIN} DESTINATION /usr/local/bin)
 
 if(DEFINED ASHE_DBUG AND ASHE_DBUG STREQUAL "ON")
     add_executable(${GDBBIN} ${SRCFILES})
-    target_compile_options(${GDBBIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} -g)
+    target_compile_options(${GDBBIN} PRIVATE ${WARNING_FLAGS} ${STANDARD}
+        ${SANITIZER_FLAGS} -g)
+    target_link_options(${GDBBIN} PRIVATE ${SANITIZER_FLAGS})
     target_include_directories(${GDBBIN} PRIVATE ${INCDIR})
 endif()
 

@@ -16,6 +16,8 @@ typedef struct {
 
 extern shell_t shell; /* Shell global */
 
+int unescape(byte *str);
+
 #ifndef terminal
 #define terminal shell.sh_term
 #endif

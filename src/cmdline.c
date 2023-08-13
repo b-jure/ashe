@@ -76,7 +76,7 @@ void commandline_clear(commandline_t* cmdline)
 void commandline_drop(commandline_t* cmdline)
 {
     if(is_some(cmdline)) {
-        vec_clear(cmdline->conditionals, (FreeFn) conditional_drop);
+        vec_drop(&cmdline->conditionals, (FreeFn) conditional_drop);
     }
 }
 
@@ -123,11 +123,10 @@ static int pipeline_execute(pipeline_t* pipeline, bool bg)
     command_t* cmd = NULL;
     job_t      job = job_new(pipeline->connection, bg); /* New job for this pipeline */
 
-    if(__glibc_unlikely(is_null(job.processes)))
-        exit(EXIT_FAILURE);
+    if(__glibc_unlikely(is_null(job.processes))) exit(EXIT_FAILURE);
 
-    unsigned pn = ((cmdn - 1) * 2); /* Size of pipe array */
-    int      pipes[pn];             /* Pipe storage */
+    unsigned pn = ((cmdn - 1) * 2);     /* Size of pipe array */
+    int      pipes[(pn == 0) ? 1 : pn]; /* Pipe storage */
 
     /// Run the entire pipeline
     for(size_t i = 0; i < cmdn; i++) {
@@ -138,14 +137,12 @@ static int pipeline_execute(pipeline_t* pipeline, bool bg)
         size_t argc = vec_len(cmd->argv);
         byte*  argv[argc + 1];
         argv[0] = NULL;
-        if(argc > 0)
-            command_get_argv(cmd, argv, argc);
+        if(argc > 0) command_get_argv(cmd, argv, argc);
 
         size_t envc = vec_len(cmd->env);
         byte*  env[envc + 1];
         env[0] = NULL;
-        if(envc > 0)
-            command_get_env(cmd, env, envc);
+        if(envc > 0) command_get_env(cmd, env, envc);
 
         if(cmdn > 1) {
             exit_warning = false; /* User is not exiting the shell */
@@ -279,16 +276,20 @@ static int rm_envs_from_environ(byte* const* envp)
 static void configure_pipes(size_t i, int* pipes, size_t cmdn, context_t* ctx)
 {
     if(first(i)) {
-        if(__glibc_unlikely(pipe(pipes) < 0))
+        if(__glibc_unlikely(pipe(pipes) < 0)) {
             ATOMIC_PRINT(die());
-        ctx->pipefd[PIPE_W] = pipes[PIPE_W];
-        ctx->closefd        = pipes[PIPE_R];
+        } else {
+            ctx->pipefd[PIPE_W] = pipes[PIPE_W];
+            ctx->closefd        = pipes[PIPE_R];
+        }
     } else if(not_first(i) && not_last(i, cmdn)) {
-        if(__glibc_unlikely(pipe(pipe_at(CURR(i), pipes)) < 0))
+        if(__glibc_unlikely(pipe(pipe_at(CURR(i), pipes)) < 0)) {
             ATOMIC_PRINT(die());
-        ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
-        ctx->pipefd[PIPE_W] = *(pipe_at(CURR(i), pipes) + PIPE_W);
-        ctx->closefd        = *(pipe_at(PREV(i), pipes) + PIPE_W);
+        } else {
+            ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
+            ctx->pipefd[PIPE_W] = *(pipe_at(CURR(i), pipes) + PIPE_W);
+            ctx->closefd        = *(pipe_at(PREV(i), pipes) + PIPE_W);
+        }
     } else {
         ctx->pipefd[PIPE_R] = *pipe_at(PREV(i), pipes);
         ctx->closefd        = *(pipe_at(PREV(i), pipes) + PIPE_W);
@@ -303,8 +304,7 @@ static void fargvs(vec_t* argv, byte** out)
 
     for(size_t i = 0; i < len; i++) {
         strcat(commandline, string_ref(vec_index(argv, i)));
-        if(i + 1 != len)
-            strcat(commandline, " ");
+        if(i + 1 != len) strcat(commandline, " ");
     }
 
     *out = strdup(commandline);
@@ -353,11 +353,9 @@ static int run_cmd_nofork(byte** argv, byte** env)
         die();
     }
 
-    if(strcmp(argv[0], "exit") != 0 && exit_warning)
-        exit_warning = false;
+    if(strcmp(argv[0], "exit") != 0 && exit_warning) exit_warning = false;
 
-    if(__glibc_unlikely(rm_envs_from_environ(env) < 0))
-        exit(EXIT_FAILURE);
+    if(__glibc_unlikely(rm_envs_from_environ(env) < 0)) exit(EXIT_FAILURE);
 
     return status;
 }
@@ -388,12 +386,10 @@ static int run_cmd(byte* const* argv, byte* const* env, context_t* ctx, job_t* j
 
         /// If no command were provided and only
         /// env vars then exit immediately
-        if(__glibc_unlikely(is_null(argv[0])))
-            _exit(EXIT_SUCCESS);
+        if(__glibc_unlikely(is_null(argv[0]))) _exit(EXIT_SUCCESS);
 
         /// Export env variables
-        if(__glibc_unlikely(add_envs_to_environ(env) < 0))
-            _exit(EXIT_FAILURE);
+        if(__glibc_unlikely(add_envs_to_environ(env) < 0)) _exit(EXIT_FAILURE);
 
         pid_t pid = getpid(); /* Current process ID */
 
@@ -425,24 +421,20 @@ static int run_cmd(byte* const* argv, byte* const* env, context_t* ctx, job_t* j
         resolve_redirections(argv);
 
         /// If builtin then execute
-        if(is_builtin(argv[0]))
-            _exit(run_builtin(argv[0], argv, false));
+        if(is_builtin(argv[0])) _exit(run_builtin(argv[0], argv, false));
 
         /// Try exec the non-builtin command
         if(execvp(argv[0], argv) < 0) {
             ATOMIC_PRINT({
                 PW_EXECERR(argv[0]);
-                if(errno == ENOENT)
-                    PW_NOFILE(argv[0]);
-                else
-                    perr();
+                if(errno == ENOENT) PW_NOFILE(argv[0]);
+                else perr();
             });
             _exit(EXIT_FAILURE);
         }
     }
 
-    if(job->pgid == 0)
-        job->pgid = childPID;
+    if(job->pgid == 0) job->pgid = childPID;
 
     /// Same here, move the process into job process group
     /// this is also done in the fork to prevent race
@@ -482,8 +474,7 @@ static void resolve_redirections(byte* const* argvp)
     for(; is_some(*argvp); argvp++) {
         switch(**argvp) {
             case '>':
-                if(*(*argvp + 1) == '>')
-                    append = true;
+                if(*(*argvp + 1) == '>') append = true;
 
                 if(__glibc_unlikely((redfd = openf(*(++argvp), append)) < 0)) {
                     ATOMIC_PRINT({
@@ -495,8 +486,7 @@ static void resolve_redirections(byte* const* argvp)
                         PW_CLOSEF(outfd);
                         die();
                     });
-                } else
-                    outfd = redfd;
+                } else outfd = redfd;
                 break;
             case '<':
                 if(__glibc_unlikely((redfd = open(*(++argvp), O_RDONLY)) < 0)) {
@@ -509,13 +499,11 @@ static void resolve_redirections(byte* const* argvp)
                         PW_CLOSEF(infd);
                         die();
                     });
-                } else
-                    infd = redfd;
+                } else infd = redfd;
                 break;
             case '2':
                 if(*(*argvp + 1) == '>') {
-                    if(*(*argvp + 2) == '>')
-                        append = true;
+                    if(*(*argvp + 2) == '>') append = true;
 
                     if(__glibc_unlikely((redfd = openf(*(++argvp), append)) < 0)) {
                         ATOMIC_PRINT({
@@ -527,8 +515,7 @@ static void resolve_redirections(byte* const* argvp)
                             PW_CLOSEF(errfd);
                             die();
                         });
-                    } else
-                        errfd = redfd;
+                    } else errfd = redfd;
                     break;
                 }
                 // FALLTHRU

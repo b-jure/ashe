@@ -17,12 +17,12 @@
 #endif
 
 struct string_t {
-    vec_t *vec;
+    vec_t* vec;
 };
 
-string_t *string_new(void)
+string_t* string_new(void)
 {
-    string_t *string = malloc(sizeof(string_t));
+    string_t* string = malloc(sizeof(string_t));
     if(__glibc_unlikely(is_null(string))) {
 #ifndef GTEST
         PW_OOM(sizeof(string_t));
@@ -32,7 +32,7 @@ string_t *string_new(void)
 
     if(__glibc_unlikely(is_null(string->vec = vec_with_capacity(sizeof(byte), 1)))) {
         return NULL;
-    } else if(__glibc_unlikely(!vec_push(string->vec, &(char){NULL_TERM}))) {
+    } else if(__glibc_unlikely(!vec_push(string->vec, &(char){'\0'}))) {
         string_drop(string);
         return NULL;
     } else {
@@ -40,9 +40,9 @@ string_t *string_new(void)
     }
 }
 
-string_t *string_with_cap(size_t capacity)
+string_t* string_with_cap(size_t capacity)
 {
-    string_t *string;
+    string_t* string;
 
     if(capacity < 2) {
         return string_new();
@@ -67,38 +67,38 @@ string_t *string_with_cap(size_t capacity)
     }
 }
 
-bool string_remove(string_t *self, size_t index)
+bool string_remove(string_t* self, size_t index)
 {
-    if(is_null(self)) {
+    if(is_null(self) || index >= string_len(self)) {
         return false;
     }
 
     return vec_remove(self->vec, index, NULL);
 }
 
-int string_last(string_t *self)
+int string_last(string_t* self)
 {
     if(is_null(self)) {
         return EOF;
     } else if(vec_len(self->vec) == 0) {
         return NULL_TERM;
     } else {
-        return *((byte *) vec_back(self->vec) - 1);
+        return *((byte*) vec_back(self->vec) - 1);
     }
 }
 
-int string_first(string_t *self)
+int string_first(string_t* self)
 {
     if(is_null(self)) {
         return EOF;
     } else if(vec_len(self->vec) == 0) {
         return NULL_TERM;
     } else {
-        return *(int *) vec_front(self->vec);
+        return *(byte*) vec_front(self->vec);
     }
 }
 
-bool string_remove_at_ptr(string_t *self, byte *ptr)
+bool string_remove_at_ptr(string_t* self, byte* ptr)
 {
     if(is_null(self)) {
         return false;
@@ -107,7 +107,7 @@ bool string_remove_at_ptr(string_t *self, byte *ptr)
     return vec_remove_at_ptr(self->vec, ptr, NULL);
 }
 
-bool string_set_at_ptr(string_t *self, byte *ptr, char c)
+bool string_set_at_ptr(string_t* self, byte* ptr, char c)
 {
     if(is_null(self)) {
         return false;
@@ -116,26 +116,24 @@ bool string_set_at_ptr(string_t *self, byte *ptr, char c)
     return vec_set_at_ptr(self->vec, ptr, &c);
 }
 
-string_t *string_from(const byte *str)
+string_t* string_from(const byte* str)
 {
-    size_t str_len = strlen(str);
-    string_t *string = string_new();
+    size_t    str_len = strlen(str);
+    string_t* string  = string_new();
 
-    if(__glibc_unlikely(is_null(string))
-       || __glibc_unlikely(!vec_splice(string->vec, 0, 0, str, str_len)))
-    {
+    if(__glibc_unlikely(is_null(string)) || __glibc_unlikely(!vec_splice(string->vec, 0, 0, str, str_len))) {
         return NULL;
     }
 
     return string;
 }
 
-const byte *string_ref(string_t *string)
+const byte* string_ref(string_t* string)
 {
     return vec_front(string->vec);
 }
 
-byte *string_slice(string_t *string, size_t index)
+byte* string_slice(string_t* string, size_t index)
 {
     if(is_null(string)) {
         return NULL;
@@ -144,43 +142,47 @@ byte *string_slice(string_t *string, size_t index)
     return vec_index(string->vec, index);
 }
 
-bool string_splice(
-    string_t *self,
-    size_t index,
-    size_t remove_n,
-    const byte *str,
-    size_t insert_n)
+bool string_splice(string_t* self, size_t index, size_t remove_n, const byte* str, size_t insert_n)
 {
     if(is_null(self)) {
         return false;
     }
 
-    return vec_splice(self->vec, index, remove_n, str, insert_n);
+    if(vec_splice(self->vec, index, remove_n, str, insert_n)) {
+        *((byte*) vec_back(self->vec)) = '\0';
+        return true;
+    } else {
+        return false;
+    }
 }
 
-bool string_eq(string_t *self, string_t *other)
+bool string_eq(string_t* self, string_t* other)
 {
     return vec_eq(self->vec, other->vec, NULL);
 }
 
-bool string_append(string_t *self, const void *str, size_t len)
+bool string_append(string_t* self, const void* str, size_t len)
 {
     if(is_null(self)) {
         return false;
     }
 
-    return vec_splice(self->vec, string_len(self), 0, str, len);
+    if(vec_splice(self->vec, string_len(self), 1, str, len)) {
+        *((byte*) vec_back(self->vec)) = '\0';
+        return true;
+    } else {
+        return false;
+    }
 }
-
-bool string_push(string_t *self, byte c)
+bool string_push(string_t* self, byte c)
 {
     if(is_some(self)) {
-        return vec_push(self->vec, &c);
+        return vec_insert(self->vec, &c, string_len(self) - 1);
     }
     return false;
 }
 
-bool string_clear(string_t *self)
+bool string_clear(string_t* self)
 {
     if(is_some(self)) {
         vec_clear(self->vec, NULL);
@@ -189,7 +191,7 @@ bool string_clear(string_t *self)
     return false;
 }
 
-bool string_set(string_t *self, const byte ch, size_t index)
+bool string_set(string_t* self, const byte ch, size_t index)
 {
     size_t len;
 
@@ -207,7 +209,7 @@ bool string_set(string_t *self, const byte ch, size_t index)
     return vec_set(self->vec, &ch, index);
 }
 
-int string_get(string_t *self, size_t index)
+int string_get(string_t* self, size_t index)
 {
     if(is_null(self)) {
         return -1;
@@ -218,7 +220,7 @@ int string_get(string_t *self, size_t index)
     return out;
 }
 
-size_t string_len(string_t *self)
+size_t string_len(string_t* self)
 {
     if(is_null(self)) {
         return 0;
@@ -227,14 +229,14 @@ size_t string_len(string_t *self)
     return vec_len(self->vec) - 1; /* Do not count null terminator */
 }
 
-void string_drop_inner(string_t *self)
+void string_drop_inner(string_t* self)
 {
     if(is_some(self) && is_some(self->vec)) {
         vec_clear_capacity(self->vec, NULL);
     }
 }
 
-void string_drop(string_t *self)
+void string_drop(string_t* self)
 {
     if(is_some(self)) {
         vec_drop(&self->vec, NULL);

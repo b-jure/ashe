@@ -66,6 +66,7 @@ void pinfo(info_t type, const byte *str);
 void pmanpage(const byte *name, const byte *usage, const byte *desc);
 bool in_dq(byte *str, size_t len);
 bool is_escaped(byte *bt, size_t curpos);
+int unescape(byte *str);
 size_t len_without_seq(const byte *prompt);
 
 #define PCS_EXTRA "/.-"
