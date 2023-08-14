@@ -23,6 +23,7 @@ set(SRCFILES
     ${SRCDIR}/input.c
     ${SRCDIR}/shell.c
     ${SRCDIR}/builtin.c
+    ${SRCDIR}/config.c
     ${SRCDIR}/vec.c)
 
 set(WARNING_FLAGS -Wall -Werror -Wextra -Wpedantic)

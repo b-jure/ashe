@@ -47,8 +47,7 @@ joblist_t joblist_init(void)
 
 static size_t joblist_id(joblist_t* joblist)
 {
-    if(joblist_len(joblist) == 0)
-        joblist->next_id = 1;
+    if(joblist_len(joblist) == 0) joblist->next_id = 1;
     return joblist->next_id++;
 }
 
@@ -105,15 +104,14 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
     for(size_t i = 0; i < len;) {
         job = joblist_at(&shell.sh_jlist, i);
 
-        /* Cache the col and row in case the
-         * interrupt occured while reading input. */
-        uint16_t col = inbuff.in_cur.cr_col;
-        uint16_t row = inbuff.in_cur.cr_row;
+        /* Cache positions and old prompt length */
+        uint16_t col  = inbuff.in_cur.cr_col;
+        uint16_t row  = inbuff.in_cur.cr_row;
+        uint16_t tcol = terminal.tm_col;
+        uint16_t plen = terminal.tm_plen;
 
+        /// TODO: less repeats refactor the control flow
         if(job_completed(job)) {
-            /// pprompt format depends on joblist len this is why
-            /// we explicitly remove job in both branches ordering
-            /// is important to print correct job len in the prompt
             if(!job->foreground) {
                 ATOMIC_PRINT({
                     if(shell.sh_term.tm_reading) {
@@ -127,7 +125,12 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                     if(shell.sh_term.tm_reading) {
                         inbuff.in_cur.cr_col = col;
                         inbuff.in_cur.cr_row = row;
-                        inbuff_redraw(&shell.sh_term.tm_inbuff);
+                        if(plen >= terminal.tm_plen) {
+                            terminal.tm_col = tcol - (plen - terminal.tm_plen);
+                        } else {
+                            terminal.tm_col = tcol + (terminal.tm_plen - plen);
+                        }
+                        inbuff_redraw(&inbuff);
                     }
                 });
             } else {
@@ -148,7 +151,12 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                 if(shell.sh_term.tm_reading) {
                     inbuff.in_cur.cr_col = col;
                     inbuff.in_cur.cr_row = row;
-                    inbuff_redraw(&shell.sh_term.tm_inbuff);
+                    if(plen >= terminal.tm_plen) {
+                        terminal.tm_col = tcol - (plen - terminal.tm_plen);
+                    } else {
+                        terminal.tm_col = tcol + (terminal.tm_plen - plen);
+                    }
+                    inbuff_redraw(&inbuff);
                 }
             });
             job->notified = true;
@@ -164,8 +172,7 @@ static job_t* joblist_get_job(joblist_t* joblist, bool foreground)
 
     while(len--) {
         job = joblist_at(joblist, len);
-        if(job->foreground == foreground)
-            return job;
+        if(job->foreground == foreground) return job;
     }
 
     return NULL;
@@ -178,8 +185,7 @@ static job_t* joblist_get_pid(joblist_t* joblist, pid_t pid, bool foreground)
 
     while(len--) {
         job = joblist_at(joblist, len);
-        if(job->foreground == foreground && job_contains_pid(job, pid))
-            return job;
+        if(job->foreground == foreground && job_contains_pid(job, pid)) return job;
     }
 
     return NULL;
@@ -192,8 +198,7 @@ static job_t* joblist_get_id(joblist_t* joblist, size_t id, bool foreground)
 
     while(len--) {
         job = joblist_at(joblist, len);
-        if(job->id == id && job->foreground == foreground)
-            return job;
+        if(job->id == id && job->foreground == foreground) return job;
     }
 
     return NULL;
@@ -203,8 +208,7 @@ static bool job_contains_pid(job_t* job, pid_t pid)
 {
     size_t len = job_len(job);
     while(len--) {
-        if(job_at(job, len)->pid == pid)
-            return true;
+        if(job_at(job, len)->pid == pid) return true;
     }
     return false;
 }
@@ -216,8 +220,7 @@ job_t* joblist_find_id(joblist_t* joblist, size_t id)
 
     for(size_t i = 0; i < len; i++) {
         job = joblist_at(joblist, i);
-        if(job->id == id)
-            return job;
+        if(job->id == id) return job;
     }
 
     return NULL;
@@ -234,8 +237,7 @@ job_t* joblist_find_pid(joblist_t* joblist, pid_t pid)
         jobn = job_len(job);
 
         for(size_t j = 0; j < jobn; j++)
-            if(job_at(job, j)->pid == pid)
-                return job;
+            if(job_at(job, j)->pid == pid) return job;
     }
 
     return NULL;
@@ -359,8 +361,7 @@ job_t* joblist_getjob(joblist_t* jlist, pid_t pgid)
     size_t len  = vec_len(list);
     job_t* job;
     for(size_t i = 0; i < len; i++)
-        if((job = vec_index(list, i))->pgid == pgid)
-            return job;
+        if((job = vec_index(list, i))->pgid == pgid) return job;
     return NULL;
 }
 
@@ -368,8 +369,7 @@ bool job_stopped(job_t* job)
 {
     size_t len = job_len(job);
     for(size_t i = 0; i < len; i++)
-        if(job_at(job, i)->stopped)
-            return true;
+        if(job_at(job, i)->stopped) return true;
     return false;
 }
 
@@ -377,8 +377,7 @@ bool job_completed(job_t* job)
 {
     size_t len = job_len(job);
     for(size_t i = 0; i < len; i++)
-        if(!job_at(job, i)->completed)
-            return false;
+        if(!job_at(job, i)->completed) return false;
     return true;
 }
 
@@ -396,10 +395,8 @@ static int job_wait(job_t* job)
         pid = waitpid(-job->pgid, &status, WUNTRACED);
     } while(job_update(job, pid, status) && !job_stopped(job) && !job_completed(job));
 
-    if(job_stopped(job))
-        return 0;
-    else
-        return job_lastp(job)->status;
+    if(job_stopped(job)) return 0;
+    else return job_lastp(job)->status;
 }
 
 static void job_kill_and_harvest(job_t* job)
@@ -416,8 +413,7 @@ static void job_kill_and_harvest(job_t* job)
 
     do {
         pid = waitpid(-job->pgid, NULL, WNOHANG);
-        if(pid == 0)
-            zombies++;
+        if(pid == 0) zombies++;
     } while(errno != ECHILD);
 
     if(__glibc_unlikely(zombies > 0))
@@ -511,8 +507,7 @@ void job_move_to_bg(job_t* job, bool cont)
 {
     job->foreground = false;
     if(cont)
-        if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0))
-            ATOMIC_PRINT(perr(););
+        if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0)) ATOMIC_PRINT(perr(););
 }
 
 size_t job_len(job_t* job)
@@ -537,8 +532,7 @@ void job_continue(job_t* job, bool foreground)
             ATOMIC_PRINT(pwarn("FIX ME: tried removing background job that was not in the joblist!"));
             exit(EXIT_FAILURE);
         }
-    } else
-        job_move_to_bg(job, true);
+    } else job_move_to_bg(job, true);
 }
 
 process_t process_new(pid_t pid, byte* argv)

@@ -37,9 +37,13 @@ void sigchld_handler(int signum)
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
     shell.sh_intr = true;
-    joblist_update_and_notify(signum);
-    mask_signal(SIGWINCH, SIG_UNBLOCK);
-    mask_signal(SIGINT, SIG_UNBLOCK);
+    if(__glibc_unlikely(get_cursor_pos(NULL, &terminal.tm_col))) {
+        exit(EXIT_FAILURE);
+    } else {
+        joblist_update_and_notify(signum);
+        mask_signal(SIGWINCH, SIG_UNBLOCK);
+        mask_signal(SIGINT, SIG_UNBLOCK);
+    }
 }
 
 void unblock_signals(void)

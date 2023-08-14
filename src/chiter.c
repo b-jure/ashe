@@ -1,8 +1,6 @@
 #include "chiter.h"
 #include <stdio.h>
 
-#define is_exhausted(iter) ((iter)->next >= (iter)->end || (iter)->next == NULL)
-
 #if !defined(is_null)
     #define is_null(ptr) ((ptr) == NULL)
 #endif

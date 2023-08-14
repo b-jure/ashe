@@ -130,6 +130,8 @@ typedef struct {
   uint16_t tm_rows;
   uint16_t tm_columns;
   uint16_t tm_col;
+  uint16_t tm_plen;
+  byte tm_cfgp;
 } terminal_t;
 
 void inbuff_clear(inbuff_t *buffer);
@@ -143,5 +145,6 @@ int get_window_size(uint16_t *height, uint16_t *width);
 int get_window_size_fallback(uint16_t *height, uint16_t *width);
 void terminal_init(terminal_t *term);
 void inbuff_goto_end(inbuff_t *buffer);
+int get_cursor_pos(uint16_t *row, uint16_t *col);
 
 #endif

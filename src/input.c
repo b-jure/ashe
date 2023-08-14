@@ -1,6 +1,7 @@
 #include "ashe_string.h"
 #include "ashe_utils.h"
 #include "async.h"
+#include "config.h"
 #include "errors.h"
 #include "input.h"
 #include "jobctl.h"
@@ -21,7 +22,7 @@
 #define ASH_MAX_PLEN (ARG_MAX >> 2)
 
 size_t _prompt_len = 0;
-#define PLEN _prompt_len
+#define PLEN terminal.tm_plen
 
 #define ASH_P_JOBS   bold(byellow("%ld"))
 #define ASH_P_PREFIX bold(bred("%s"))
@@ -100,48 +101,144 @@ typedef struct {
 #define IMPLEMENTED(c)  (c != ESCAPE)
 #define remainder(x, y) ((x) % (y))
 
+/* Placeholder indexes */
+#define PP_SYSNAME 0
+#define PP_USRNAME 1
+#define PP_JOBCNT  2
+
 typedef uint16_t termkey_t;
 
-static size_t    inbuff_lenrel(inbuff_t* buffer);
-static bool      inbuff_cursor_right(inbuff_t* buffer);
-static bool      inbuff_cursor_left(inbuff_t* buffer);
-static bool      inbuff_cursor_up(inbuff_t* buffer);
-static bool      inbuff_cursor_down(inbuff_t* buffer);
-static void      inbuff_remove(inbuff_t* inbuff);
-static void      inbuff_insert(inbuff_t* inbuff, char c);
-static bool      inbuff_process_key(inbuff_t* buffer);
-static int       get_cursor_pos(uint16_t* row, uint16_t* col);
-static termkey_t read_key();
-static void      inbuff_debug_print(inbuff_t* buffer);
+static size_t      inbuff_lenrel(inbuff_t* buffer);
+static bool        inbuff_cursor_right(inbuff_t* buffer);
+static bool        inbuff_cursor_left(inbuff_t* buffer);
+static bool        inbuff_cursor_up(inbuff_t* buffer);
+static bool        inbuff_cursor_down(inbuff_t* buffer);
+static void        inbuff_remove(inbuff_t* inbuff);
+static void        inbuff_insert(inbuff_t* inbuff, char c);
+static bool        inbuff_process_key(inbuff_t* buffer);
+static termkey_t   read_key();
+static void        inbuff_debug_print(inbuff_t* buffer);
+static void        expand_pp(string_t* str, byte* sysname, byte* username, uint32_t jobcount);
+static const byte* pp(uint ppn);
 
+// TODO: Refactor all of the config file interactible code
+//       when the real interpreter gets implemented, this way
+//       lexing can be buffered and not limited by ARG_MAX constant.
 void pprompt(void)
 {
-    byte           username[MAXNAME];
-    struct utsname system;
-
-    if(__glibc_unlikely(uname(&system) < 0)) {
-        PW_USERNAME;
-        die();
-    }
-
-    if(__glibc_unlikely(getlogin_r(username, MAXNAME) < 0)) {
-        PW_SYSNAME;
-        die();
-    }
+    static string_t*      var = NULL;
+    static struct utsname system;
+    static byte           username[MAXNAME] = {0};
 
     byte   prompt[ASH_MAX_PLEN] = {0};
     size_t jobn                 = joblist_len(&shell.sh_jlist);
 
-    if(jobn <= 0) {
-        sprintf(prompt, ASH_P_DEFAULT, "ashe", username, "@", system.sysname, ": ");
-    } else {
-        sprintf(prompt, ASH_P_WJOBCOUNT, jobn, "ashe", username, "@", system.sysname, ": ");
+    if(!cs_check(cs_prompt)) {
+        cs_update(cs_prompt);
+
+        if(__glibc_unlikely(uname(&system) < 0)) {
+            PW_USERNAME;
+            die();
+        } else if(__glibc_unlikely(getlogin_r(username, MAXNAME) < 0)) {
+            PW_SYSNAME;
+            die();
+        }
+
+        int fd;
+        if((fd = config_open()) < 0) goto default_prompt;
+        if(lseek(fd, 0, SEEK_SET) < 0) die();
+
+        string_drop(var);
+        var = config_getvar(fd, CV_PROMPT);
+
+        if(is_null(var)) goto default_prompt;
+        if(close(fd) < 0) die();
+
+        byte* str = string_slice(var, 0);
+        expand_vars(&str);
+        unescape(str);
+        expand_pp(var, system.sysname, username, jobn);
+
+        if(__glibc_unlikely(string_len(var) >= (ASH_MAX_PLEN - sizeof(hide_cur show_cur)))) {
+            pwarn(
+                "prompt length " red("%d") " exceeded maximum size of" blue("%d"),
+                string_len(var),
+                (ASH_MAX_PLEN - sizeof(hide_cur show_cur)));
+        }
+
+        terminal.tm_plen = len_without_seq(string_slice(var, 0));
+        terminal.tm_cfgp = true;
+        goto print_prompt;
+    } else if(terminal.tm_cfgp) {
+        goto print_prompt;
     }
 
-    _prompt_len = len_without_seq(prompt);
+default_prompt:
+    terminal.tm_cfgp = false;
+    if(jobn <= 0) {
+        sprintf(prompt, hide_cur ASH_P_DEFAULT show_cur, "ashe", username, "@", system.sysname, ": ");
+    } else {
+        sprintf(prompt, hide_cur ASH_P_WJOBCOUNT show_cur, jobn, "ashe", username, "@", system.sysname, ": ");
+    }
+    terminal.tm_plen = len_without_seq(prompt);
 
-    fprintf(stderr, "\r\n%s", prompt);
+print_prompt:
+    fprintf(stderr, "\r\n" hide_cur "%s" show_cur, (terminal.tm_cfgp) ? string_ref(var) : prompt);
     fflush(stderr);
+}
+
+/* pp* - Prompt placeholders */
+static void expand_pp(string_t* str, byte* sysname, byte* username, uint32_t jobcount)
+{
+    static const byte delimiter = '%';
+
+    byte*       base    = string_slice(str, 0);
+    byte*       ptr     = base;
+    byte*       start   = NULL;
+    byte*       end     = NULL;
+    const byte* pholder = NULL;
+
+    while((ptr = strchr(ptr, delimiter)) && !is_escaped(ptr, ptr - base)) {
+        start = ptr;
+        end   = start + 1;
+        while(isalnum(*end)) end++;
+        byte cached = *end;
+        *end        = '\0';
+
+        uint8_t  remove_count = 0;
+        uint32_t insert_count = 0;
+        if(strcmp(start, (pholder = pp(PP_SYSNAME))) == 0) {
+            *end         = cached;
+            remove_count = strlen(pholder);
+            insert_count = strlen(sysname);
+            string_splice(str, start - base, remove_count, sysname, insert_count);
+        } else if(strcmp(start, (pholder = pp(PP_USRNAME))) == 0) {
+            *end         = cached;
+            remove_count = strlen(pholder);
+            insert_count = strlen(username);
+            string_splice(str, start - base, remove_count, username, insert_count);
+        } else if(strcmp(start, (pholder = pp(PP_JOBCNT))) == 0) {
+            *end         = cached;
+            remove_count = strlen(pholder);
+            byte jcount[UINT_DIGITS + 2];
+            insert_count = sprintf(jcount, "%u", jobcount);
+            string_splice(str, start - base, remove_count, jcount, insert_count);
+        } else {
+            *end = cached;
+        }
+        ptr = (remove_count > 0 ? ptr + insert_count : end);
+    }
+}
+
+static const byte* pp(uint ppn)
+{
+    static const byte* pplaceholders[] = {
+        "%sysname",
+        "%username",
+        "%jobcount",
+    };
+
+    return pplaceholders[ppn];
 }
 
 void terminal_init(terminal_t* term)
@@ -201,7 +298,7 @@ int get_window_size_fallback(uint16_t* height, uint16_t* width)
     return get_cursor_pos(height, width);
 }
 
-static int get_cursor_pos(uint16_t* row, uint16_t* col)
+int get_cursor_pos(uint16_t* row, uint16_t* col)
 {
     byte     c;
     size_t   i = 0;
@@ -421,7 +518,7 @@ void inbuff_redraw(inbuff_t* buffer)
         temp = row->len - 1;
         /* Make sure we compensate for multiple terminal
          * rows in a single buffer row */
-        while(temp >= (int64_t) terminal.tm_columns) {
+        while(temp >= (int32_t) terminal.tm_columns) {
             up++;
             temp -= terminal.tm_columns;
         }
@@ -440,8 +537,8 @@ void inbuff_redraw(inbuff_t* buffer)
     byte* target = buff;
     buff[0]      = '\0';
 
-    target += sprintf(target, hide_cur "%.*s", (int32_t) buffer->in_len, buffer->in_buffer);
-    if(up > 0) target += sprintf(target, CSI "%luA", up);
+    target += sprintf(target, "%s%.*s", hide_cur, (int32_t) buffer->in_len, buffer->in_buffer);
+    if(up > 0) target += sprintf(target, "%s%luA", CSI, up);
     target += sprintf(target, CSI "%uG" show_cur, terminal.tm_col);
 
     terminal.tm_rawterm.c_oflag |= (OPOST);
@@ -907,7 +1004,7 @@ static bool inbuff_process_key(inbuff_t* buffer)
             case U_ARW: inbuff_cursor_up(buffer); break;
             case D_ARW: inbuff_cursor_down(buffer); break;
             /// Unimplemented stuff
-            case CTRL_KEY('h'):
+            case CTRL_KEY('h'): inbuff_debug_print(buffer); break;
             case CTRL_KEY('x'):
             case CTRL_KEY('j'):
             case CTRL_KEY('k'):

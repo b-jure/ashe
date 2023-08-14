@@ -86,11 +86,11 @@ bool vec_splice(vec_t* self, size_t index, size_t remove_n, const void* array, s
         return false;
     }
 
-    memcpy(
+    memmove(
         _an_vec_get(self, index + insert_n),
         _an_vec_get(self, index + remove_n),
         self->ele_size * (self->len - (index + remove_n)));
-    memcpy(_an_vec_get(self, index), array, self->ele_size * insert_n);
+    memmove(_an_vec_get(self, index), array, self->ele_size * insert_n);
 
     self->len += ((int64_t) insert_n - remove_n);
 

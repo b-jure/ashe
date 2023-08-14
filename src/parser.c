@@ -165,7 +165,9 @@ static int parse_pipeline(lexer_t* lexer, pipeline_t* pipeline)
     int       status;
 
     while(1) {
-        if(__glibc_unlikely(cmd_is_null((command = command_new())))) return FAILURE;
+        if(__glibc_unlikely(cmd_is_null((command = command_new())))) {
+            exit(EXIT_FAILURE);
+        }
 
         status = parse_command(lexer, &command);
         token  = lexer->token;

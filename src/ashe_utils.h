@@ -68,6 +68,7 @@ bool in_dq(byte *str, size_t len);
 bool is_escaped(byte *bt, size_t curpos);
 int unescape(byte *str);
 size_t len_without_seq(const byte *prompt);
+void expand_vars(byte **word);
 
 #define PCS_EXTRA "/.-"
 #define PORTABLE_CHARACTER_SET                                                 \

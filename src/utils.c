@@ -53,9 +53,6 @@ void pinfo(info_t type, const byte* str)
     buff[0]       = '\0';
     memset(buff, 0, cap);
 
-    /// HEADER
-    fprintf(stderr, "\n" yellow(bold("%s")) "\n\r", info);
-
     uint16_t    remaining_space = col_limit;
     const byte* delimiter       = " ";
     const byte* word            = strtok(str_mut, delimiter);
@@ -81,6 +78,55 @@ void pinfo(info_t type, const byte* str)
 
     fprintf(stderr, "\n" yellow(bold("%s")) "\n%-s\n", info, buff);
     fflush(stderr);
+}
+
+void expand_vars(byte** word)
+{
+    size_t         len   = strlen(*word);
+    register byte* ptr   = *word;
+    register byte* start = NULL;
+    register byte* end   = NULL;
+    const byte*    value = NULL;
+
+    for(; is_some((ptr = strchr(ptr, '$'))); ptr++) {
+        if(is_escaped(ptr, ptr - *word)) {
+            continue;
+        }
+
+        size_t offset = strspn(ptr + 1, PORTABLE_CHARACTER_SET);
+
+        if(offset == 0 || __glibc_unlikely((end = (start = ptr + 1) + offset) - *word >= ARG_MAX)) {
+            continue;
+        }
+
+        byte cached     = *end;
+        *end            = NULL_TERM;
+        int32_t key_len = strlen(start) + 1; // Account for '$'
+        *end            = cached;
+
+        value = getenv(start);
+
+        if(is_some(value)) {
+            int32_t var_len = strlen(value);
+            int32_t diff    = var_len - key_len;
+
+            if(diff > 0) {
+                if(__glibc_likely(len + diff < ARG_MAX)) {
+                    memcpy(end, end + diff, diff);
+                } else {
+                    continue;
+                }
+            } else {
+                diff = abs(diff);
+                memcpy(end - diff, end, diff);
+            }
+
+            memcpy(ptr, value, var_len);
+        } else {
+            /* If no variable found remove the whole key indicated with '$' */
+            memcpy(ptr, end, key_len);
+        }
+    }
 }
 
 void pmanpage(const byte* name, const byte* usage, const byte* desc)

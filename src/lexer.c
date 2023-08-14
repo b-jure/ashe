@@ -57,55 +57,6 @@ lexer_t lexer_new(const byte* start, size_t len)
     return (lexer_t){.token = {0}, .iter = chariter_new((byte*) start, len)};
 }
 
-static void expand_vars(byte** word)
-{
-    size_t         len   = strlen(*word);
-    register byte* ptr   = *word;
-    register byte* start = NULL;
-    register byte* end   = NULL;
-    const byte*    value = NULL;
-
-    for(; is_some((ptr = strchr(ptr, '$'))); ptr++) {
-        if(is_escaped(ptr, ptr - *word)) {
-            continue;
-        }
-
-        size_t offset = strspn(ptr + 1, PORTABLE_CHARACTER_SET);
-
-        if(offset == 0 || __glibc_unlikely((end = (start = ptr + 1) + offset) - *word >= ARG_MAX)) {
-            continue;
-        }
-
-        byte cached     = *end;
-        *end            = NULL_TERM;
-        int32_t key_len = strlen(start) + 1; // Account for '$'
-        *end            = cached;
-
-        value = getenv(start);
-
-        if(is_some(value)) {
-            int32_t var_len = strlen(value);
-            int32_t diff    = var_len - key_len;
-
-            if(diff > 0) {
-                if(__glibc_likely(len + diff < ARG_MAX)) {
-                    memcpy(end, end + diff, diff);
-                } else {
-                    continue;
-                }
-            } else {
-                diff = abs(diff);
-                memcpy(end - diff, end, diff);
-            }
-
-            memcpy(ptr, value, var_len);
-        } else {
-            /* If no variable found remove the whole key indicated with '$' */
-            memcpy(ptr, end, key_len);
-        }
-    }
-}
-
 void lexer_get_string(lexer_t* lexer)
 {
     static byte word[ARG_MAX];
@@ -134,9 +85,8 @@ void lexer_get_string(lexer_t* lexer)
 
     word[i] = '\0';
     ttype   = WORD_TOKEN;
+    ptr     = word;
 
-    ptr = word;
-    // unescape(ptr);
     expand_vars(&ptr);
 
     if((ptr = strstr(word, "=")) != NULL && word != ptr) {
@@ -148,26 +98,8 @@ void lexer_get_string(lexer_t* lexer)
         *ptr = old;
     }
 
-    lexer->token = token_without_quotes(ttype, word);
-}
-
-static token_t token_without_quotes(tokentype_t ttype, byte* word)
-{
-    token_t   token;
-    string_t* string = string_from(word);
-    byte*     ptr    = string_slice(string, 0);
-
-    if(__glibc_unlikely(is_null(string))) return token_new(OOM_TOKEN, NULL);
-
-    token.type     = ttype;
-    token.contents = string;
-
-    while(is_some(ptr = strchr(ptr, '"'))) {
-        if(char_before_ptr(ptr) != '\\') string_remove_at_ptr(string, ptr);
-        else ptr++;
-    }
-
-    return token;
+    unescape(word);
+    lexer->token = token_new(ttype, word);
 }
 
 static void lexer_skip_ws(lexer_t* lexer)

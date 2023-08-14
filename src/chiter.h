@@ -12,6 +12,8 @@ typedef struct {
   byte *end;
 } chariter_t;
 
+#define is_exhausted(iter) ((iter)->next >= (iter)->end || (iter)->next == NULL)
+
 chariter_t chariter_new(byte *start, size_t len);
 
 chariter_t chariter_from_string(string_t *string);
