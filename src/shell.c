@@ -66,6 +66,7 @@ void shell_init(void)
         /* Setup shell signal handling (async) */
         setup_default_signal_handling();
 
+        /* Print welcome message if it is set */
         pwelcome();
     }
 }
@@ -74,6 +75,9 @@ static void pwelcome(void)
 {
     int       fd  = config_open();
     string_t* msg = config_getvar(fd, CV_WELCOME);
+
+    if(__glibc_unlikely(fd != -1 && close(fd) < 0)) die();
+    else if(msg == NULL) return;
 
     unescape(string_slice(msg, 0));
     fprintf(stderr, "%s\n", string_ref(msg));

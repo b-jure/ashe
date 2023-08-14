@@ -43,7 +43,10 @@ string_t* config_getvar(int fd, int varidx)
             ptr += varlen;
 
             while(isspace(*ptr)) {
-                if(*ptr++ == '\n') return NULL;
+                if(*ptr++ == '\n') {
+                    string_drop(msg);
+                    return NULL;
+                }
             }
 
         read:
