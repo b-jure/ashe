@@ -146,7 +146,6 @@ void pprompt(void)
 
         int fd;
         if((fd = config_open()) < 0) goto default_prompt;
-        if(lseek(fd, 0, SEEK_SET) < 0) die();
 
         string_drop(var);
         var = config_getvar(fd, CV_PROMPT);

@@ -73,7 +73,9 @@ void shell_init(void)
 
 static void pwelcome(void)
 {
-    int       fd  = config_open();
+    int fd = config_open();
+    if(fd == -1) return;
+
     string_t* msg = config_getvar(fd, CV_WELCOME);
 
     if(__glibc_unlikely(fd != -1 && close(fd) < 0)) die();
