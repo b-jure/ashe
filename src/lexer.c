@@ -11,11 +11,10 @@
 
 // TODO: Implement ****GLOB OPERATOR****, and rest of the regular expressions
 
-static token_t token_without_quotes(tokentype_t ttype, byte* word);
-static void    lexer_get_string(lexer_t* lexer);
-static void    lexer_skip_ws(lexer_t* lexer);
-static bool    is_reserved(byte c);
-static void    plexerr(uint err);
+static void lexer_get_string(lexer_t* lexer);
+static void lexer_skip_ws(lexer_t* lexer);
+static bool is_reserved(byte c);
+static void plexerr(uint err);
 
 static bool is_reserved(byte c)
 {

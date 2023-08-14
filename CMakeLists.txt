@@ -5,6 +5,8 @@ project(ashe)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+set(CONFIG_DIR /etc/ashe)
+set(INSTALL_DIR /usr/local/bin)
 set(BIN ashe)
 set(GDBBIN ashegdb)
 set(SRCDIR src)
@@ -36,7 +38,9 @@ target_compile_options(${BIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} ${OPTS})
 target_include_directories(${BIN} PRIVATE ${INCDIR})
 
 # Install rule
-install(TARGETS ${BIN} DESTINATION /usr/local/bin)
+install(TARGETS ${BIN} DESTINATION ${INSTALL_DIR})
+install(DIRECTORY DESTINATION ${CONFIG_DIR})
+install(FILES ${CMAKE_SOURCE_DIR}/config/config.ashe DESTINATION ${CONFIG_DIR})
 
 if(DEFINED ASHE_DBUG AND ASHE_DBUG STREQUAL "ON")
     add_executable(${GDBBIN} ${SRCFILES})
