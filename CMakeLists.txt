@@ -35,6 +35,7 @@ set(OPTS -Os)
 
 add_executable(${BIN} ${SRCFILES})
 target_compile_options(${BIN} PRIVATE ${WARNING_FLAGS} ${STANDARD} ${OPTS})
+target_link_options(${BIN} PRIVATE -s)
 target_include_directories(${BIN} PRIVATE ${INCDIR})
 
 # Install rule
