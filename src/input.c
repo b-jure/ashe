@@ -1003,7 +1003,7 @@ static bool inbuff_process_key(inbuff_t* buffer)
             case U_ARW: inbuff_cursor_up(buffer); break;
             case D_ARW: inbuff_cursor_down(buffer); break;
             /// Unimplemented stuff
-            case CTRL_KEY('h'): inbuff_debug_print(buffer); break;
+            case CTRL_KEY('h'):
             case CTRL_KEY('x'):
             case CTRL_KEY('j'):
             case CTRL_KEY('k'):
