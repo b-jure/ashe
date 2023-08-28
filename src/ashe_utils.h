@@ -33,8 +33,6 @@ extern byte **environ;
 
 #define TERMINAL_FD STDIN_FILENO
 
-/// Concurrently safe printing (advisory lock), async-safe and because
-/// shell is single threaded no need for 'flockfile/funlockfile'.
 #define ATOMIC_PRINT(print_block)                                              \
   SCOPE_GUARD({                                                                \
     if (__glibc_unlikely(flock(STDIN_FILENO, LOCK_EX) < 0 ||                   \
