@@ -19,7 +19,10 @@
 #define P_ALL   4 /* Print all environ */
 
 #define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
-#define phelp_opts       fprintf(stderr, "\nThe -h or --help options display help information for this command\n")
+#define phelp_opts                                                                       \
+    fprintf(                                                                             \
+        stderr,                                                                          \
+        "\nThe -h or --help options display help information for this command\n")
 
 /// Built-in commands
 byte* builtin[] = {
@@ -42,18 +45,18 @@ byte* builtin[] = {
 #define validf(valid)     bold(blue(valid))
 #define invalidf(invalid) bold(bred(invalid))
 
-/// TODO: Maybe refactor this, ugly as shit
+/// TODO: Maybe refactor this, ugly..
 #define jobheaderf printf("\n%-*s %-*s %-*s\n", 10, "Job", 10, "Group", 10, "State")
-#define joboutf(job)                              \
-    printf(                                       \
-        "%-*ld %-*d %-*s\n",                      \
-        10,                                       \
-        (job)->id,                                \
-        10,                                       \
-        (job)->pgid,                              \
-        10,                                       \
-        job_completed((job)) ? green("completed") \
-        : job_stopped((job)) ? red("stopped")     \
+#define joboutf(job)                                                                     \
+    printf(                                                                              \
+        "%-*ld %-*d %-*s\n",                                                             \
+        10,                                                                              \
+        (job)->id,                                                                       \
+        10,                                                                              \
+        (job)->pgid,                                                                     \
+        10,                                                                              \
+        job_completed((job)) ? green("completed")                                        \
+        : job_stopped((job)) ? red("stopped")                                            \
                              : yellow("running"))
 
 /// Internal functions
@@ -82,9 +85,10 @@ static int  jobs(byte* const* argv);
 /// This is used in 'bg' builtin command when parsing and storing combination
 /// of id and pid integers in the same array to later distinguish them by their sign bit.
 /// All valid PID's and ID's are positive so by flipping a sign bit we can differentiate
-/// them while also storing them in the same array without storing each inside a tagged union.
-#define FLIP_SIGN_BIT(integer) \
-    ((int32_t) (((int32_t) (integer)) ^ (~((uint32_t) 0) << ((sizeof(uint32_t) * 8) - 1))))
+/// them while also storing them in the same array without storing each inside a tagged
+/// union.
+#define FLIP_SIGN_BIT(integer)                                                           \
+    ((int32_t)(((int32_t)(integer)) ^ (~((uint32_t)0) << ((sizeof(uint32_t) * 8) - 1))))
 
 // clang-format off
 
@@ -93,9 +97,9 @@ static int jobs(byte* const* argv)
     static const byte* name = namef(jobs) " - print currently running/stopped jobs.";
     static const byte* usage = namef(jobs) " " obrack keywordf(PID) keywordf(|) keywordf(ID) cbrack;
     static const byte* desc =
-        namef(jobs) " - prints all currently running jobs and their status."
-        "This command can accept arguments in the form of " keywordf(PID) " or " keywordf(ID) " (job id)."
-        "If the " keywordf(PID) " is supplied then the output is restricted to jobs that contain the selected process ID."
+        namef(jobs) " - prints all currently running jobs and their status. "
+        "This command can accept arguments in the form of " keywordf(PID) " or " keywordf(ID) " (job id). "
+        "If the " keywordf(PID) " is supplied then the output is restricted to jobs that contain the selected process ID. "
         "In case job " keywordf(ID) " is used, then the output will contain only the job with the given job " keywordf(ID);
 
     int status;
@@ -360,11 +364,11 @@ static int exit_builtin(byte *const *argv, bool is_shell)
     static const byte* name = namef(exit) " - exits the shell";
     static const byte* desc = 
         namef(exit) " is a builtin command that exits the shell with the " keywordf(CODE) 
-        " if supplied or 0 in case " keywordf(CODE) " is not supplied."
+        " if supplied or 0 in case " keywordf(CODE) " is not supplied. "
         "In case there are jobs running when exit is called, shell will not exit instantly, "
         "instead it will warn user first if there are any running jobs.";
     static const byte *exit_warn = 
-        "There are background jobs that are still running/stopped!"
+        "There are background jobs that are still running/stopped! "
         "Run " namef(exit) " again to exit, this will result in " invalidf("termination") " of child processes.";
 
     int status;
@@ -420,8 +424,8 @@ static int change_dir(byte *const *argv)
     static const byte *usage = namef(cd) " " obrack keywordf(DIRNAME) cbrack;
     static const byte *name = namef(cd) " - change directory";
     static const byte *desc = 
-        namef(cd) " command changes current working directory."
-        "If no " keywordf(DIRECTORY) " is given, then the " keywordf(HOME) " environment variable will be used."
+        namef(cd) " command changes current working directory. "
+        "If no " keywordf(DIRECTORY) " is given, then the " keywordf(HOME) " environment variable will be used. "
         "Otherwise " keywordf(DIRECTORY) " becomes the new working directory.";
 
     int status;
@@ -458,8 +462,8 @@ static int print_variable(byte *const *argv)
     static const byte *name = namef(penv) " - print environment variable/s.";
     static const byte *usage = namef(penv) " " obrack keywordf(NAME) cbrack;
     static const byte *desc = 
-        namef(penv) " prints environmental variables."
-        "If no " keywordf(NAME) " is provided " namef(penv) " will print all environment variables."
+        namef(penv) " prints environmental variables. "
+        "If no " keywordf(NAME) " is provided " namef(penv) " will print all environment variables. "
         "If " keywordf(NAME) " is provided, " namef(penv) " prints the value of that variable with that "
         keywordf(NAME) ".";
 
@@ -491,10 +495,10 @@ int set_variable(byte *const *argv)
     static const byte *usage = 
         namef(senv) " " obrack keywordf(NAME) cbrack " " obrack keywordf(VALUE) cbrack;
     static const byte *desc = 
-        namef(penv) " set/add environmental variable."
-        "If variable with " keywordf(NAME) " already exists then its " keywordf(VALUE) " is overwritten."
+        namef(penv) " set/add environmental variable. "
+        "If variable with " keywordf(NAME) " already exists then its " keywordf(VALUE) " is overwritten. "
         "In case the variable with " keywordf(NAME) " doesn't already exist, then it is newly created and "
-        "added into the environment with the value of " keywordf(VALUE) "."
+        "added into the environment with the value of " keywordf(VALUE) ". "
         "Additionally if the " keywordf(NAME) " was provided but " keywordf(VALUE) " was not, then the "
         "variable is initialized with the value of empty string (" keywordf("") ").";
 
@@ -531,7 +535,7 @@ static int remove_variable(byte *const *argv)
     static const byte *name = namef(renv) " - remove environment variable.";
     static const byte *usage = namef(renv) " " obrack keywordf(NAME);
     static const byte *desc = 
-        namef(renv) " removes environmental variable."
+        namef(renv) " removes environmental variable. "
         "If variable with " keywordf(NAME) " exists it gets removed from the environment.";
 
     int status;
