@@ -14,20 +14,21 @@
 ARRAY_NEW(ArrayBuffer, Buffer);
 
 typedef struct {
-    int32 fd_left;
-    int32 fd_right;
-    ubyte read;
-    ubyte append;
-    Buffer file;
-} Redirection;
+    Buffer file;       // filepath or empty if fd_right is present
+    int32 fd_left;     // left side file descriptor
+    int32 fd_right;    // right side file descriptor
+    ubyte write  : 1;  // if flag set open file to write '>'
+    ubyte append : 1;  // if flag set open file with append flag
+    ubyte close  : 1;  // if flag set then close the fd_left
+} FDContext;           // File descriptor context
 
 /* Array of 'Redirection's */
-ARRAY_NEW(ArrayRedirection, Redirection);
+ARRAY_NEW(ArrayFDContext, FDContext);
 
 typedef struct {
-    ArrayBuffer argv; /* command name and arguments */
-    ArrayBuffer env; /* environmental variables */
-    ArrayRedirection rds; /* redirections */
+    ArrayBuffer argv;      /* command name and arguments */
+    ArrayBuffer env;       /* environmental variables */
+    ArrayFDContext fdcs;   /* file descriptor context array */
 } Command;
 
 

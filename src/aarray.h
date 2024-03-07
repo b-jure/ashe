@@ -124,10 +124,10 @@ typedef void (*FreeFn)(void* value);
                                                                                                    \
     static finline void _ARRAY_METHOD(name, free, FreeFn fn)                                       \
     {                                                                                              \
-        if(fn != NULL)                                                                             \
+        if(fn)                                                                             \
             for(uint32 i = 0; i < self->len; i++)                                                  \
                 fn((void*)&self->data[i]);                                                         \
-        if(self->data != NULL) aalloc(self->data, 0);                                              \
+        if(self->data) aalloc(self->data, 0);                                              \
     }                                                                                              \
                                                                                                    \
     static finline void _ARRAY_METHOD(name, push_str, const char* str, memmax len)                 \

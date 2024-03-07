@@ -29,14 +29,18 @@ typedef struct {
         struct {
             int32 fd_left;
             int32 fd_right;
-            ubyte read : 1;
             ubyte append : 1;
+            ubyte write : 1;
         } file;
     } u;
+    const char* start; // debug
+    memmax len;        // debug
 } Token;
 
 /* token file */
 #define TF(token) ((token)->u.file)
+/* token buffer */
+#define TB(token) ((token)->u.contents)
 /* token string */
 #define TS(token) ((token)->u.contents.data)
 

@@ -23,10 +23,9 @@ void* aalloc(void* ptr, memmax size)
         free(ptr);
         return NULL;
     }
-
     ptr = realloc(ptr, size);
     if(unlikely(ptr == NULL)) {
-        panic("out of memory (alloc size - '%lu')", size);
+        panic("out of memory (tried allocating - '%lu')", size);
         // unreachable;
     }
     return ptr;

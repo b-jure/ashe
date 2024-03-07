@@ -4,8 +4,6 @@
 #include "shell.h"
 #include "aalloc.h"
 
-#include <stdio.h>
-
 
 #if !defined(ASHE_STATUS_VAR)
 #define ASHE_STATUS_VAR "?"
@@ -49,11 +47,12 @@ void Shell_cleanup(void)
 {
     Joblist_drop(&ashe.sh_jlist);
     ArrayCharptr_free(&ashe.sh_buffers, wrapped_aalloc);
+    Lexer_free(&ashe.sh_lexer);
 }
 
 void Fork_cleanup(void)
 {
-
+    // Implement
 }
 
 
@@ -68,7 +67,7 @@ void Shell_init(Shell* sh)
 
         /* Setup status environment variable */
         if(unlikely(setenv(ASHE_STATUS_VAR, "0", 1) < 0)) {
-            print_warning("failed creating status environment variable" bold(bred(ASHE_STATUS_VAR)));
+            fprint_warning("failed creating status environment variable" bold(bred(ASHE_STATUS_VAR)));
             die();
         }
 

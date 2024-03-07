@@ -12,7 +12,7 @@
 #define BUFF_ERR_SIZE 100
 
 
-/* integers returned from fd_left() and fd_right(). */
+/* integers returned from 'fd_left()' and 'fd_right()'. */
 #define BIGFD(fd) ((fd) == -1)
 #define BADFD(fd) ((fd) == -2)
 
@@ -23,16 +23,20 @@
  */
 
 
+
 /* Lexer errors */
 #define ERR_FDOVF 0
 #define ERR_FDINV 1
 static const char* lexerrors[] = {
     "file descriptor too large '%s'.",
-    "invalid file descriptor '%s'.",
+    "invalid file descriptor.",
 };
 
 
-static finline ubyte isres(int32 c)
+
+
+/* Return 1 if character 'c' is a single byte (char) token. */
+static finline ubyte is1btoken(int32 c)
 {
     switch(c) {
         case '&':
@@ -51,16 +55,38 @@ static finline ubyte isres(int32 c)
     }
 }
 
+
+
+static finline void Token_init(Token* token)
+{
+    memset(token, 1, sizeof(Token));
+}
+
+static finline void Token_free(Token* token)
+{
+    Buffer_free(&TB(token), NULL);
+}
+
+
+
 void Lexer_init(Lexer* lexer, const char* start)
 {
     lexer->current = lexer->start = start;
 }
 
+void Lexer_free(Lexer* lexer)
+{
+    Token_free(&lexer->prev);
+    Token_free(&lexer->curr);
+}
+
+/* Peek 'amount' without advancing. */
 static finline int32 peek(Lexer* lexer, memmax amount)
 {
     return *(lexer->current + amount);
 }
 
+/* Advance buffer by a single character unless EOF is reached. */
 static finline int32 advance(Lexer* lexer)
 {
     int32 c = *lexer->current;
@@ -68,16 +94,7 @@ static finline int32 advance(Lexer* lexer)
     return c;
 }
 
-static finline void Token_init(Token* token)
-{
-    Buffer_init(&token->u.contents);
-    TF(token).fd_left = -1;
-    TF(token).fd_right = -1;
-    TF(token).read = 0;
-    TF(token).append = 0;
-}
-
-
+/* Gets a string, expands environmental variables and unescapes it. */
 static Token Lexer_string(Lexer* lexer)
 {
     Token token;
@@ -85,15 +102,17 @@ static Token Lexer_string(Lexer* lexer)
     Token_init(&token);
     dq = escape = 0;
     token.type = TOKEN_WORD;
-    Buffer* buffer = &token.u.contents;
+    token.start = lexer->current;
+    Buffer* buffer = &TB(&token);
     int32 c;
     while(((c = advance(lexer)) != '\0')) {
-        if(!dq && !escape && ((isspace(c)) || isres(c))) break;
+        if(!dq && !escape && ((isspace(c)) || is1btoken(c))) break;
         if(!escape && c == '"') dq ^= 1;
         else if(c == '\\' || escape) escape ^= 1;
         Buffer_push(buffer, c);
     }
     Buffer_push(buffer, '\0');
+    token.len = lexer->current - token.start;
     expand_vars(buffer);
     char* ptr = buffer->data;
     if(*ptr != '=' && (ptr = strstr(ptr, "=")) != NULL) {
@@ -104,10 +123,11 @@ static Token Lexer_string(Lexer* lexer)
         *ptr = '=';
     }
     unescape(buffer);
-    ArrayCharptr_push(&ashe.sh_buffers, token.u.contents.data);
+    ArrayCharptr_push(&ashe.sh_buffers, TS(&token));
     return token;
 }
 
+/* Skip whitespace characters */
 static void lexer_skip_ws(Lexer* lexer)
 {
     int32 c = peek(lexer, 0);
@@ -123,37 +143,44 @@ static void lexer_skip_ws(Lexer* lexer)
     }
 }
 
-static finline const char* tokfstr(const char* fmt, ...)
+/* Auxiliary to 'Token_tostr()' */
+static finline const char* tokfstr(memmax len, const char* str)
 {
     static char buffer[UINT_DIGITS];
-    va_list argp;
-    va_start(argp, fmt);
-    vsnprintf(buffer, UINT_DIGITS, fmt, argp);
-    va_end(argp);
+    snprintf(buffer, UINT_DIGITS, "%.*s", (int32)len, str);
     return buffer;
 }
 
+/* Warning: each time you invoke this function
+ * the previous string might become invalid.
+ * This is because some tokens use static buffer
+ * as storage to avoid allocating, so make sure each
+ * time you invoke this that you don't need the result
+ * of the previous call to this function. */
 const char* Token_tostr(Token* token)
 {
     switch(token->type)
     {
         case TOKEN_WORD:
         case TOKEN_KVPAIR:
-        case TOKEN_ERROR: return TS(token);
+        case TOKEN_ERROR: 
+            return TS(token);
         case TOKEN_PIPE: return "|";
         case TOKEN_AND: return "&&";
         case TOKEN_OR: return "||";
         case TOKEN_BG: return "&";
-        case TOKEN_SEPARATOR: return ";";
-        case TOKEN_FDREAD: return tokfstr("%d<", TF(token).fd_left);
-        case TOKEN_FDWRITE: return tokfstr("%d>", TF(token).fd_left);
-        case TOKEN_FDREDIRECT: return tokfstr("%d%c&%d", TF(token).fd_left, (TF(token).read ? '<' : '>'), TF(token).fd_right);
-        case TOKEN_FDCLOSE: return tokfstr("%d", TF(token).fd_left);
+        case TOKEN_SEPARATOR:
+        case TOKEN_FDREAD:
+        case TOKEN_FDWRITE:
+        case TOKEN_FDREDIRECT:
+        case TOKEN_FDCLOSE: 
+            return tokfstr(token->len, token->start);
         case TOKEN_EOF: return NULL;
     }
 }
 
-/* Lex positive integer. */
+/* Get positive integer for file descriptor.
+ * Return -1 in case of overflow. */
 static finline int32 posint(const char** ptr)
 {
     int32 c;
@@ -179,7 +206,7 @@ static int32 fd_left(const char* str)
     int32 fd, c;
     fd = posint(&str);
     c = *str;
-    if(!isspace(c) && !isres(c)) return -2;
+    if(!isspace(c) && !is1btoken(c)) return -2;
     return fd;
 }
 
@@ -196,7 +223,6 @@ static int32 fd_right(const char* str)
     else return fd;
 }
 
-
 static Token Token_error(const char* errfmt, ...)
 {
     static char buffer[BUFF_ERR_SIZE];
@@ -207,18 +233,6 @@ static Token Token_error(const char* errfmt, ...)
     int32 n = vsnprintf(buffer, BUFF_ERR_SIZE, errfmt, argp);
     va_end(argp);
     if(unlikely(n < 0)) die();
-    Buffer_push_str(&token.u.contents, buffer, n);
-    ArrayCharptr_push(&ashe.sh_buffers, token.u.contents.data);
-    return token;
-}
-
-static finline Token Token_left_fd(Lexer* lexer, Tokentype type, int32 fd)
-{
-    Token token;
-    Token_init(&token);
-    TF(&token).fd_left = fd;
-    TF(&token).read = type == TOKEN_FDREAD;
-    token.type = type;
     return token;
 }
 
@@ -228,14 +242,16 @@ Token Lexer_next(Lexer* lexer)
 {
     int32 c, fd;
     Tokentype ttype;
-    lexer_skip_ws(lexer);
+    Token token; // for fd string
+    Token_init(&token);
     Token_init(&lexer->curr);
+    lexer_skip_ws(lexer);
     switch((c = peek(lexer, 0))) {
         case '<': {
             advance(lexer);
             TF(&lexer->curr).fd_left = 0;
             lexer->curr.type = TOKEN_FDREAD;
-            goto l_check_right;
+            goto l_check_right_fd;
         }
         case '>': {
             advance(lexer);
@@ -247,15 +263,23 @@ Token Lexer_next(Lexer* lexer)
                 lexer->curr.u.file.append = 1;
             } else {
                 lexer->curr.u.file.append = 0;
-            l_check_right:
+            l_check_right_fd:
                 if(peek(lexer, 0) == '&') {
                     advance(lexer);
-                    if((c = peek(lexer, 0)) == '-') { // close file descriptor ?
+                    c = peek(lexer, 0);
+                    if(c == '-') { // close file descriptor ?
                         advance(lexer);
-                        if(!isspace(peek(lexer, 1))) goto l_err_fd_invalid;
+                        if(!isspace(peek(lexer, 0))) goto l_err_fd_invalid;
                         lexer->curr.type = TOKEN_FDCLOSE;
-                    } else if(isdigit(c)) goto l_fd_right;
-                    else goto l_err_fd_invalid;
+                    } else if(isdigit(c)) {
+                        token = Lexer_string(lexer);
+                        if(!isspace(peek(lexer, 0))) goto l_err_fd_invalid;
+                        fd = fd_right(TS(&token));
+                        if(BIGFD(fd)) goto l_err_fd_overflow;
+                        if(BADFD(fd)) goto l_err_fd_invalid;
+                        TF(&lexer->curr).fd_right = fd;
+                        return lexer->curr;
+                    } else goto l_err_fd_invalid;
                 }
             }
             return lexer->curr;
@@ -278,17 +302,18 @@ Token Lexer_next(Lexer* lexer)
         case '\0': ttype = TOKEN_EOF; break;
         default: {
             lexer->curr = Lexer_string(lexer);
-            fd = fd_left(TS(&lexer->curr));
+            fd = fd_left(TS(&token));
             if(BIGFD(fd)) goto l_err_fd_overflow;
             if(!BADFD(fd)) {
-                if((c = peek(lexer, 0)) == '>' || c == '<') {
+                c = peek(lexer, 0);
+                if(c == '>' || c == '<') {
+                    Buffer_free(&TB(&lexer->curr), NULL); // don't need the string
                     advance(lexer);
-                    lexer->curr = Token_left_fd(lexer, TOKEN_FDWRITE, fd);
-                    goto l_fd_write; // check for append flag + right side fd
-                } else if(c == '<') {
-                    advance(lexer);
-                    lexer->curr = Token_left_fd(lexer, TOKEN_FDREAD, fd);
-                    goto l_check_right; // check for right side fd
+                    lexer->curr.type = (c == '>' ? TOKEN_FDWRITE : TOKEN_FDREAD);
+                    TF(&lexer->curr).write = lexer->curr.type & TOKEN_FDWRITE;
+                    TF(&lexer->curr).fd_left = fd;
+                    if(lexer->curr.type & TOKEN_FDWRITE) goto l_fd_write; // check for append '>>' + right side fd
+                    else goto l_check_right_fd; // check for right side fd
                 }
             }
             return lexer->curr; // string
@@ -297,20 +322,13 @@ Token Lexer_next(Lexer* lexer)
     advance(lexer);
     lexer->curr.type = ttype;
     return lexer->curr;
-l_fd_right:
-    lexer->curr = Lexer_string(lexer);
-    if(!isspace(peek(lexer, 0))) goto l_err_fd_invalid;
-    fd = fd_right(TS(&lexer->curr));
-    if(BIGFD(fd)) goto l_err_fd_overflow;
-    if(BADFD(fd)) goto l_err_fd_invalid;
-    TF(&lexer->curr).fd_right = fd;
-    return lexer->curr;
 l_err_fd_overflow:
-    lexer->curr = Token_error(lexerrors[ERR_FDOVF], TS(&lexer->curr));
+    lexer->curr = Token_error(lexerrors[ERR_FDOVF], TS(&token));
     goto l_defer;
 l_err_fd_invalid:
-    lexer->curr = Token_error(lexerrors[ERR_FDINV], TS(&lexer->curr));
+    lexer->curr = Token_error(lexerrors[ERR_FDINV]);
 l_defer:
-    Buffer_free(&lexer->curr.u.contents, NULL);
+    Buffer_free(&TB(&token), NULL);
+    Buffer_free(&TB(&lexer->curr), NULL);
     return lexer->curr;
 }
