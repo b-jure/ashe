@@ -6,28 +6,29 @@
 
 #include <signal.h>
 #include <stdbool.h>
+#include <stdio.h>
 
-void sigwin_handler(__attribute__((unused)) int signum)
+void sigwin_handler(int signum)
 {
+    unused(signum);
     mask_signal(SIGCHLD, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
-    shell.sh_intr = true;
-    get_size_or_die(&terminal.tm_rows, &terminal.tm_columns);
+    ashe.sh_int = 1;
+    get_size_or_die(&ashe.sh_term.tm_rows, &ashe.sh_term.tm_columns);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
     mask_signal(SIGINT, SIG_UNBLOCK);
 }
 
-void sigint_handler(__attribute__((unused)) int signum)
+void sigint_handler(int signum)
 {
+    unused(signum);
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGCHLD, SIG_BLOCK);
-    shell.sh_intr = true;
-    ATOMIC_PRINT({
-        inbuff_goto_end(&inbuff);
-        fprintf(stderr, "\r\n");
-        pprompt();
-    });
-    inbuff_clear(&terminal.tm_inbuff);
+    ashe.sh_int = 1;
+    TerminalInput_gotoend(&ashe.sh_term.tm_input);
+    fprintf(stderr, "\r\n");
+    print_prompt();
+    TerminalInput_clear(&ashe.sh_term.tm_input);
     mask_signal(SIGWINCH, SIG_UNBLOCK);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
 }
@@ -36,11 +37,11 @@ void sigchld_handler(int signum)
 {
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
-    shell.sh_intr = true;
-    if(__glibc_unlikely(get_cursor_pos(NULL, &terminal.tm_col))) {
+    ashe.sh_int = true;
+    if(unlikely(get_cursor_pos(NULL, &ashe.sh_term.tm_col))) {
         exit(EXIT_FAILURE);
     } else {
-        joblist_update_and_notify(signum);
+        Joblist_update_and_notify(&ashe.sh_jlist, signum);
         mask_signal(SIGWINCH, SIG_UNBLOCK);
         mask_signal(SIGINT, SIG_UNBLOCK);
     }
@@ -55,9 +56,9 @@ void unblock_signals(void)
 
 void block_signals(void)
 {
-    mask_signal(SIGCHLD, SIG_UNBLOCK);
-    mask_signal(SIGINT, SIG_UNBLOCK);
-    mask_signal(SIGWINCH, SIG_UNBLOCK);
+    mask_signal(SIGCHLD, SIG_BLOCK);
+    mask_signal(SIGINT, SIG_BLOCK);
+    mask_signal(SIGWINCH, SIG_BLOCK);
 }
 
 void mask_signal(int signum, int how)
@@ -91,36 +92,30 @@ void setup_default_signal_handling(void)
     default_action.sa_handler = sigint_handler;
     default_action.sa_flags   = 0;
 
-    if(__glibc_unlikely(sigaction(SIGINT, &default_action, NULL) < 0)) {
-        ATOMIC_PRINT({
-            PW_SIGINITS("SIGINT");
-            die();
-        });
+    if(unlikely(sigaction(SIGINT, &default_action, NULL) < 0)) {
+        PW_SIGINITS("SIGINT");
+        die();
     }
 
     default_action.sa_handler = SIG_DFL;
 
-    if(__glibc_unlikely(sigaction(SIGCHLD, &default_action, NULL) < 0)) {
-        ATOMIC_PRINT({
-            PW_SIGINITS("SIGCHLD");
-            die();
-        });
+    if(unlikely(sigaction(SIGCHLD, &default_action, NULL) < 0)) {
+        PW_SIGINITS("SIGCHLD");
+        die();
     }
 
     default_action.sa_handler = SIG_IGN;
 
-    if(__glibc_unlikely(
+    if(unlikely(
            sigaction(SIGTTIN, &default_action, NULL) < 0 || sigaction(SIGTTOU, &default_action, NULL) < 0
            || sigaction(SIGTSTP, &default_action, NULL) < 0 || sigaction(SIGQUIT, &default_action, NULL) < 0))
     {
-        ATOMIC_PRINT({
-            PW_SIGINIT;
-            die();
-        });
+        PW_SIGINIT;
+        die();
     }
 }
 
 void try_wait_missed_sigchld_signals(void)
 {
-    joblist_update_and_notify(0);
+    Joblist_update_and_notify(&ashe.sh_jlist, 0);
 }

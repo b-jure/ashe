@@ -7,245 +7,245 @@
 #include "jobctl.h"
 #include "shell.h"
 
-#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
-#include <limits.h>
+#include <pwd.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
 
 #undef inbuff /* Don't need it here */
 
+
 /*------------------------- PROMPT ------------------------*/
+#if !defined(ASHE_PROMPT_LEN_MAX)
+#define ASHE_PROMPT_LEN_MAX ((ARG_MAX >> 4) ? (ARG_MAX >> 4) : 1024)
+#endif
 
-#define ASH_MAX_PLEN (ARG_MAX >> 2)
+#if !defined(ASHE_PROMPT)
+#define ASHE_PROMPT "$: "
+#endif
 
-size_t _prompt_len = 0;
+
+memmax _prompt_len = 0;
 #define PLEN terminal.tm_plen
 
-#define ASH_P_JOBS   bold(byellow("%ld"))
+#define ASH_P_JOBS bold(byellow("%ld"))
 #define ASH_P_PREFIX bold(bred("%s"))
-#define ASH_P_USER   bold(magenta("%s"))
-#define ASH_P_SEP    bold(cyan("%s"))
+#define ASH_P_USER bold(magenta("%s"))
+#define ASH_P_SEP bold(cyan("%s"))
 #define ASH_P_SYSTEM bold(bwhite("%s"))
 #define ASH_P_SUFFIX bwhite("%s")
 
-#define ASH_P_DEFAULT bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM) ASH_P_SUFFIX
-#define ASH_P_WJOBCOUNT \
-    bracketed(ASH_P_JOBS) bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM) ASH_P_SUFFIX
-
+#define ASH_P_DEFAULT                                                                              \
+    bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM) ASH_P_SUFFIX
+#define ASH_P_WJOBCOUNT                                                                            \
+    bracketed(ASH_P_JOBS) bracketed(ASH_P_PREFIX) bracketed(ASH_P_USER ASH_P_SEP ASH_P_SYSTEM)     \
+        ASH_P_SUFFIX
 /*---------------------------------------------------------*/
 
-#define CTRL_KEY(k) ((k) &0x1f)
-#define ESCAPE      27
-#define CR          0x0D
 
-#define CDIR_DOWN  1
-#define CDIR_UP    2
-#define CDIR_LEFT  4
+#define CTRL_KEY(k) ((k) & 0x1f)
+#define ESCAPE 27
+#define CR 0x0D
+
+#define CDIR_DOWN 1
+#define CDIR_UP 2
+#define CDIR_LEFT 4
 #define CDIR_RIGHT 8
-#define CDIR_ABSC  16
-#define CDIR_ABS   32
+#define CDIR_ABSC 16
+#define CDIR_ABS 32
 
 // TODO: remove this piece of crap maybe?
-#define redraw_terminal_cursor(CDIR, row, col)                                                              \
-    do {                                                                                                    \
-        switch(CDIR) {                                                                                      \
-            case CDIR_DOWN: write_or_die(mv_cur_down(row), sizeof(mv_cur_down(row))); break;                \
-            case CDIR_UP: write_or_die(mv_cur_up(row), sizeof(mv_cur_up(row))); break;                      \
-            case CDIR_LEFT: write_or_die(mv_cur_left(col), sizeof(mv_cur_left(col))); break;                \
-            case CDIR_RIGHT: write_or_die(mv_cur_right(col), sizeof(mv_cur_right(col))); break;             \
-            case(CDIR_UP | CDIR_LEFT):                                                                      \
-                write_or_die(mv_cur_up(row) mv_cur_left(col), sizeof(mv_cur_up(row) mv_cur_left(col)));     \
-                break;                                                                                      \
-            case(CDIR_UP | CDIR_RIGHT):                                                                     \
-                write_or_die(mv_cur_up(row) mv_cur_right(col), sizeof(mv_cur_up(row) mv_cur_right(col)));   \
-                break;                                                                                      \
-            case(CDIR_DOWN | CDIR_LEFT):                                                                    \
-                write_or_die(mv_cur_down(row) mv_cur_left(col), sizeof(mv_cur_down(row) mv_cur_left(col))); \
-                break;                                                                                      \
-            case(CDIR_DOWN | CDIR_RIGHT):                                                                   \
-                write_or_die(                                                                               \
-                    mv_cur_down(row) mv_cur_right(col), sizeof(mv_cur_down(row) mv_cur_right(col)));        \
-                break;                                                                                      \
-            case(CDIR_DOWN | CDIR_ABSC):                                                                    \
-                write_or_die(mv_cur_down(row) mv_cur_col(col), sizeof(mv_cur_down(row) mv_cur_col(col)));   \
-                break;                                                                                      \
-            case(CDIR_UP | CDIR_ABSC):                                                                      \
-                write_or_die(mv_cur_up(row) mv_cur_col(col), sizeof(mv_cur_up(row) mv_cur_col(col)));       \
-                break;                                                                                      \
-            case(CDIR_LEFT | CDIR_ABS):                                                                     \
-                write_or_die(mv_cur_pos(row, col), sizeof(mv_cur_pos(row, col)));                           \
-                break;                                                                                      \
-            default: break;                                                                                 \
-        }                                                                                                   \
+#define redraw_terminal_cursor(CDIR, row, col)                                                     \
+    do {                                                                                           \
+        switch(CDIR) {                                                                             \
+            case CDIR_DOWN: write_or_die(mv_cur_down(row), sizeof(mv_cur_down(row))); break;       \
+            case CDIR_UP: write_or_die(mv_cur_up(row), sizeof(mv_cur_up(row))); break;             \
+            case CDIR_LEFT: write_or_die(mv_cur_left(col), sizeof(mv_cur_left(col))); break;       \
+            case CDIR_RIGHT: write_or_die(mv_cur_right(col), sizeof(mv_cur_right(col))); break;    \
+            case(CDIR_UP | CDIR_LEFT):                                                             \
+                write_or_die(                                                                      \
+                    mv_cur_up(row) mv_cur_left(col),                                               \
+                    sizeof(mv_cur_up(row) mv_cur_left(col)));                                      \
+                break;                                                                             \
+            case(CDIR_UP | CDIR_RIGHT):                                                            \
+                write_or_die(                                                                      \
+                    mv_cur_up(row) mv_cur_right(col),                                              \
+                    sizeof(mv_cur_up(row) mv_cur_right(col)));                                     \
+                break;                                                                             \
+            case(CDIR_DOWN | CDIR_LEFT):                                                           \
+                write_or_die(                                                                      \
+                    mv_cur_down(row) mv_cur_left(col),                                             \
+                    sizeof(mv_cur_down(row) mv_cur_left(col)));                                    \
+                break;                                                                             \
+            case(CDIR_DOWN | CDIR_RIGHT):                                                          \
+                write_or_die(                                                                      \
+                    mv_cur_down(row) mv_cur_right(col),                                            \
+                    sizeof(mv_cur_down(row) mv_cur_right(col)));                                   \
+                break;                                                                             \
+            case(CDIR_DOWN | CDIR_ABSC):                                                           \
+                write_or_die(                                                                      \
+                    mv_cur_down(row) mv_cur_col(col),                                              \
+                    sizeof(mv_cur_down(row) mv_cur_col(col)));                                     \
+                break;                                                                             \
+            case(CDIR_UP | CDIR_ABSC):                                                             \
+                write_or_die(                                                                      \
+                    mv_cur_up(row) mv_cur_col(col),                                                \
+                    sizeof(mv_cur_up(row) mv_cur_col(col)));                                       \
+                break;                                                                             \
+            case(CDIR_LEFT | CDIR_ABS):                                                            \
+                write_or_die(mv_cur_pos(row, col), sizeof(mv_cur_pos(row, col)));                  \
+                break;                                                                             \
+            default: break;                                                                        \
+        }                                                                                          \
     } while(0)
 
 typedef enum {
     BACKSPACE = 127,
-    L_ARW     = 1000,
+    L_ARW = 1000,
     U_ARW,
     D_ARW,
     R_ARW,
     HOME_KEY,
     END_KEY,
     DEL_KEY
-} terminal_key;
+} termkeytag;
 
-typedef struct {
-    byte*  start;
-    size_t len;
-} row_t;
-
-#define IMPLEMENTED(c)  (c != ESCAPE)
+#define IMPLEMENTED(c) (c != ESCAPE)
 #define remainder(x, y) ((x) % (y))
 
 /* Placeholder indexes */
 #define PP_SYSNAME 0
 #define PP_USRNAME 1
-#define PP_JOBCNT  2
+#define PP_JOBCNT 2
 
-typedef uint16_t termkey_t;
+typedef int32 termkey;
 
-static size_t      inbuff_lenrel(inbuff_t* buffer);
-static bool        inbuff_cursor_right(inbuff_t* buffer);
-static bool        inbuff_cursor_left(inbuff_t* buffer);
-static bool        inbuff_cursor_up(inbuff_t* buffer);
-static bool        inbuff_cursor_down(inbuff_t* buffer);
-static void        inbuff_remove(inbuff_t* inbuff);
-static void        inbuff_insert(inbuff_t* inbuff, char c);
-static bool        inbuff_process_key(inbuff_t* buffer);
-static termkey_t   read_key();
-static void        inbuff_debug_print(inbuff_t* buffer);
-static void        expand_pp(string_t* str, byte* sysname, byte* username, uint32_t jobcount);
-static const byte* pp(uint ppn);
+static memmax inbuff_lenrel(InputBuffer* buffer);
+static ubyte inbuff_cursor_right(InputBuffer* buffer);
+static ubyte inbuff_cursor_left(InputBuffer* buffer);
+static ubyte inbuff_cursor_up(InputBuffer* buffer);
+static ubyte inbuff_cursor_down(InputBuffer* buffer);
+static void inbuff_remove(InputBuffer* inbuff);
+static void inbuff_insert(InputBuffer* inbuff, int32 c);
+static ubyte inbuff_process_key(InputBuffer* buffer);
+static termkey read_key();
+static void inbuff_debug_print(InputBuffer* buffer);
+static void expand_pp(string_t* str, char* sysname, char* username, uint32 jobcount);
 
-// TODO: Refactor all of the config file interactible code
-//       when the real interpreter gets implemented, this way
-//       lexing can be buffered and not limited by ARG_MAX constant.
+
+#define pp(ppn) pplaceholders[ppn]
+
+
 void pprompt(void)
 {
-    static string_t*      var = NULL;
-    static struct utsname system;
-    static byte           username[MAXNAME] = {0};
+    static char username[MAXNAME] = {0};
+    static char prompt[ASHE_PROMPT_LEN_MAX] = {0};
+    struct passwd pwd;
+    struct utsname system;
 
-    byte   prompt[ASH_MAX_PLEN] = {0};
-    size_t jobn                 = joblist_len(&shell.sh_jlist);
+    memmax jobn = joblist_len(&shell.sh_jlist);
 
-    if(!cs_check(cs_prompt)) {
-        cs_update(cs_prompt);
-
-        if(__glibc_unlikely(uname(&system) < 0)) {
-            PW_USERNAME;
-            die();
-        } else if(__glibc_unlikely(getlogin_r(username, MAXNAME) < 0)) {
-            PW_SYSNAME;
-            die();
-        }
-
-        int fd;
-        if((fd = config_open()) < 0) goto default_prompt;
-
-        string_drop(var);
-        var = config_getvar(fd, CV_PROMPT);
-
-        if(is_null(var)) goto default_prompt;
-        if(close(fd) < 0) die();
-
-        byte* str = string_slice(var, 0);
-        expand_vars(&str);
-        unescape(str);
-        expand_pp(var, system.sysname, username, jobn);
-
-        if(__glibc_unlikely(string_len(var) >= (ASH_MAX_PLEN - sizeof(hide_cur show_cur)))) {
-            pwarn(
-                "prompt length " red("%d") " exceeded maximum size of" blue("%d"),
-                string_len(var),
-                (ASH_MAX_PLEN - sizeof(hide_cur show_cur)));
-        }
-
-        terminal.tm_plen = len_without_seq(string_slice(var, 0));
-        terminal.tm_cfgp = true;
-        goto print_prompt;
-    } else if(terminal.tm_cfgp) {
-        goto print_prompt;
+    if(unlikely(uname(&system) < 0)) {
+        PW_USERNAME;
+        die();
+    } else if(unlikely(getlogin_r(username, MAXNAME) < 0)) {
+        PW_SYSNAME;
+        die();
     }
 
-default_prompt:
-    terminal.tm_cfgp = false;
-    if(jobn <= 0) {
-        sprintf(prompt, hide_cur ASH_P_DEFAULT show_cur, "ashe", username, "@", system.sysname, ": ");
-    } else {
-        sprintf(prompt, hide_cur ASH_P_WJOBCOUNT show_cur, jobn, "ashe", username, "@", system.sysname, ": ");
-    }
-    terminal.tm_plen = len_without_seq(prompt);
+    Buffer buffer;
+    Buffer_init(&buffer);
+    Buffer_push_str(&buffer, string_slice(var, 0));
+    expand_vars(&buffer);
+    unescape(str);
+    expand_pp(var, system.sysname, username, jobn);
 
-print_prompt:
-    fprintf(stderr, "\r\n" hide_cur "%s" show_cur, (terminal.tm_cfgp) ? string_ref(var) : prompt);
-    fflush(stderr);
+    if(unlikely(string_len(var) >= (ASH_MAX_PLEN - sizeof(hide_cur show_cur)))) {
+        print_warning(
+            "prompt length " red("%d") " exceeded maximum size of" blue("%d"),
+            string_len(var),
+            (ASH_MAX_PLEN - sizeof(hide_cur show_cur)));
+    }
+
+    terminal.tm_plen = len_without_seq(string_slice(var, 0));
+    terminal.tm_cfgp = true;
+    goto print_prompt;
+}
+
+default_prompt : terminal.tm_cfgp = false;
+if(jobn <= 0) {
+    sprintf(prompt, hide_cur ASH_P_DEFAULT show_cur, "ashe", username, "@", system.sysname, ": ");
+} else {
+    sprintf(
+        prompt,
+        hide_cur ASH_P_WJOBCOUNT show_cur,
+        jobn,
+        "ashe",
+        username,
+        "@",
+        system.sysname,
+        ": ");
+}
+terminal.tm_plen = len_without_seq(prompt);
+
+print_prompt
+    : fprintf(stderr, "\r\n" hide_cur "%s" show_cur, (terminal.tm_cfgp) ? string_ref(var) : prompt);
+fflush(stderr);
 }
 
 /* pp* - Prompt placeholders */
-static void expand_pp(string_t* str, byte* sysname, byte* username, uint32_t jobcount)
+static void expand_pp(string_t* str, char* sysname, char* username, uint32 jobcount)
 {
-    static const byte delimiter = '%';
+    static const int32 delimiter = '%';
 
-    byte*       base    = string_slice(str, 0);
-    byte*       ptr     = base;
-    byte*       start   = NULL;
-    byte*       end     = NULL;
+    char* base = string_slice(str, 0);
+    char* ptr = base;
+    char* start = NULL;
+    char* end = NULL;
     const byte* pholder = NULL;
 
     while((ptr = strchr(ptr, delimiter)) && !is_escaped(ptr, ptr - base)) {
         start = ptr;
-        end   = start + 1;
-        while(isalnum(*end)) end++;
-        byte cached = *end;
-        *end        = '\0';
+        end = start + 1;
+        while(isalnum(*end))
+            end++;
+        int32 cached = *end;
+        *end = '\0';
 
-        uint8_t  remove_count = 0;
-        uint32_t insert_count = 0;
+        memmax rmc = 0;
+        memmax addc = 0;
         if(strcmp(start, (pholder = pp(PP_SYSNAME))) == 0) {
-            *end         = cached;
-            remove_count = strlen(pholder);
-            insert_count = strlen(sysname);
-            string_splice(str, start - base, remove_count, sysname, insert_count);
+            *end = cached;
+            rmc = strlen(pholder);
+            addc = strlen(sysname);
+            string_splice(str, start - base, rmc, sysname, addc);
         } else if(strcmp(start, (pholder = pp(PP_USRNAME))) == 0) {
-            *end         = cached;
-            remove_count = strlen(pholder);
-            insert_count = strlen(username);
-            string_splice(str, start - base, remove_count, username, insert_count);
+            *end = cached;
+            rmc = strlen(pholder);
+            addc = strlen(username);
+            string_splice(str, start - base, rmc, username, addc);
         } else if(strcmp(start, (pholder = pp(PP_JOBCNT))) == 0) {
-            *end         = cached;
-            remove_count = strlen(pholder);
+            *end = cached;
+            rmc = strlen(pholder);
             byte jcount[UINT_DIGITS + 2];
-            insert_count = sprintf(jcount, "%u", jobcount);
-            string_splice(str, start - base, remove_count, jcount, insert_count);
+            addc = sprintf(jcount, "%u", jobcount);
+            string_splice(str, start - base, rmc, jcount, addc);
         } else {
             *end = cached;
         }
-        ptr = (remove_count > 0 ? ptr + insert_count : end);
+        ptr = (rmc > 0 ? ptr + addc : end);
     }
 }
 
-static const byte* pp(uint ppn)
-{
-    static const byte* pplaceholders[] = {
-        "%sysname",
-        "%username",
-        "%jobcount",
-    };
 
-    return pplaceholders[ppn];
-}
-
-void terminal_init(terminal_t* term)
+void terminal_init(Terminal* term)
 {
     get_size_or_die(&term->tm_rows, &term->tm_columns);
     memset(&term->tm_inbuff, 0, sizeof(term->tm_inbuff));
 
-    if(is_null(term->tm_inbuff.in_rows = vec_with_capacity(sizeof(row_t), 1))) {
+    if(is_null(term->tm_inbuff.in_rows = vec_new(sizeof(Row)))) {
         exit(EXIT_FAILURE);
     }
 
@@ -256,54 +256,34 @@ void terminal_init(terminal_t* term)
 
 void init_rawterm(struct termios* rawterm)
 {
-    tcgetattr(TERMINAL_FD, rawterm);
+    tcgetattr(STDIN_FILENO, rawterm);
     rawterm->c_iflag &= ~(BRKINT | INPCK | ISTRIP | IXON | ICRNL);
     rawterm->c_oflag &= ~(OPOST);
     rawterm->c_lflag &= ~(ECHO | ICANON | IEXTEN);
     rawterm->c_cflag |= (CS8);
-    rawterm->c_cc[VMIN]  = 1;
+    rawterm->c_cc[VMIN] = 1;
     rawterm->c_cc[VTIME] = 0;
 }
 
 void init_dflterm(struct termios* dflterm)
 {
-    tcgetattr(TERMINAL_FD, dflterm);
+    tcgetattr(STDIN_FILENO, dflterm);
 }
 
 void settmode(struct termios* tmode)
 {
-    if(__glibc_unlikely(tcsetattr(TERMINAL_FD, TCSAFLUSH, tmode) < 0)) {
+    if(unlikely(tcsetattr(STDIN_FILENO, TCSAFLUSH, tmode) < 0)) {
         die();
     }
 }
 
-int get_window_size(uint16_t* height, uint16_t* width)
+int get_cursor_pos(uint32* row, uint32* col)
 {
-    struct winsize ws;
-    if(__glibc_unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
-        return get_window_size_fallback(height, width);
-    } else {
-        if(is_some(height)) *height = ws.ws_row;
-        if(is_some(width)) *width = ws.ws_col;
-
-        return SUCCESS;
-    }
-}
-
-int get_window_size_fallback(uint16_t* height, uint16_t* width)
-{
-    size_t n = sizeof(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos);
-    write_or_die(sv_cur_pos mv_cur_right(999) mv_cur_down(999) req_cur_pos ld_cur_pos, n);
-    return get_cursor_pos(height, width);
-}
-
-int get_cursor_pos(uint16_t* row, uint16_t* col)
-{
-    byte     c;
-    size_t   i = 0;
-    int      nread;
-    uint16_t srow, scol;
-    byte     buf[32];
+    int32 c;
+    memmax i = 0;
+    int nread;
+    uint32 srow, scol;
+    char buf[32];
 
     write_or_die(req_cur_pos, sizeof(req_cur_pos));
 
@@ -313,11 +293,11 @@ int get_cursor_pos(uint16_t* row, uint16_t* col)
     }
 
     if(nread == -1) {
-        perr();
+        print_error();
         return FAILURE;
     }
 
-    sscanf(buf, "\033[%hu;%hu", &srow, &scol);
+    sscanf(buf, "\033[%u;%u", &srow, &scol);
 
     if(is_some(row)) *row = srow;
     if(is_some(col)) *col = scol;
@@ -325,68 +305,88 @@ int get_cursor_pos(uint16_t* row, uint16_t* col)
     return SUCCESS;
 }
 
-static void shift_rows_right(inbuff_t* inbuff, size_t start)
-{
-    vec_t* rows = inbuff->in_rows;
-    size_t len  = vec_len(rows);
 
-    for(size_t i = start; i < len; i++) {
-        ((row_t*) vec_index(rows, i))->start++;
+int get_window_size(uint32* height, uint32* width)
+{
+    struct winsize ws;
+    if(unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
+        return get_window_size_fallback(height, width);
+    } else {
+        if(is_some(height)) *height = ws.ws_row;
+        if(is_some(width)) *width = ws.ws_col;
+
+        return SUCCESS;
     }
 }
 
-static void shift_rows_left(inbuff_t* inbuff, size_t start)
+int get_window_size_fallback(uint32* height, uint32* width)
+{
+    memmax n = sizeof(sv_cur_pos mv_cur_right(99999) mv_cur_down(99999) req_cur_pos ld_cur_pos);
+    write_or_die(sv_cur_pos mv_cur_right(99999) mv_cur_down(99999) req_cur_pos ld_cur_pos, n);
+    return get_cursor_pos(height, width);
+}
+
+static void shift_rows_right(InputBuffer* inbuff, memmax start)
 {
     vec_t* rows = inbuff->in_rows;
-    size_t len  = vec_len(rows);
+    memmax len = vec_len(rows);
 
-    for(size_t i = start; i < len; i++) {
-        ((row_t*) vec_index(rows, i))->start--;
+    for(memmax i = start; i < len; i++) {
+        ((Row*)vec_index(rows, i))->start++;
     }
 }
-static size_t inbuff_lenrel(inbuff_t* buffer)
+
+static void shift_rows_left(InputBuffer* inbuff, memmax start)
 {
-    size_t len  = 0;
+    vec_t* rows = inbuff->in_rows;
+    memmax len = vec_len(rows);
+
+    for(memmax i = start; i < len; i++) {
+        ((Row*)vec_index(rows, i))->start--;
+    }
+}
+static memmax inbuff_lenrel(InputBuffer* buffer)
+{
+    memmax len = 0;
     vec_t* rows = buffer->in_rows;
-    row_t* row;
+    Row* row;
 
-    for(size_t i = 0; i < buffer->in_cur.cr_row; i++) {
+    for(memmax i = 0; i < buffer->in_cur.cr_row; i++) {
         row = vec_index(rows, i);
         len += row->len;
     }
 
     len += buffer->in_cur.cr_col;
-
     return len;
 }
 
-static row_t* inbuff_row_current(inbuff_t* buffer)
+
+static finline Row* inbuff_row_current(InputBuffer* buffer)
 {
     return vec_index(buffer->in_rows, buffer->in_cur.cr_row);
 }
 
-static bool inbuff_cr(inbuff_t* buffer)
+static ubyte inbuff_cr(InputBuffer* buffer)
 {
-    cursor_t* cursor      = &buffer->in_cur;
-    uint16_t  old_row_idx = cursor->cr_row;
-    vec_t*    rows        = buffer->in_rows;
-    row_t*    old_row     = vec_index(rows, old_row_idx);
+    Cursor* cursor = &buffer->in_cur;
+    vec_t* rows = buffer->in_rows;
+    Row* old_row = vec_index(rows, cursor->cr_row);
 
-    if(is_escaped(old_row->start, cursor->cr_col) || in_dq(buffer->in_buffer, inbuff_lenrel(buffer))) {
+    if(is_escaped(old_row->start, cursor->cr_col) ||
+       in_dq(buffer->in_buffer, inbuff_lenrel(buffer)))
+    {
         inbuff_insert(buffer, '\n');
 
-        row_t new_row = {
+        Row new_row = {
             .start = old_row->start + cursor->cr_col,
-            .len   = old_row->len - cursor->cr_col,
+            .len = old_row->len - cursor->cr_col,
         };
 
         old_row->len = cursor->cr_col;
 
         terminal.tm_col = 1;
-        cursor->cr_col  = 0;
-        cursor->cr_row++;
-
-        vec_insert(rows, &new_row, old_row_idx + 1);
+        cursor->cr_col = 0;
+        vec_insert(rows, &new_row, ++cursor->cr_row);
 
         return false;
     } else {
@@ -394,23 +394,23 @@ static bool inbuff_cr(inbuff_t* buffer)
     }
 }
 
-static void inbuff_insert(inbuff_t* buffer, char c)
+static void inbuff_insert(InputBuffer* buffer, int32 c)
 {
-    if(buffer->in_len < MAXLINE - 1) {
-        uint16_t  maxcol = terminal.tm_columns;
-        cursor_t* cursor = &buffer->in_cur;
-        row_t*    row    = inbuff_row_current(buffer);
-        size_t    lenrel = inbuff_lenrel(buffer);
-        size_t    n      = buffer->in_len - lenrel;
-        byte*     src    = row->start + cursor->cr_col;
+    if(buffer->in_len < ARG_MAX - 1) {
+        uint32 maxcol = terminal.tm_columns;
+        Cursor* cursor = &buffer->in_cur;
+        Row* row = inbuff_row_current(buffer);
+        memmax lenrel = inbuff_lenrel(buffer);
+        memmax n = buffer->in_len - lenrel;
+        byte* src = row->start + cursor->cr_col;
 
         memmove(src + 1, src, n);
         *src = c;
         shift_rows_right(buffer, cursor->cr_row + 1);
         row->len++;
 
-        size_t cap = n + sizeof("\r\n" clrlneol clrscrd) + 10;
-        byte   buff[cap];
+        memmax cap = n + sizeof("\r\n" clrlneol clrscrd) + 10;
+        byte buff[cap];
         buff[0] = '\0';
 
         strcat(buff, clrlneol clrscrd);
@@ -443,18 +443,18 @@ static void inbuff_insert(inbuff_t* buffer, char c)
     }
 }
 
-static void inbuff_remove(inbuff_t* buffer)
+static void inbuff_remove(InputBuffer* buffer)
 {
-    cursor_t* cursor = &buffer->in_cur;
+    Cursor* cursor = &buffer->in_cur;
 
     if(cursor->cr_col > 0 || cursor->cr_row > 0) {
-        vec_t* rows     = buffer->in_rows;
-        row_t* row      = vec_index(rows, cursor->cr_row);
-        bool   coalesce = false;
+        vec_t* rows = buffer->in_rows;
+        Row* row = vec_index(rows, cursor->cr_row);
+        ubyte coalesce = false;
 
-        size_t lenrel = inbuff_lenrel(buffer);
-        size_t n      = buffer->in_len - lenrel;
-        byte*  src    = row->start + cursor->cr_col;
+        memmax lenrel = inbuff_lenrel(buffer);
+        memmax n = buffer->in_len - lenrel;
+        byte* src = row->start + cursor->cr_col;
         memmove(src - 1, src, n);
         shift_rows_left(buffer, cursor->cr_row + 1);
         row->len--;
@@ -474,16 +474,16 @@ static void inbuff_remove(inbuff_t* buffer)
 
         if(coalesce) {
             /* Coalesce the previous row */
-            size_t len = row->len;
-            row        = vec_index(rows, cursor->cr_row);
+            memmax len = row->len;
+            row = vec_index(rows, cursor->cr_row);
             row->len += len;
             /* Remove the coalesced row */
             vec_remove(rows, cursor->cr_row + 1, NULL);
         }
 
         /* Clear everything infront and below the cursor */
-        size_t cap = sizeof(clrscrd clrlneol sv_cur_pos ld_cur_pos) + n + sizeof(byte);
-        byte   buff[cap];
+        memmax cap = sizeof(clrscrd clrlneol sv_cur_pos ld_cur_pos) + n + sizeof(byte);
+        byte buff[cap];
         buff[0] = '\0';
 
         terminal.tm_rawterm.c_oflag |= (OPOST);
@@ -494,7 +494,7 @@ static void inbuff_remove(inbuff_t* buffer)
             sprintf(
                 buff,
                 clrlneol clrscrd sv_cur_pos "%.*s" ld_cur_pos,
-                (int32_t) n,
+                (int32_t)n,
                 row->start + cursor->cr_col));
 
         terminal.tm_rawterm.c_oflag &= ~(OPOST);
@@ -502,41 +502,41 @@ static void inbuff_remove(inbuff_t* buffer)
     }
 }
 
-void inbuff_redraw(inbuff_t* buffer)
+void inbuff_redraw(InputBuffer* buffer)
 {
-    cursor_t* cursor = &buffer->in_cur;
-    vec_t*    rows   = buffer->in_rows;
-    size_t    ridx   = vec_len(rows) - 1;
-    size_t    up     = 0;
-    int64_t   temp;
+    Cursor* cursor = &buffer->in_cur;
+    vec_t* rows = buffer->in_rows;
+    memmax ridx = vec_len(rows) - 1;
+    memmax up = 0;
+    int64_t temp;
 
-    row_t* row = vec_index(rows, ridx);
+    Row* row = vec_index(rows, ridx);
     /* Move up until we find the current row */
     for(; ridx != cursor->cr_row; row = vec_index(rows, --ridx)) {
         up++;
         temp = row->len - 1;
         /* Make sure we compensate for multiple terminal
          * rows in a single buffer row */
-        while(temp >= (int32_t) terminal.tm_columns) {
+        while(temp >= (int32_t)terminal.tm_columns) {
             up++;
             temp -= terminal.tm_columns;
         }
     }
 
-    bool   first_row  = cursor->cr_row == 0;
-    size_t cursor_col = cursor->cr_col + ((first_row) ? PLEN : 0);
-    size_t row_len    = row->len + ((first_row) ? PLEN : 0);
+    ubyte first_row = cursor->cr_row == 0;
+    memmax cursor_col = cursor->cr_col + ((first_row) ? PLEN : 0);
+    memmax row_len = row->len + ((first_row) ? PLEN : 0);
     /* Find the correct terminal row in the current buffer row */
     up = up + (((row_len - 1) / terminal.tm_columns) - (cursor_col / terminal.tm_columns));
 
     /* Initialize the buffer */
-    size_t cap = sizeof(hide_cur show_cur mv_cur_up() mv_cur_col() "++") + (2 * UINT_DIGITS) + buffer->in_len
-                 + sizeof(byte);
-    byte  buff[cap + 10];
+    memmax cap = sizeof(hide_cur show_cur mv_cur_up() mv_cur_col() "++") + (2 * UINT_DIGITS) +
+                 buffer->in_len + sizeof(byte);
+    byte buff[cap + 10];
     byte* target = buff;
-    buff[0]      = '\0';
+    buff[0] = '\0';
 
-    target += sprintf(target, "%s%.*s", hide_cur, (int32_t) buffer->in_len, buffer->in_buffer);
+    target += sprintf(target, "%s%.*s", hide_cur, (int32_t)buffer->in_len, buffer->in_buffer);
     if(up > 0) target += sprintf(target, "%s%luA", CSI, up);
     target += sprintf(target, CSI "%uG" show_cur, terminal.tm_col);
 
@@ -549,30 +549,30 @@ void inbuff_redraw(inbuff_t* buffer)
     settmode(&terminal.tm_rawterm);
 }
 
-void inbuff_clear(inbuff_t* buffer)
+void inbuff_clear(InputBuffer* buffer)
 {
     vec_clear_capacity(buffer->in_rows, NULL);
 
-    if(__glibc_unlikely(!vec_push(
+    if(unlikely(!vec_push(
            buffer->in_rows,
-           &(row_t){
-               .len   = 0,
+           &(Row){
+               .len = 0,
                .start = buffer->in_buffer,
            })))
     {
         exit(EXIT_FAILURE);
     }
 
-    buffer->in_len        = 0;
+    buffer->in_len = 0;
     buffer->in_cur.cr_col = 0;
     buffer->in_cur.cr_row = 0;
 }
 
-static bool inbuff_cursor_left(inbuff_t* buffer)
+static ubyte inbuff_cursor_left(InputBuffer* buffer)
 {
-    cursor_t* cursor = &buffer->in_cur;
-    uint16_t  maxcol = terminal.tm_columns;
-    byte      buff[sizeof(CSI CSI "ADG+") + (2 * UINT_DIGITS)];
+    Cursor* cursor = &buffer->in_cur;
+    uint32 maxcol = terminal.tm_columns;
+    byte buff[sizeof(CSI CSI "ADG+") + (2 * UINT_DIGITS)];
     buff[0] = '\0';
 
     if(cursor->cr_col > 0) {
@@ -588,7 +588,7 @@ static bool inbuff_cursor_left(inbuff_t* buffer)
 
         return true;
     } else if(cursor->cr_row > 0) {
-        row_t* row     = vec_index(buffer->in_rows, --cursor->cr_row);
+        Row* row = vec_index(buffer->in_rows, --cursor->cr_row);
         cursor->cr_col = row->len - 1;
 
         if(cursor->cr_row == 0) {
@@ -604,13 +604,13 @@ static bool inbuff_cursor_left(inbuff_t* buffer)
     return false;
 } // OK
 
-static bool inbuff_cursor_right(inbuff_t* buffer)
+static ubyte inbuff_cursor_right(InputBuffer* buffer)
 {
-    cursor_t* cursor   = &buffer->in_cur;
-    row_t*    row      = vec_index(buffer->in_rows, cursor->cr_row);
-    size_t    nrow     = vec_len(buffer->in_rows);
-    uint16_t  maxcol   = terminal.tm_columns;
-    bool      last_row = cursor->cr_row == nrow - 1;
+    Cursor* cursor = &buffer->in_cur;
+    Row* row = vec_index(buffer->in_rows, cursor->cr_row);
+    memmax nrow = vec_len(buffer->in_rows);
+    uint32 maxcol = terminal.tm_columns;
+    ubyte last_row = cursor->cr_row == nrow - 1;
 
     if(cursor->cr_col < row->len - ((last_row) ? 0 : 1)) {
         ++cursor->cr_col;
@@ -625,8 +625,8 @@ static bool inbuff_cursor_right(inbuff_t* buffer)
 
         return true;
     } else if(nrow > 0 && cursor->cr_row < (nrow - 1)) {
-        row             = vec_index(buffer->in_rows, ++cursor->cr_row);
-        cursor->cr_col  = 0;
+        row = vec_index(buffer->in_rows, ++cursor->cr_row);
+        cursor->cr_col = 0;
         terminal.tm_col = 1;
         redraw_terminal_cursor(CDIR_DOWN | CDIR_ABSC, 1, 1);
 
@@ -636,14 +636,14 @@ static bool inbuff_cursor_right(inbuff_t* buffer)
     return false;
 } // OK
 
-static bool inbuff_cursor_up(inbuff_t* buffer)
+static ubyte inbuff_cursor_up(InputBuffer* buffer)
 {
-    uint16_t  maxcol = terminal.tm_columns;
-    uint16_t  last_terminal_column_up;
-    vec_t*    rows = buffer->in_rows;
-    row_t*    row;
-    cursor_t* cursor = &buffer->in_cur;
-    bool      redraw = false;
+    uint32 maxcol = terminal.tm_columns;
+    uint32 last_terminal_column_up;
+    vec_t* rows = buffer->in_rows;
+    Row* row;
+    Cursor* cursor = &buffer->in_cur;
+    ubyte redraw = false;
 
     /* ------------------------------
      * If this is not the prompt row
@@ -662,9 +662,9 @@ static bool inbuff_cursor_up(inbuff_t* buffer)
          * -------------------------------------------------- */
         else
         {
-            row              = vec_index(rows, --cursor->cr_row);
-            bool   first_row = cursor->cr_row == 0;
-            size_t row_len   = row->len + ((first_row) ? PLEN : 0);
+            row = vec_index(rows, --cursor->cr_row);
+            ubyte first_row = cursor->cr_row == 0;
+            memmax row_len = row->len + (first_row * PLEN);
 
             /* --------------------------------------
              * If row contains multiple terminal rows
@@ -675,7 +675,7 @@ static bool inbuff_cursor_up(inbuff_t* buffer)
                 if(last_terminal_column_up - 1 >= cursor->cr_col) {
                     cursor->cr_col = cursor->cr_col + (row->len - last_terminal_column_up);
                 } else {
-                    cursor->cr_col  = row_len - 1;
+                    cursor->cr_col = row_len - 1;
                     terminal.tm_col = last_terminal_column_up;
                 }
                 redraw = true;
@@ -686,18 +686,19 @@ static bool inbuff_cursor_up(inbuff_t* buffer)
             else
             {
                 if(first_row) {
-                    if(cursor->cr_col <= PLEN) {
-                        cursor->cr_col  = 0;
+                    if(cursor->cr_col <= row_len - 1) {
+                        cursor->cr_col = 0;
                         terminal.tm_col = PLEN + 1;
                     } else {
-                        cursor->cr_col -= PLEN;
+                        cursor->cr_col = row_len - (PLEN + 1);
+                        terminal.tm_col = row_len;
                     }
                 } else {
                     if(row->len == 0) {
-                        cursor->cr_col  = 0;
+                        cursor->cr_col = 0;
                         terminal.tm_col = 1;
                     } else if(cursor->cr_col >= row->len - 1) {
-                        cursor->cr_col  = row->len - 1;
+                        cursor->cr_col = row->len - 1;
                         terminal.tm_col = row->len;
                     }
                 }
@@ -714,7 +715,7 @@ static bool inbuff_cursor_up(inbuff_t* buffer)
     {
         if(cursor->cr_col + PLEN - maxcol < maxcol) {
             if(remainder((PLEN + cursor->cr_col), maxcol) < PLEN) {
-                cursor->cr_col  = 0;
+                cursor->cr_col = 0;
                 terminal.tm_col = PLEN + 1;
             } else {
                 cursor->cr_col -= maxcol;
@@ -734,16 +735,16 @@ static bool inbuff_cursor_up(inbuff_t* buffer)
     return redraw;
 } // OK
 
-static bool inbuff_cursor_down(inbuff_t* buffer)
+static ubyte inbuff_cursor_down(InputBuffer* buffer)
 {
-    uint16_t  maxcol         = terminal.tm_columns;
-    vec_t*    rows           = buffer->in_rows;
-    cursor_t* cursor         = &buffer->in_cur;
-    uint16_t  last_row       = vec_len(rows) - 1;
-    row_t*    row            = vec_index(rows, cursor->cr_row);
-    size_t    prompt_row_len = row->len + PLEN;
-    size_t    prompt_cur_col = cursor->cr_col + PLEN;
-    bool      redraw         = false;
+    uint32 maxcol = terminal.tm_columns;
+    vec_t* rows = buffer->in_rows;
+    Cursor* cursor = &buffer->in_cur;
+    uint32 last_row = vec_len(rows) - 1;
+    Row* row = vec_index(rows, cursor->cr_row);
+    memmax prompt_row_len = row->len + PLEN;
+    memmax prompt_cur_col = cursor->cr_col + PLEN;
+    ubyte redraw = false;
 
     /* -------------------------------
      * If this is not the prompt row
@@ -757,7 +758,7 @@ static bool inbuff_cursor_down(inbuff_t* buffer)
             if(row->len - 1 - maxcol >= cursor->cr_col) {
                 cursor->cr_col += maxcol;
             } else {
-                cursor->cr_col  = row->len - 1;
+                cursor->cr_col = row->len - 1;
                 terminal.tm_col = remainder(row->len - 1, maxcol) + 1;
             }
 
@@ -769,14 +770,14 @@ static bool inbuff_cursor_down(inbuff_t* buffer)
         else if(cursor->cr_row < last_row)
         {
             row = vec_index(rows, ++cursor->cr_row);
-            uint16_t col_modulo;
+            uint32 col_modulo;
 
             if(row->len >= maxcol) {
                 cursor->cr_col = remainder(cursor->cr_col, maxcol);
             } else if(row->len >= (col_modulo = remainder(cursor->cr_col, maxcol))) {
                 cursor->cr_col = col_modulo;
             } else {
-                cursor->cr_col  = row->len - 1;
+                cursor->cr_col = row->len - 1;
                 terminal.tm_col = row->len;
             }
 
@@ -786,14 +787,16 @@ static bool inbuff_cursor_down(inbuff_t* buffer)
     /* --------------------------------------------------------
      * If this is prompt row and it has multiple terminal rows.
      * -------------------------------------------------------- */
-    else if(prompt_row_len > prompt_cur_col && (prompt_cur_col / maxcol) < ((prompt_row_len - 1) / maxcol))
+    else if(
+        prompt_row_len > prompt_cur_col &&
+        (prompt_cur_col / maxcol) < ((prompt_row_len - 1) / maxcol))
     {
-        if(prompt_row_len - 1 - maxcol >= prompt_cur_col
-           || remainder(prompt_row_len - 1, maxcol) >= remainder(prompt_cur_col, maxcol))
+        if(prompt_row_len - 1 - maxcol >= prompt_cur_col ||
+           remainder(prompt_row_len - 1, maxcol) >= remainder(prompt_cur_col, maxcol))
         {
             cursor->cr_col += maxcol;
         } else {
-            cursor->cr_col  = row->len - 1;
+            cursor->cr_col = row->len - 1;
             terminal.tm_col = remainder(prompt_row_len - 1, maxcol) + 1;
         }
         redraw = true;
@@ -805,13 +808,13 @@ static bool inbuff_cursor_down(inbuff_t* buffer)
     {
         row = vec_index(rows, ++cursor->cr_row);
 
-        if(__glibc_unlikely(row->len == 0)) {
-            cursor->cr_col  = 0;
+        if(unlikely(row->len == 0)) {
+            cursor->cr_col = 0;
             terminal.tm_col = 1;
         } else if(row->len >= maxcol || row->len - 1 >= remainder(prompt_cur_col, maxcol)) {
             cursor->cr_col = remainder(prompt_cur_col, maxcol);
         } else {
-            cursor->cr_col  = row->len - 1;
+            cursor->cr_col = row->len - 1;
             terminal.tm_col = row->len;
         }
 
@@ -827,23 +830,25 @@ static bool inbuff_cursor_down(inbuff_t* buffer)
     return redraw;
 }
 
-void goto_eol(inbuff_t* buffer)
+void goto_eol(InputBuffer* buffer)
 {
-    cursor_t* cursor         = &buffer->in_cur;
-    uint16_t  maxcol         = terminal.tm_columns;
-    uint16_t  current_row    = cursor->cr_row;
-    uint16_t  current_column = cursor->cr_col + ((current_row == 0) ? PLEN : 0);
-    row_t*    row            = vec_index(buffer->in_rows, current_row);
-    size_t    row_len        = row->len + ((current_row == 0) ? PLEN : 0);
+    Cursor* cursor = &buffer->in_cur;
+    uint32 maxcol = terminal.tm_columns;
+    uint32 current_row = cursor->cr_row;
+    uint32 current_column = cursor->cr_col + ((current_row == 0) ? PLEN : 0);
+    Row* row = vec_index(buffer->in_rows, current_row);
+    memmax row_len = row->len + ((current_row == 0) ? PLEN : 0);
 
-    if(row->len > 0 && (remainder(current_column, maxcol) != maxcol - 1 || cursor->cr_col != row->len - 1)) {
+    if(row->len > 0 &&
+       (remainder(current_column, maxcol) != maxcol - 1 || cursor->cr_col != row->len - 1))
+    {
 
         if((current_column / maxcol) < ((row_len - 1) / maxcol)) {
             terminal.tm_col = maxcol;
             cursor->cr_col += (maxcol - 1 - remainder(current_column, maxcol));
         } else {
             terminal.tm_col = row_len % maxcol;
-            cursor->cr_col  = row->len - 1;
+            cursor->cr_col = row->len - 1;
         }
 
         byte out[sizeof(mv_cur_col() "+") + UINT_DIGITS];
@@ -852,16 +857,16 @@ void goto_eol(inbuff_t* buffer)
     }
 }
 
-void goto_home(inbuff_t* buffer)
+void goto_home(InputBuffer* buffer)
 {
-    cursor_t* cursor         = &buffer->in_cur;
-    uint16_t  maxcol         = terminal.tm_columns;
-    uint16_t  current_row    = cursor->cr_row;
-    uint16_t  current_column = cursor->cr_col + ((current_row == 0) ? PLEN : 0);
+    Cursor* cursor = &buffer->in_cur;
+    uint32 maxcol = terminal.tm_columns;
+    uint32 current_row = cursor->cr_row;
+    uint32 current_column = cursor->cr_col + ((current_row == 0) ? PLEN : 0);
 
     if(current_column % maxcol != 0) {
         if(current_column < maxcol) {
-            cursor->cr_col  = 0;
+            cursor->cr_col = 0;
             terminal.tm_col = ((cursor->cr_row == 0) ? PLEN : 0) + 1;
         } else {
             cursor->cr_col -= remainder(current_column, maxcol);
@@ -874,17 +879,17 @@ void goto_home(inbuff_t* buffer)
     }
 }
 
-static void clear_screen(inbuff_t* buffer)
+static void clear_screen(InputBuffer* buffer)
 {
     write_or_die(hide_cur mv_cur_home clrscr, sizeof(hide_cur clrscr mv_cur_home));
     pprompt();
     inbuff_redraw(buffer);
 }
 
-static termkey_t read_key(void)
+static termkey read_key(void)
 {
-    int  nread;
-    byte c;
+    int nread;
+    int32 c;
 
     while((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if(nread == -1 && (errno != EINTR && !shell.sh_intr)) {
@@ -900,7 +905,7 @@ static termkey_t read_key(void)
     mask_signal(SIGWINCH, SIG_BLOCK);
 
     if(c == ESCAPE) {
-        byte seq[3];
+        ubyte seq[3];
 
         if(read(STDIN_FILENO, &seq[0], 1) != 1) return ESCAPE;
         if(read(STDIN_FILENO, &seq[1], 1) != 1) return ESCAPE;
@@ -943,48 +948,9 @@ static termkey_t read_key(void)
     }
 }
 
-__attribute__((unused)) static void inbuff_debug_print(inbuff_t* buffer)
+static ubyte inbuff_process_key(InputBuffer* buffer)
 {
-    static const size_t buffsize = 100000;
-    static size_t       logn     = 1;
-
-    cursor_t* cursor = &buffer->in_cur;
-    vec_t*    rows   = buffer->in_rows;
-    size_t    len    = vec_len(rows);
-    row_t*    row;
-
-    int fd = open("ashelog", O_CREAT | O_RDWR | O_APPEND, S_IRWXU);
-
-    if(fd < 0) {
-        fprintf(stderr, "failed creating log file\n");
-        die();
-    }
-
-    byte  dbgbuff[buffsize];
-    byte* target = dbgbuff;
-    dbgbuff[0]   = '\0';
-
-    target += sprintf(target, "\n=====LOG %ld=====\n", logn++);
-    target += sprintf(target, "ROWS: %ld\n", len);
-    for(size_t i = 0; i < len; i++) {
-        row = vec_index(rows, i);
-        target += sprintf(
-            target, "ROW: '%.*s', LEN: %d\n", (int32_t) row->len - 1, row->start, (int32_t) row->len);
-    }
-    target += sprintf(target, "Cursor -> row: %u, column: %u\n", cursor->cr_row, cursor->cr_col);
-    target += sprintf(target, "\n");
-
-    if(write(fd, dbgbuff, target - dbgbuff) < 0) {
-        fprintf(stderr, "failed writing to log file\n");
-        die();
-    }
-
-    close(fd);
-}
-
-static bool inbuff_process_key(inbuff_t* buffer)
-{
-    termkey_t c;
+    termkey c;
 
     c = read_key();
 
@@ -1015,14 +981,14 @@ static bool inbuff_process_key(inbuff_t* buffer)
     return true;
 }
 
-void inbuff_goto_end(inbuff_t* buffer)
+void inbuff_goto_end(InputBuffer* buffer)
 {
     while(inbuff_cursor_down(buffer))
         ;
     goto_eol(buffer);
 }
 
-void read_input(inbuff_t* buffer)
+void read_input(InputBuffer* buffer)
 {
     /* Set reading flag in case we get interrupted */
     terminal.tm_reading = true;

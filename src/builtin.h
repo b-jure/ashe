@@ -1,11 +1,9 @@
-#ifndef __ASH_BUILTIN_H__
-#define __ASH_BUILTIN_H__
+#ifndef ABUILTIN_H
+#define ABUILTIN_H
 
-#include "ashe_utils.h"
+#include "acommon.h"
 
-#include <sys/types.h>
-
-int run_builtin(const byte *command, byte *const *argv, bool shell);
-bool is_builtin(const byte *command);
+int run_builtin(const char *command, char *const *argv, ubyte shell);
+ubyte is_builtin(const char *command);
 
 #endif

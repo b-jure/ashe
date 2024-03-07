@@ -1,34 +1,65 @@
-#ifndef __AN_PARSER_H__
-#define __AN_PARSER_H__
+#ifndef APARSER_H
+#define APARSER_H
 
-#include "cmdline.h"
-#include <stddef.h>
+#include "acommon.h"
+#include "aarray.h"
+#include "lexer.h"
+#include "shell.h"
+#include "token.h"
 
-int parse_commandline(const byte *line, commandline_t *out);
 
-typedef struct {
-  vec_t *pipelines;   /* collection of pipelines */
-  bool is_background; /* proccess is run in foreground otherwise background */
-} conditional_t;
 
-void conditional_drop(conditional_t *cond);
 
-typedef struct {
-  vec_t *argv; /* Command name and arguments */
-  vec_t *env;  /* Program environmental variables */
-} command_t;
+/* Array of 'Buffer's */
+ARRAY_NEW(ArrayBuffer, Buffer);
 
 typedef struct {
-  vec_t *commands;
-  int connection; /* Pipeline is connected with '&&' */
-} pipeline_t;
+    int32 fd_left;
+    int32 fd_right;
+    ubyte read;
+    ubyte append;
+    Buffer file;
+} Redirection;
 
-#define ASH_AND 1
-#define ASH_OR 2
-#define ASH_NONE 4
+/* Array of 'Redirection's */
+ARRAY_NEW(ArrayRedirection, Redirection);
 
-#define IS_AND(connection) ((connection) == ASH_AND)
-#define IS_OR(connection) ((connection) == ASH_OR)
-#define IS_NONE(connection) ((connection) == ASH_NONE)
+typedef struct {
+    ArrayBuffer argv; /* command name and arguments */
+    ArrayBuffer env; /* environmental variables */
+    ArrayRedirection rds; /* redirections */
+} Command;
+
+
+
+
+
+/* Array of 'Command's */
+ARRAY_NEW(ArrayCommand, Command);
+typedef struct {
+    ArrayCommand commands;
+    Connection connection; /* '&&', '||' or none */
+} Pipeline;
+
+
+
+
+
+/* Array of 'Pipeline's */
+ARRAY_NEW(ArrayPipeline, Pipeline);
+typedef struct {
+    ArrayPipeline pipelines; /* collection of pipelines */
+    ubyte is_background; /* is process being run in background ? */
+} Conditional;
+
+
+
+
+/* Array of 'Conditional's */
+ARRAY_NEW(ArrayConditional, Conditional);
+
+/* Parse command line and store AST as array of 'Conditional's. */
+int32 parse(ArrayConditional* conds);
+
 
 #endif

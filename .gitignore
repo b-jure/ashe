@@ -3,6 +3,7 @@
 *.d
 build
 .vim_undo
+qemu.txt
 
 # Object files
 *.o

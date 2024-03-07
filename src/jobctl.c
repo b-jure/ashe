@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-#include "async.h"
 #include "errors.h"
 #include "input.h"
 #include "jobctl.h"
@@ -26,52 +24,37 @@
         sigabbrev_np(status),                                                                  \
         ((polite) ? " (" italic("polite") ")" : ""))
 
-static size_t joblist_id(joblist_t* joblist);
-static job_t* joblist_get_job(joblist_t* joblist, bool foreground);
-static job_t* joblist_get_pid(joblist_t* joblist, pid_t pid, bool foreground);
-static job_t* joblist_get_id(joblist_t* joblist, size_t id, bool foreground);
-static bool   job_contains_pid(job_t* job, pid_t pid);
-static bool   update_process(joblist_t* joblist, pid_t pid, int status);
-static void   process_format(process_t* p, byte* fmt, ...);
-static void   process_drop(process_t* process);
-static int    job_wait(job_t* job);
-static void   job_kill_and_harvest(job_t* job);
 
-joblist_t joblist_init(void)
+
+void Joblist_init(Joblist* joblist)
 {
-    return (joblist_t){
-        .jobs    = vec_new(sizeof(job_t)),
-        .next_id = 1,
-    };
+    ArrayJob_init(&joblist->jobs);
 }
 
-static size_t joblist_id(joblist_t* joblist)
+static memmax Joblist_id(Joblist* joblist)
 {
-    if(joblist_len(joblist) == 0) joblist->next_id = 1;
-    return joblist->next_id++;
+    static int32 id = 1;
+    if(joblist->jobs.len == 0) id = 1;
+    return id++;
 }
 
-bool joblist_push(joblist_t* joblist, job_t* job)
+ubyte joblist_push(Joblist* joblist, Job* job)
 {
-    job->id = joblist_id(joblist);
-    return vec_push(joblist->jobs, job);
+    job->id = Joblist_id(joblist);
+    return ArrayJob_push(&joblist->jobs, *job);
 }
 
-job_t* joblist_at(joblist_t* joblist, size_t i)
+static finline void joblist_remove(Joblist* joblist, memmax i)
 {
-    return vec_index(joblist->jobs, i);
+    Job job = ArrayJob_remove(&joblist->jobs, i);
+    Job_free(&job);
 }
 
-void joblist_remove(joblist_t* joblist, size_t i)
+ubyte joblist_remove_job(Joblist* joblist, Job* job)
 {
-    vec_remove(joblist->jobs, i, (FreeFn) job_drop);
-}
-
-bool joblist_remove_job(joblist_t* joblist, job_t* job)
-{
-    size_t len = joblist_len(joblist);
-    for(size_t i = 0; i < len; i++) {
-        if(joblist_at(joblist, i)->id == job->id) {
+    memmax len = joblist_len(joblist);
+    for(memmax i = 0; i < len; i++) {
+        if(Joblist_get_job(joblist, i)->id == job->id) {
             joblist_remove(joblist, i);
             return true;
         }
@@ -79,76 +62,50 @@ bool joblist_remove_job(joblist_t* joblist, job_t* job)
     return false;
 }
 
-size_t joblist_len(joblist_t* jlist)
+memmax joblist_len(Joblist* jlist)
 {
     return vec_len(jlist->jobs);
 }
 
-void joblist_update(joblist_t* joblist)
+void joblist_update(Joblist* joblist)
 {
-    int   status;
-    pid_t pid;
+    int32   status;
+    pid pid;
 
     do {
         pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
     } while(update_process(joblist, pid, status));
 }
 
-void joblist_update_and_notify(__attribute__((unused)) int signum)
+void Joblist_update_and_notify(Joblist* joblist, int32 signum)
 {
-    size_t len = joblist_len(&shell.sh_jlist);
-    job_t* job;
+    unused(signum);
+    memmax len = joblist_len(joblist);
+    Job* job;
 
-    joblist_update(&shell.sh_jlist);
+    joblist_update(joblist);
 
-    for(size_t i = 0; i < len;) {
-        job = joblist_at(&shell.sh_jlist, i);
+    for(memmax i = 0; i < len;) {
+        job = Joblist_get_job(joblist, i);
 
         /* Cache positions and old prompt length */
-        uint16_t col  = inbuff.in_cur.cr_col;
-        uint16_t row  = inbuff.in_cur.cr_row;
-        uint16_t tcol = terminal.tm_col;
-        uint16_t plen = terminal.tm_plen;
+        uint32 col  = inbuff.in_cur.cr_col;
+        uint32 row  = inbuff.in_cur.cr_row;
+        uint32 tcol = terminal.tm_col;
+        uint32 plen = terminal.tm_plen;
 
         /// TODO: less repeats refactor the control flow
         if(job_completed(job)) {
             if(!job->foreground) {
-                ATOMIC_PRINT({
-                    if(shell.sh_term.tm_reading) {
-                        inbuff_goto_end(&inbuff);
-                    }
-
-                    job_format(job, job_completed_format);
-                    joblist_remove(&shell.sh_jlist, i);
-                    pprompt();
-
-                    if(shell.sh_term.tm_reading) {
-                        inbuff.in_cur.cr_col = col;
-                        inbuff.in_cur.cr_row = row;
-                        if(plen >= terminal.tm_plen) {
-                            terminal.tm_col = tcol - (plen - terminal.tm_plen);
-                        } else {
-                            terminal.tm_col = tcol + (terminal.tm_plen - plen);
-                        }
-                        inbuff_redraw(&inbuff);
-                    }
-                });
-            } else {
-                joblist_remove(&shell.sh_jlist, i);
-            }
-
-            len--;
-            continue;
-        } else if(job_stopped(job) && !job->notified) {
-            ATOMIC_PRINT({
-                if(shell.sh_term.tm_reading) {
+                if(ashe.sh_term.tm_reading) {
                     inbuff_goto_end(&inbuff);
                 }
 
-                job_format(job, job_stopped_format);
+                job_format(job, job_completed_format);
+                joblist_remove(joblist, i);
                 pprompt();
 
-                if(shell.sh_term.tm_reading) {
+                if(ashe.sh_term.tm_reading) {
                     inbuff.in_cur.cr_col = col;
                     inbuff.in_cur.cr_row = row;
                     if(plen >= terminal.tm_plen) {
@@ -158,186 +115,193 @@ void joblist_update_and_notify(__attribute__((unused)) int signum)
                     }
                     inbuff_redraw(&inbuff);
                 }
-            });
+            } else {
+                joblist_remove(joblist, i);
+            }
+
+            len--;
+            continue;
+        } else if(job_stopped(job) && !job->notified) {
+            if(ashe.sh_term.tm_reading) {
+                inbuff_goto_end(&inbuff);
+            }
+
+            job_format(job, job_stopped_format);
+            pprompt();
+
+            if(ashe.sh_term.tm_reading) {
+                inbuff.in_cur.cr_col = col;
+                inbuff.in_cur.cr_row = row;
+                if(plen >= terminal.tm_plen) {
+                    terminal.tm_col = tcol - (plen - terminal.tm_plen);
+                } else {
+                    terminal.tm_col = tcol + (terminal.tm_plen - plen);
+                }
+                inbuff_redraw(&inbuff);
+            }
             job->notified = true;
         }
         i++;
     }
 }
 
-static job_t* joblist_get_job(joblist_t* joblist, bool foreground)
+static Job* joblist_get_job(Joblist* joblist, ubyte foreground)
 {
-    size_t len = joblist_len(joblist);
-    job_t* job;
+    memmax len = joblist_len(joblist);
+    Job* job;
 
     while(len--) {
-        job = joblist_at(joblist, len);
+        job = Joblist_get_job(joblist, len);
         if(job->foreground == foreground) return job;
     }
 
     return NULL;
 }
 
-static job_t* joblist_get_pid(joblist_t* joblist, pid_t pid, bool foreground)
+static Job* joblist_get_pid(Joblist* joblist, pid pid, ubyte foreground)
 {
-    size_t len = joblist_len(joblist);
-    job_t* job;
+    memmax len = joblist_len(joblist);
+    Job* job;
 
     while(len--) {
-        job = joblist_at(joblist, len);
+        job = Joblist_get_job(joblist, len);
         if(job->foreground == foreground && job_contains_pid(job, pid)) return job;
     }
 
     return NULL;
 }
 
-static job_t* joblist_get_id(joblist_t* joblist, size_t id, bool foreground)
+static Job* joblist_get_id(Joblist* joblist, memmax id, ubyte foreground)
 {
-    size_t len = joblist_len(joblist);
-    job_t* job;
+    memmax len = joblist_len(joblist);
+    Job* job;
 
     while(len--) {
-        job = joblist_at(joblist, len);
+        job = Joblist_get_job(joblist, len);
         if(job->id == id && job->foreground == foreground) return job;
     }
 
     return NULL;
 }
 
-static bool job_contains_pid(job_t* job, pid_t pid)
+static ubyte job_contains_pid(Job* job, pid pid)
 {
-    size_t len = job_len(job);
+    memmax len = job_len(job);
     while(len--) {
         if(job_at(job, len)->pid == pid) return true;
     }
     return false;
 }
 
-job_t* joblist_find_id(joblist_t* joblist, size_t id)
+Job* joblist_find_id(Joblist* joblist, memmax id)
 {
-    size_t len = joblist_len(joblist);
-    job_t* job;
+    memmax len = joblist_len(joblist);
+    Job* job;
 
-    for(size_t i = 0; i < len; i++) {
-        job = joblist_at(joblist, i);
+    for(memmax i = 0; i < len; i++) {
+        job = Joblist_get_job(joblist, i);
         if(job->id == id) return job;
     }
 
     return NULL;
 }
 
-job_t* joblist_find_pid(joblist_t* joblist, pid_t pid)
+Job* joblist_find_pid(Joblist* joblist, pid pid)
 {
-    size_t len = joblist_len(joblist);
-    job_t* job;
-    size_t jobn;
+    memmax len = joblist_len(joblist);
+    Job* job;
+    memmax jobn;
 
-    for(size_t i = 0; i < len; i++) {
-        job  = joblist_at(joblist, i);
+    for(memmax i = 0; i < len; i++) {
+        job  = Joblist_get_job(joblist, i);
         jobn = job_len(job);
 
-        for(size_t j = 0; j < jobn; j++)
+        for(memmax j = 0; j < jobn; j++)
             if(job_at(job, j)->pid == pid) return job;
     }
 
     return NULL;
 }
 
-/*********** For 'bg' builtin *************/
-
-job_t* joblist_get_bg_pid(joblist_t* joblist, pid_t pid)
+Job* joblist_get_bg_pid(Joblist* joblist, pid pid)
 {
     return joblist_get_pid(joblist, pid, false);
 }
 
-job_t* joblist_get_bg_id(joblist_t* joblist, size_t id)
+Job* joblist_get_bg_id(Joblist* joblist, memmax id)
 {
     return joblist_get_id(joblist, id, false);
 }
 
-job_t* joblist_get_bg_job(joblist_t* joblist)
+Job* joblist_get_bg_job(Joblist* joblist)
 {
     return joblist_get_job(joblist, false);
 }
 
-/******************************************/
-/*
- *
- *
- */
-/*********** For 'fg' builtin *************/
-
-job_t* joblist_get_fg_pid(joblist_t* joblist, pid_t pid)
+Job* joblist_get_fg_pid(Joblist* joblist, pid pid)
 {
     return joblist_get_pid(joblist, pid, true);
 }
 
-job_t* joblist_get_fg_id(joblist_t* joblist, size_t id)
+Job* joblist_get_fg_id(Joblist* joblist, memmax id)
 {
     return joblist_get_id(joblist, id, true);
 }
 
-job_t* joblist_get_fg_job(joblist_t* joblist)
+Job* joblist_get_fg_job(Joblist* joblist)
 {
     return joblist_get_job(joblist, true);
 }
 
-/******************************************/
+/* ------------------------------------------ */
 
-/*
- *
- *
- *
- *
- */
 
-/// ************** JOB ****************** ///
-job_t job_new(byte connection, bool bg)
+
+
+/* ========= JOB ========= */
+
+void Job_init(Job* job, byte connection, ubyte bg)
 {
-    return (job_t){
-        .pgid       = 0,
-        .notified   = false,
-        .connection = connection,
-        .foreground = !bg || connection & (JC_AND | JC_OR),
-        .processes  = vec_new(sizeof(process_t)),
-        .id         = 0,
-        .tmodes     = shell.sh_term.tm_dflterm,
-    };
+    job->pgid = 0;
+    job->notified = 0;
+    job->connection = connection;
+    job->foreground = (!bg || (connection != JC_NONE));
+    ArrayProcess_init(&job->processes);
+    job->id = 0;
+    job->tmodes = ashe.sh_term.tm_dfltermios;
 }
-void joblist_drop(joblist_t* joblist)
-{
-    size_t len = joblist_len(joblist);
-    job_t* job;
 
+void Job_free(Job* job)
+{
+    ProcessArray_free(&job->processes, Buffer_free)
+}
+
+void Joblist_free(Joblist* joblist)
+{
+    memmax len = joblist->jobs.len;;
     while(len--) {
-        job = joblist_at(joblist, len);
-        job_kill_and_harvest(job);
+        Job* job = Joblist_get_job(joblist, len);
+        Job_kill_and_harvest(job);
     }
-
-    vec_drop(&joblist->jobs, (FreeFn) job_drop);
+    JobArray_free(&joblist->jobs, Job_free);
 }
 
-void job_drop(job_t* job)
-{
-    vec_drop(&job->processes, (FreeFn) process_drop);
-}
-
-process_t* job_at(job_t* job, size_t i)
+Process* job_at(Job* job, memmax i)
 {
     return vec_index(job->processes, i);
 }
 
-void job_format(job_t* job, byte* fmt, ...)
+void job_format(Job* job, byte* fmt, ...)
 {
-    size_t  len = job_len(job);
+    memmax  len = job_len(job);
     va_list argp;
 
     va_start(argp, fmt);
 
     ATOMIC_PRINT({
         fprintf(stderr, "\r\n" obrack bold(byellow("J_%ld")) cbrack obrack blue("\""), job->id);
-        for(size_t i = 0; i < len; i++)
-            fprintf(stderr, bred("%s %s"), job_at(job, i)->commandline, (i + 1 == len) ? "" : "| ");
+        for(memmax i = 0; i < len; i++)
+            fprintf(stderr, bred("%s %s"), job_at(job, i)->cmd, (i + 1 == len) ? "" : "| ");
         fprintf(stderr, blue("\b\"") cbrack cyan(" -> "));
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\r\n");
@@ -346,7 +310,7 @@ void job_format(job_t* job, byte* fmt, ...)
     va_end(argp);
 }
 
-bool job_add_process(job_t* job, process_t* process)
+ubyte job_add_process(Job* job, Process* process)
 {
     if(__glibc_unlikely(!vec_push(job->processes, process))) {
         ATOMIC_PRINT(PW_PROCTOJOB(process->pid));
@@ -355,41 +319,41 @@ bool job_add_process(job_t* job, process_t* process)
     return true;
 }
 
-job_t* joblist_getjob(joblist_t* jlist, pid_t pgid)
+Job* joblist_getjob(Joblist* jlist, pid pgid)
 {
     vec_t* list = jlist->jobs;
-    size_t len  = vec_len(list);
-    job_t* job;
-    for(size_t i = 0; i < len; i++)
+    memmax len  = vec_len(list);
+    Job* job;
+    for(memmax i = 0; i < len; i++)
         if((job = vec_index(list, i))->pgid == pgid) return job;
     return NULL;
 }
 
-bool job_stopped(job_t* job)
+ubyte job_stopped(Job* job)
 {
-    size_t len = job_len(job);
-    for(size_t i = 0; i < len; i++)
+    memmax len = job_len(job);
+    for(memmax i = 0; i < len; i++)
         if(job_at(job, i)->stopped) return true;
     return false;
 }
 
-bool job_completed(job_t* job)
+ubyte job_completed(Job* job)
 {
-    size_t len = job_len(job);
-    for(size_t i = 0; i < len; i++)
+    memmax len = job_len(job);
+    for(memmax i = 0; i < len; i++)
         if(!job_at(job, i)->completed) return false;
     return true;
 }
 
-process_t* job_lastp(job_t* job)
+Process* job_lastp(Job* job)
 {
     return vec_back(job->processes);
 }
 
-static int job_wait(job_t* job)
+static int32 job_wait(Job* job)
 {
-    int   status;
-    pid_t pid;
+    int32   status;
+    pid pid;
 
     do {
         pid = waitpid(-job->pgid, &status, WUNTRACED);
@@ -399,10 +363,10 @@ static int job_wait(job_t* job)
     else return job_lastp(job)->status;
 }
 
-static void job_kill_and_harvest(job_t* job)
+static void Job_kill_and_harvest(Job* job)
 {
-    pid_t  pid;
-    size_t zombies = 0;
+    pid  pid;
+    memmax zombies = 0;
 
     if(kill(-job->pgid, SIGKILL) < 0) {
         ATOMIC_PRINT({
@@ -420,13 +384,13 @@ static void job_kill_and_harvest(job_t* job)
         pwarn("%d zombie processes not reaped in the process group ID %d", zombies, job->pgid);
 }
 
-bool job_update(job_t* job, pid_t pid, int status)
+ubyte job_update(Job* job, pid pid, int32 status)
 {
-    size_t     len  = job_len(job);
-    process_t* proc = NULL;
+    memmax     len  = job_len(job);
+    Process* proc = NULL;
 
     if(pid > 0) {
-        for(size_t i = 0; i < len; i++) {
+        for(memmax i = 0; i < len; i++) {
             proc = job_at(job, i);
 
             if(proc->pid == pid) {
@@ -449,7 +413,7 @@ bool job_update(job_t* job, pid_t pid, int status)
             "FIX ME: foreground job was trying to update invalid process! PROCESS -> "
             "PID:%d, CMDLINE:'%s'\r\n",
             proc->pid,
-            proc->commandline);
+            proc->cmd);
         return false;
     } else if(ECHILD == errno) {
         return false;
@@ -459,7 +423,7 @@ bool job_update(job_t* job, pid_t pid, int status)
     }
 }
 
-int job_move_to_fg(job_t* job, bool cont)
+int32 job_move_to_fg(Job* job, ubyte cont)
 {
     /* Mark job as foreground */
     job->foreground = true;
@@ -477,11 +441,11 @@ int job_move_to_fg(job_t* job, bool cont)
     }
 
     /* Wait for job to either complete or get stopped */
-    int status = job_wait(job);
+    int32 status = job_wait(job);
 
     /* If job was originally ran in the foreground without being stopped prior
      * and now it is stopped, then move it into the joblist */
-    if(__glibc_unlikely(!cont && job_stopped(job) && !joblist_push(&shell.sh_jlist, job))) {
+    if(__glibc_unlikely(!cont && job_stopped(job) && !joblist_push(&ashe.sh_jlist, job))) {
         ATOMIC_PRINT(PW_ADDJ(job));
         exit(EXIT_FAILURE);
     }
@@ -503,31 +467,31 @@ int job_move_to_fg(job_t* job, bool cont)
     return status;
 }
 
-void job_move_to_bg(job_t* job, bool cont)
+void job_move_to_bg(Job* job, ubyte cont)
 {
     job->foreground = false;
     if(cont)
         if(__glibc_unlikely(kill(-job->pgid, SIGCONT) < 0)) ATOMIC_PRINT(perr(););
 }
 
-size_t job_len(job_t* job)
+memmax job_len(Job* job)
 {
     return vec_len(job->processes);
 }
 
-void job_sa_running(job_t* job)
+void job_sa_running(Job* job)
 {
-    size_t len = job_len(job);
-    for(size_t i = 0; i < len; i++) job_at(job, i)->stopped = false;
+    memmax len = job_len(job);
+    for(memmax i = 0; i < len; i++) job_at(job, i)->stopped = false;
     job->notified = 0;
 }
 
-void job_continue(job_t* job, bool foreground)
+void job_continue(Job* job, ubyte foreground)
 {
     job_sa_running(job);
     if(foreground) {
         job_move_to_fg(job, true);
-        if(__glibc_unlikely(job_completed(job) && !joblist_remove_job(&shell.sh_jlist, job))) {
+        if(__glibc_unlikely(job_completed(job) && !joblist_remove_job(&ashe.sh_jlist, job))) {
             /// Invariant broken
             ATOMIC_PRINT(pwarn("FIX ME: tried removing background job that was not in the joblist!"));
             exit(EXIT_FAILURE);
@@ -535,23 +499,21 @@ void job_continue(job_t* job, bool foreground)
     } else job_move_to_bg(job, true);
 }
 
-process_t process_new(pid_t pid, byte* argv)
+void Process_init(Process* proc, pid pid, char* argv)
 {
-    return (process_t){
-        .status      = 0,
-        .stopped     = false,
-        .completed   = false,
-        .pid         = pid,
-        .commandline = argv,
-    };
+    proc->status = 0;
+    proc->stopped = 0;
+    proc->completed = 0;
+    proc->pid = pid;
+    proc->cmd = argv;
 }
 
-static void process_drop(process_t* process)
+void Process_free(Process* proc)
 {
-    free(process->commandline);
+    Buffer_free(&(proc)->cmd, NULL);
 }
 
-static void process_format(process_t* p, byte* fmt, ...)
+static void process_format(Process* p, byte* fmt, ...)
 {
     va_list argp;
     va_start(argp, fmt);
@@ -562,7 +524,7 @@ static void process_format(process_t* p, byte* fmt, ...)
             "\r\n" obrack bold(blue("P_%d")) cbrack obrack blue("\"") bred("%s") blue("\"")
                 cbrack                                     cyan(" -> "),
             p->pid,
-            p->commandline);
+            p->cmd);
         vfprintf(stderr, fmt, argp);
         fprintf(stderr, "\r\n");
     });
@@ -570,17 +532,17 @@ static void process_format(process_t* p, byte* fmt, ...)
     va_end(argp);
 }
 
-static bool update_process(joblist_t* joblist, pid_t pid, int status)
+static ubyte update_process(Joblist* joblist, pid pid, int32 status)
 {
-    size_t     joblistn = joblist_len(joblist);
-    process_t* proc     = NULL;
+    memmax     joblistn = joblist_len(joblist);
+    Process* proc     = NULL;
 
     if(pid > 0) {
-        for(size_t i = 0; i < joblistn; i++) {
-            job_t* job  = joblist_at(joblist, i);
-            size_t jobn = job_len(job);
+        for(memmax i = 0; i < joblistn; i++) {
+            Job* job  = Joblist_get_job(joblist, i);
+            memmax jobn = job_len(job);
 
-            for(size_t j = 0; j < jobn; j++) {
+            for(memmax j = 0; j < jobn; j++) {
                 proc = job_at(job, j);
 
                 if(proc->pid == pid) {
@@ -604,7 +566,7 @@ static bool update_process(joblist_t* joblist, pid_t pid, int status)
             "FIX ME: tried to update process that is not inside the joblist! PROCESS -> "
             "PID:%d, CMDLINE:'%s'",
             proc->pid,
-            proc->commandline);
+            proc->cmd);
         return false;
     } else if(pid == 0 || errno == ECHILD) {
         return false;

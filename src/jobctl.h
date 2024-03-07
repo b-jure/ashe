@@ -1,76 +1,75 @@
 #ifndef __ASH_JOBCTL__H__
 #define __ASH_JOBCTL__H__
 
-#include "ashe_utils.h"
-#include "parser.h"
-#include "vec.h"
 
-#include <signal.h>
+#include "acommon.h"
+#include "aarray.h"
+#include "token.h"
+
 #include <termios.h>
 
-typedef struct _process_t {
-  pid_t pid;
-  int status;
-  bool stopped;
-  bool completed;
-  byte *commandline;
-} process_t;
-
-typedef struct joblist_t {
-  vec_t *jobs;
-  size_t next_id;
-} joblist_t;
 
 typedef struct {
-  vec_t *processes;
-  pid_t pgid;
-  bool notified;
-  bool foreground;
-  byte connection;
-  size_t id;
-  struct termios tmodes;
-} job_t;
+    pid pid; /* process ID */
+    int32 status; /* exit status */
+    ubyte stopped; /* flag indicating if process is stopped */
+    ubyte completed; /* flag indicating if process is finished executing */
+    Buffer cmd; /* @?: debug */
+} Process;
 
-/// Job connection (conditionals)
-#define JC_AND ASH_AND   /* '&&' */
-#define JC_OR ASH_OR     /* '||' */
-#define JC_NONE ASH_NONE /* No connection */
+void Process_init(Process* proc, pid pid, byte* argv);
+void Process_free(Process* proc);
 
-/// JOBLIST
-joblist_t joblist_init(void);
-size_t joblist_len(joblist_t *jlist);
-job_t *joblist_at(joblist_t *jlist, size_t i);
-bool joblist_remove_job(joblist_t *jlist, job_t *job);
-void joblist_drop(joblist_t *jlist);
-void joblist_update_and_notify(int signum); /* Signal handler */
-bool joblist_push(joblist_t *jlist, job_t *job);
-job_t *joblist_getjob(joblist_t *jlist, pid_t pgid);
-job_t *joblist_find_pid(joblist_t *jlist, pid_t pid);
-job_t *joblist_find_id(joblist_t *jlist, size_t id);
-// fg builtin
-job_t *joblist_get_fg_job(joblist_t *jlist);
-job_t *joblist_get_fg_pid(joblist_t *jlist, pid_t pid);
-job_t *joblist_get_fg_id(joblist_t *jlist, size_t id);
-// bg builtin
-job_t *joblist_get_bg_job(joblist_t *jlist);
-job_t *joblist_get_bg_pid(joblist_t *jlist, pid_t pid);
-job_t *joblist_get_bg_id(joblist_t *jlist, size_t id);
 
-/// JOB
-job_t job_new(byte connection, bool bg);
-process_t *job_at(job_t *job, size_t i);
-size_t job_len(job_t *job);
-bool job_add_process(job_t *job, process_t *process);
-int job_move_to_fg(job_t *job, bool cont);
-bool job_stopped(job_t *job);
-bool job_completed(job_t *job);
-void job_move_to_bg(job_t *job, bool cont);
-void job_format(job_t *job, byte *fmt, ...);
-void job_continue(job_t *job, bool foreground);
-void job_drop(job_t *job);
-bool job_update(job_t *job, pid_t pid, int status);
 
-/// PROCESS
-process_t process_new(pid_t pid, byte *argv);
+/* Array of 'Process's */
+ARRAY_NEW(ArrayProcess, Process);
+typedef struct {
+    ArrayProcess processes;
+    pid pgid; /* process group ID */
+    ubyte notified; /* @? */
+    ubyte foreground; /* flag indicating if the job is running in foreground */
+    Connection connection; /* connection type */
+    memmax id;
+    struct termios tmodes;
+} Job;
+
+void Job_init(Job* job, ubyte con, ubyte bg);
+Process* Job_get_process(Job* job, memmax i);
+memmax Job_process_cnt(Job* job);
+ubyte Job_add_process(Job* job, Process* process);
+ubyte Job_isstopped(Job* job);
+ubyte Job_iscompleted(Job* job);
+void Job_move_to_bg(Job* job, ubyte cont);
+int32 Job_move_to_fg(Job* job, ubyte cont);
+void Job_format(Job* job, byte* fmt, ...);
+void Job_continue(Job* job, ubyte foreground);
+ubyte Job_update_process(Job* job, pid pid, int32 status);
+void Job_free(Job* job); 
+
+
+
+/* Array of 'Job's */
+ARRAY_NEW(ArrayJob, Job);
+typedef struct {
+    ArrayJob jobs; /* running/stopped (unfinished) jobs */
+} Joblist; // wrapper type for interface
+
+void Joblist_init(Joblist* jlist);
+#define Joblist_get(joblist, i) ArrayJob_index(&(joblist)->jobs, i)
+ubyte Joblist_remove_job(Joblist* jlist, Job* job);
+void Joblist_drop(Joblist* jlist);
+void Joblist_update_and_notify(Joblist* joblist, int32 signum); /* Signal handler */
+ubyte Joblist_push(Joblist* jlist, Job* job);
+Job* Joblist_getjob(Joblist* jlist, pid pgid);
+Job* Joblist_find_pid(Joblist* jlist, pid pid);
+Job* Joblist_find_id(Joblist* jlist, memmax id);
+Job* Joblist_get_fg_job(Joblist* jlist);
+Job* Joblist_get_fg_pid(Joblist* jlist, pid pid);
+Job* Joblist_get_fg_id(Joblist* jlist, memmax id);
+Job* Joblist_get_bg_job(Joblist* jlist);
+Job* Joblist_get_bg_pid(Joblist* jlist, pid pid);
+Job* Joblist_get_bg_id(Joblist* jlist, memmax id);
+
 
 #endif

@@ -3,10 +3,6 @@
 
 #include "ashe_string.h"
 
-#ifndef EOL
-#define EOL '\0'
-#endif
-
 typedef struct {
   byte *next;
   byte *end;

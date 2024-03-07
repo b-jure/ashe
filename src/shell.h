@@ -1,46 +1,46 @@
-#ifndef __ASH_SHELL_H__
-#define __ASH_SHELL_H__
+#ifndef ASHELL_H
+#define ASHELL_H
 
-#include "cmdline.h"
+#include "aarray.h"
+#include "acommon.h"
 #include "input.h"
 #include "jobctl.h"
+#include "lexer.h"
 
-#include <termios.h>
+#include <setjmp.h>
 
+
+/* jmp_buf wrapper */
 typedef struct {
-  bool sh_intr;             /* Flag indicating if interrupt occured */
-  byte sh_cs;               /* Bits indicating config reload/update state */
-  commandline_t sh_cmdline; /* Parser storage */
-  joblist_t sh_jlist;       /* Shell joblist */
-  terminal_t sh_term;       /* Shell terminal settings and raw input buffer */
-} shell_t;
+    jmp_buf buf;
+    volatile int32 res;
+} AsheJmpBuf;
 
-extern shell_t shell; /* Shell global */
 
-#ifndef terminal
-#define terminal shell.sh_term
-#endif
+ARRAY_NEW(ArrayCharptr, char*);
 
-#ifndef joblist
-#define joblist shell.sh_jlist
-#endif
+/**
+ * Note: 
+ * ArrayCharptr index 0 (first value) -> welcome message buffer
+ * ArrayCharptr index 1 (second value) -> prompt buffer
+ **/
+typedef struct {
+    AsheJmpBuf sh_buf;
+    Joblist sh_jlist;
+    Terminal sh_term;
+    Lexer sh_lexer;
+    /* Storage for static and input buffers, used only
+     * to free the buffer storage on shell cleanup or
+     * after the parsed input gets executed (tokens). */
+    ArrayCharptr sh_buffers; 
+    ubyte sh_int; /* Flag indicating if interrupt occurred */
+    ubyte sh_exit; /* Flag indicating if user tried exiting while background jobs are running */
+} Shell;
 
-#ifndef cmdline
-#define cmdline shell.sh_cmdline
-#endif
+extern Shell ashe; /* Shell global */
 
-#ifndef inbuff
-#define inbuff shell.sh_term.tm_inbuff
-#endif
+#define SHELL_BUFFER(shell) ((shell)->sh_term.tm_input.in_buffer)
 
-/* Configuration state bits */
-#define cs_welcome (1 << 1) /* Welcome message is updated */
-#define cs_prompt (1 << 2)  /* Prompt is updated */
-// TODO: Add more?
-
-#define cs_check(cs_bit) (shell.sh_cs & (cs_bit))
-#define cs_update(cs_bit) (shell.sh_cs |= (cs_bit))
-
-void shell_init(void);
+void Shell_init(Shell* shell);
 
 #endif

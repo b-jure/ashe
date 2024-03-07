@@ -1,22 +1,18 @@
-#ifndef __ASH_LEXER_H__
-#define __ASH_LEXER_H__
+#ifndef ALEXER_H
+#define ALEXER_H
 
-#include "ashe_utils.h"
-#include "chiter.h"
 #include "token.h"
 
 typedef struct {
-  token_t token;
-  chariter_t iter;
-} lexer_t;
+    Token curr;
+    Token prev;
+    const char* current;
+    const char* start; // for debug
+} Lexer;
 
-lexer_t lexer_new(const byte *start, size_t len);
+void Lexer_init(Lexer* lexer, const char* start);
+Token Lexer_next(Lexer* lexer);
 
-token_t lexer_next(lexer_t *lexer);
-
-token_t lexer_peek(lexer_t *lexer);
-
-/// Debug
-void print_token(token_t *token);
+const char* Token_tostr(Token* token);
 
 #endif

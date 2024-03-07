@@ -1,28 +1,45 @@
-#ifndef __ASH_TOKEN_H__
-#define __ASH_TOKEN_H__
+#ifndef ATOKEN_H
+#define ATOKEN_H
 
-#include "ashe_string.h"
-#include <stddef.h>
+#include "aarray.h"
+#include "acommon.h"
+
+ARRAY_NEW(Buffer, char);
 
 typedef enum {
-  REDIROP_TOKEN = 1,
-  WORD_TOKEN = 2,
-  KVPAIR_TOKEN = 4,
-  PIPE_TOKEN = 8,
-  AND_TOKEN = 16,
-  OR_TOKEN = 32,
-  BG_TOKEN = 64,
-  FG_TOKEN = 128,
-  EOL_TOKEN = 256,
-  OOM_TOKEN = 512,
-  SYNTAX_ERR_TOKEN = 1024,
-} tokentype_t;
+    TOKEN_WORD = (1 << 0),
+    TOKEN_KVPAIR = (1 << 1),
+    TOKEN_PIPE = (1 << 2),
+    TOKEN_AND = (1 << 3),
+    TOKEN_OR = (1 << 4),
+    TOKEN_BG = (1 << 5),
+    TOKEN_SEPARATOR = (1 << 6),
+    TOKEN_EOF = (1 << 7),
+    TOKEN_FDWRITE = (1 << 8),
+    TOKEN_FDREAD = (1 << 9),
+    TOKEN_FDREDIRECT = (1 << 10),
+    TOKEN_FDCLOSE = (1 << 11),
+    TOKEN_ERROR = (1 << 12),
+} Tokentype;
 
 typedef struct {
-  tokentype_t type;
-  string_t *contents;
-} token_t;
+    Tokentype type;
+    union {
+        Buffer contents;
+        struct {
+            int32 fd_left;
+            int32 fd_right;
+            ubyte read : 1;
+            ubyte append : 1;
+        } file;
+    } u;
+} Token;
 
-token_t token_new(tokentype_t ttype, const byte *str);
+/* token file */
+#define TF(token) ((token)->u.file)
+/* token string */
+#define TS(token) ((token)->u.contents.data)
+
+
 
 #endif

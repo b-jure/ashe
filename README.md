@@ -11,12 +11,7 @@ terminal navigation/drawing. It also doesn't rely on `curses`/`ncurses` library,
 it doesn't rely on anything outside the `glibc` (`C11`).
 
 Each line is represented as its own seperate row this includes the **wrapped terminal lines**.
-What this enables is text-editor-like movement inside the shell. Now why is this even
-important, shouldn't the user just create a shell script for longer commandlines? Yes that
-is a good point but let's say you just want to run a big commandline once, or want it to
-be saved in the recent commands history, then the fast and easy text editing and movement
-in shell really helps. Personally I think having ergonomic cursor movement inside
-a shell is a simple thing to do with no clear negative tradeoffs.
+What this enables is text-editor-like movement inside the shell.
 
 That being said this shell was made primarily for educational purposes and thus it lacks
 the real interpreter outside the shell's commandline to even create `ashe` scripts. This

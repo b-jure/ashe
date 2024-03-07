@@ -1,66 +1,120 @@
+#include "acommon.h"
 #include "ashe_utils.h"
 #include "input.h"
+#include "async.h"
 #include "shell.h"
 
-#include <assert.h>
-#include <stdarg.h>
+#include <errno.h>
 #include <string.h>
+#include <stdio.h>
 
-#define TAB_SIZE 8
+
+
+static void print(FILE* stream, const char* fmt, ...)
+{
+}
+
+static void vprint(FILE* stream, const char* fmt, va_list argp)
+{
+}
+
+void print_error_wprefix(const char* errfmt, va_list argp)
+{
+    fprintf(stderr, ASHE_ERR_PREFIX " ");
+    vfprintf(stderr, errfmt, argp);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+void print_error(const char* errfmt, ...)
+{
+    block_signals();
+    va_list argp;
+    va_start(argp, errfmt);
+    print_error_wprefix(errfmt, argp);
+    va_end(argp);
+    unblock_signals();
+    try_wait_missed_sigchld_signals();
+}
+
+void print_errno(void)
+{
+    block_signals();
+    ashe_assert(errno != 0, "invalid errno");
+    const char* errmsg = strerror(errno);
+    print_error(stderr, errmsg); // unblock_signals() in here
+}
+
+
+void die_err(const char* err)
+{
+    block_signals();
+    panic(err);
+}
 
 void die(void)
 {
-    perr();
-    exit(EXIT_FAILURE);
+    block_signals();
+    panic(NULL);
 }
 
-void _die(void)
-{
-    perr();
-    _exit(EXIT_FAILURE);
-}
 
-void pwarn(const byte* fmt, ...)
+void print_warning_wprefix(const char* wfmt, va_list argp)
 {
-    va_list argp;
-    va_start(argp, fmt);
     fprintf(stderr, ASHE_WARN_PREFIX " ");
-    vfprintf(stderr, fmt, argp);
-    fprintf(stderr, "\r\n");
+    vfprintf(stderr, wfmt, argp);
+    fputc('\n', stderr);
     fflush(stderr);
-    va_end(argp);
 }
 
-void pinfo(info_t type, const byte* str)
+void vfprint_warning(const char* wfmt, va_list argp)
 {
-    byte* info = NULL;
+    block_signals();
+    print_warning_wprefix(wfmt, argp);
+    unblock_signals();
+    try_wait_missed_sigchld_signals();
+}
 
-    switch(type) {
-        case INF_NAME: info = "NAME"; break;
-        case INF_USAGE: info = "SYNOPSIS"; break;
-        case INF_DESC: info = "DESCRIPTION"; break;
-    }
+void fprint_warning(const char* wfmt, ...)
+{
+    block_signals();
+    va_list argp;
+    va_start(argp, wfmt);
+    print_warning_wprefix(wfmt, argp);
+    va_end(argp);
+    unblock_signals();
+    try_wait_missed_sigchld_signals();
+}
 
-    size_t len = strlen(str);
-    byte   str_mut[len + 1];
-    memcpy(str_mut, str, len + 1);
 
-    uint16_t col_limit = terminal.tm_columns - 10;
+void print_info(Info type, const char* str)
+{
+    block_signals();
+    static const char* infostr[] = {
+        "NAME",
+        "DESCRIPTION",
+        "SYNOPSIS",
+    };
 
-    size_t cap = len + (len / col_limit) + 2;
-    byte   buff[cap]; /* 2 for good measure LOOOL ??? */
-    byte*  target = buff;
-    buff[0]       = '\0';
+    const char* info = infostr[type];
+    memmax len = strlen(str);
+    char buffer[len + 1];
+    memcpy(buffer, str, len + 1);
+
+    uint32 col_limit = ashe.sh_term.tm_columns - 10;
+    memmax cap = len + (len / col_limit) + 2;
+    char buff[cap];
+    char* target = buff;
+    buff[0] = '\0';
     memset(buff, 0, cap);
 
-    uint16_t    remaining_space = col_limit;
-    const byte* delimiter       = " ";
-    const byte* word            = strtok(str_mut, delimiter);
-    byte*       ptr             = NULL;
+    uint32 remaining_space = col_limit;
+    const char* delimiter = " ";
+    const char* word = strtok(buffer, delimiter);
+    char* ptr = NULL;
 
-    while(is_some(word)) {
-        size_t word_len = len_without_seq(word);
-
+    while(word) {
+        memmax word_len = len_without_seq(word);
         if(remaining_space > word_len) {
             target += sprintf(target, "%s ", word);
             remaining_space -= (word_len + 1); // Account for delimiter (1)
@@ -68,154 +122,143 @@ void pinfo(info_t type, const byte* str)
             target += sprintf(target, "\n%s ", word);
             remaining_space = col_limit - word_len - 1; // Account for delimiter (1)
         }
-
-        if(is_some((ptr = strchr(word, '\n')))) {
+        if((ptr = strchr(word, '\n')) != NULL) {
             remaining_space = col_limit - strlen(ptr + 1);
         }
-
         word = strtok(NULL, delimiter);
     }
 
     fprintf(stderr, "\n" yellow(bold("%s")) "\n%-s\n", info, buff);
     fflush(stderr);
+    unblock_signals();
+    try_wait_missed_sigchld_signals();
 }
 
-void expand_vars(byte** word)
+
+void print_manpage(const char* name, const char* usage, const char* desc)
 {
-    size_t         len   = strlen(*word);
-    register byte* ptr   = *word;
-    register byte* start = NULL;
-    register byte* end   = NULL;
-    const byte*    value = NULL;
-
-    for(; is_some((ptr = strchr(ptr, '$'))); ptr++) {
-        if(is_escaped(ptr, ptr - *word)) {
-            continue;
-        }
-
-        size_t offset = strspn(ptr + 1, PORTABLE_CHARACTER_SET);
-
-        if(offset == 0 || __glibc_unlikely((end = (start = ptr + 1) + offset) - *word >= ARG_MAX)) {
-            continue;
-        }
-
-        byte cached     = *end;
-        *end            = NULL_TERM;
-        int32_t key_len = strlen(start) + 1; // Account for '$'
-        *end            = cached;
-
-        value = getenv(start);
-
-        if(is_some(value)) {
-            int32_t var_len = strlen(value);
-            int32_t diff    = var_len - key_len;
-
-            if(diff > 0) {
-                if(__glibc_likely(len + diff < ARG_MAX)) {
-                    memcpy(end, end + diff, diff);
-                } else {
-                    continue;
-                }
-            } else {
-                diff = abs(diff);
-                memcpy(end - diff, end, diff);
-            }
-
-            memcpy(ptr, value, var_len);
-        } else {
-            /* If no variable found remove the whole key indicated with '$' */
-            memcpy(ptr, end, key_len);
-        }
-    }
+    print_info(INFO_NAME, name);
+    print_info(INFO_USAGE, usage);
+    print_info(INFO_DESC, desc);
 }
 
-void pmanpage(const byte* name, const byte* usage, const byte* desc)
-{
-    pinfo(INF_NAME, name);
-    pinfo(INF_USAGE, usage);
-    pinfo(INF_DESC, desc);
-}
 
-size_t len_without_seq(const byte* ptr)
+memmax len_without_seq(const char* ptr)
 {
-    size_t len        = 0;
-    bool   escape_seq = false;
-
-    for(size_t i = 0; ptr[i]; i++) {
+    memmax len = 0;
+    ubyte escape_seq = 0;
+    for(memmax i = 0; ptr[i]; i++) {
         if(escape_seq) {
-            if(ptr[i] == 'm') escape_seq = false;
+            if(ptr[i] == 'm') escape_seq = 0;
         } else if(ptr[i] == '\033') {
-            escape_seq = true;
+            escape_seq = 1;
         } else {
             len++;
         }
     }
-
     return len;
 }
 
-bool in_dq(byte* str, size_t len)
+
+void expand_vars(Buffer* buffer)
 {
-    bool dq = false;
+    memmax len = buffer->len;
+    char* ptr = buffer->data;
+    const char* value = NULL;
+
+    for(; ((ptr = strchr(ptr, '$')) != NULL); ptr++) {
+        if(is_escaped(ptr, ptr - buffer->data)) continue;
+        memmax offset = strspn(++ptr, ENV_VAR_CHARS);
+
+        if(offset == 0) continue;
+        char* end = ptr + offset;
+        char cached = *end;
+        *end = '\0';
+        value = getenv(ptr);
+        *end = cached;
+
+        --ptr; // go back to '$'
+        int32 klen = offset + 1; // key chars + '$'
+
+        if(value != NULL) { // found value ?
+            int32 vlen = strlen(value);
+            ssize diff = vlen - klen;
+
+            if(diff > 0) {
+                if(likely(buffer->len + diff < ARG_MAX)) {
+                    Buffer_ensure(buffer, diff);
+                    memmove(end + diff, end, diff);
+                    buffer->len += diff;
+                } else goto l_remove;
+            } else {
+                diff = -diff;
+                memcpy(end - diff, end, diff);
+                buffer->len -= diff;
+            }
+
+            memcpy(ptr, value, vlen);
+        } else { // no variable found, remove the whole key together with '$'
+        l_remove:
+            memcpy(ptr, end, klen);
+            buffer->len -= klen;
+        }
+    }
+}
+
+
+ubyte in_dq(char* str, memmax len)
+{
+    ubyte dq = 0;
     while(len--)
-        if(*str++ == '"') dq ^= true;
+        if(*str++ == '"') dq ^= 1;
     return dq;
 }
 
-bool is_escaped(byte* bt, size_t curpos)
+
+ubyte is_escaped(char* bt, memmax curpos)
 {
-    byte* at = bt + curpos;
-    return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') || (curpos == 1 && *(at - 1) == '\\'));
+    char* at = bt + curpos;
+    return ((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') || (curpos == 1 && at[-1] == '\\'));
 }
 
-int unescape(byte* str)
+
+void unescape(Buffer* buffer)
 {
-    static const byte escape[256] = {
-        ['a']  = '\a',
-        ['b']  = '\b',
-        ['f']  = '\f',
-        ['n']  = '\n',
-        ['r']  = '\r',
-        ['t']  = '\t',
-        ['v']  = '\v',
+    static const int32 escape[UINT8_MAX] = {
+        ['a'] = '\a',
+        ['b'] = '\b',
+        ['f'] = '\f',
+        ['n'] = '\n',
+        ['r'] = '\r',
+        ['t'] = '\t',
+        ['v'] = '\v',
         ['\\'] = '\\',
         ['\''] = '\'',
-        ['"']  = '\"',
-        ['?']  = '\?',
+        ['"'] = '\"',
+        ['?'] = '\?',
     };
 
-    byte* ptr = str;
-    byte* q   = str;
+    char *oldp, *newp;
+    oldp = newp = buffer->data;
 
-    while(*ptr) {
-        int c = *(unsigned char*) ptr++;
-
-        if(c == '\\' || c == '"') {
-
-            if(c == '"') {
-                continue;
-            }
-
-            c = *(unsigned char*) ptr;
-
+    while(*oldp) {
+        int32 c = *(unsigned char*)oldp++;
+        if(c == '"') continue;
+        if(c == '\\') {
+            c = *(unsigned char*)oldp;
             if(c == '\0') {
                 break;
-            } else if(c == '0' && *(ptr + 1) == '3' && *(ptr + 2) == '3') {
+            } else if(c == '0' && oldp[1] == '3' && oldp[2] == '3') {
                 c = '\033';
-                ptr += 3;
+                oldp += 3;
             } else if(escape[c]) {
                 c = escape[c];
+                oldp++;
             }
         }
-
-        *q++ = c;
+        *newp++ = c;
     }
-
-    *q = '\0';
-    return ptr - q;
+    *newp = '\0';
+    buffer->len = (newp - buffer->data) + 1;
 }
 
-void perr(void)
-{
-    perror(ASHE_ERR_PREFIX);
-}
