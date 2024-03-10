@@ -107,7 +107,7 @@ typedef struct {
 ARRAY_NEW(ArrayLine, Line);
 typedef struct {
     char in_buffer[ARG_MAX]; /* buffer for storing terminal input */
-    ArrayLine in_rows; /* array of newline separated or wrapped terminal input */
+    ArrayLine in_lines; /* array of newline separated or wrapped terminal input */
     memmax in_len; /* input length (in bytes) */
     Cursor in_cur; /* terminal cursor */
 } TerminalInput;

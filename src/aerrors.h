@@ -1,8 +1,8 @@
 #ifndef AERRORS_H
 #define AERRORS_H
 
-#include "ashe_utils.h"
-#include "input.h"
+#include "autils.h"
+#include "ainput.h"
 
 #define PW_SYNTAX_EOL                                                                              \
     print_warning("expected " bold(green("command/var")) " instead got " bold(bred("eol")) ".")

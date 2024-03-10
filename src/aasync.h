@@ -1,5 +1,5 @@
-#ifndef __ASH_ASYNC_H__
-#define __ASH_ASYNC_H__
+#ifndef AASYNC_H
+#define AASYNC_H
 
 #include "ashe_utils.h"
 

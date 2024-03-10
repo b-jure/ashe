@@ -1,29 +1,24 @@
 #ifndef AUTILS_H
 #define AUTILS_H
 
-#include "token.h"
+#include "atoken.h"
 #include "acommon.h"
 
 #include <stdarg.h>
 
-
-typedef enum {
-    INFO_NAME,
-    INFO_DESC,
-    INFO_USAGE,
-} Info;
-
-
+/* cleanup and panic functions */
 void die(void);
 void die_err(const char* err);
 void Shell_cleanup(void); // Definition in 'shell.c'
 
-void vfprint_warning(const char* fmt, va_list argp);
-void fprint_warning(const char* fmt, ...);
-void fprint_error(const char* errfmt, ...);
+/* print error */
+void printf_error(const char* errfmt, ...);
+void vprintf_error_wprefix(const char* errfmt, va_list argp);
 void print_errno(void);
-void print_info(Info type, const char* str);
-void print_manpage(const char* name, const char* usage, const char* desc);
+
+/* print info */
+void fprint_info(const char* ifmt, ...);
+void vprintf_info_wprefix(const char* ifmt, va_list argp);
 
 ubyte in_dq(char* str, memmax len);
 ubyte is_escaped(char* bt, memmax curpos);

@@ -1,10 +1,8 @@
-#include "ashe_string.h"
-#include "builtin.h"
-#include "errors.h"
-#include "jobctl.h"
-#include "parser.h"
-#include "vec.h"
-#include "cmdline.h"
+#include "abuiltin.h"
+#include "aerrors.h"
+#include "ajobcntl.h"
+#include "aparser.h"
+#include "arun.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -12,22 +10,53 @@
 #include <stdlib.h>
 
 
-#define PIPE_R 0 /* Read  end of a pipe */
+
+#define DEV_DIR "/dev/"
+#define FD_DIR  DEV_DIR "fd/" 
+
+static const char* specialfiles[] = {
+    "stdin",
+    "stdout",
+    "stderr",
+};
+
+
+
+#define PIPE_R 0 /* Read end of a pipe */
 #define PIPE_W 1 /* Write end of a pipe */
 
 
-/* Default modes for opening a file in which we are redirecting the output */
-#define openf(file, append) open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
+
+/* open file for writing '>' or '>>' */
+#define ashe_wopen(file, append) \
+    open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
+
+/* open file for reading '<' */
+#define ashe_ropen(file) open(file, O_RDONLY)
+
+/* open file for reading and writing '<>' */
+#define ashe_rwopen(file) open(file, O_CREAT | O_RDWR, 0666)
+
+
+
+/* runtime errors */
+#define ERR_FDNOTOPEN 0
+#define ERR_FDLIMIT 0
+static const char* runerrors[] = {
+    "file descriptor '%d' is not open, fallback to default.",
+    "file descriptor '%d' is above the system limit (sysconf(_SC_OPEN_MAX)).",
+};
+
 
 
 /* Instructs forked process which pipe stream to dup() and close. */
 typedef struct {
     int32 pipefd[2];
     int32 closefd;
-} Context;
+} PipeContext;
 
 
-static finline void Context_init(Context* ctx)
+static finline void Context_init(PipeContext* ctx)
 {
     ctx->pipefd[0] = STDIN_FILENO;
     ctx->pipefd[1] = STDOUT_FILENO;
@@ -35,50 +64,42 @@ static finline void Context_init(Context* ctx)
 }
 
 
-static void configure_pipes(memmax i, int32* pipes, memmax cmdn, Context* ctx)
+static void configure_pipe_at(int32* pipes, memmax len, memmax i, PipeContext* ctx)
 {
-// TODO: Fix
-#define pipe_at(i, pipes) (pipes + (i * 2))
+    int32* poffset = NULL;
     if(i == 0) {
-        if(unlikely(pipe(pipes) < 0)) {
-            die();
-        } else {
-            ctx->pipefd[PIPE_W] = pipes[PIPE_W];
-            ctx->closefd = pipes[PIPE_R];
+        poffset = pipes;
+        if(unlikely(pipe(poffset) < 0)) die();
+        else {
+            ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+            ctx->closefd = poffset[PIPE_R];
         }
-    } else if(i != 0 && i + 1 != cmdn) {
-        if(unlikely(pipe(&pipes[i * 2]) < 0)) {
-            die();
-        } else {
-            ctx->pipefd[PIPE_R] = *pipe_at(i - 1, pipes);
-            ctx->pipefd[PIPE_W] = *(pipe_at(i, pipes) + PIPE_W);
-            ctx->closefd = *(pipe_at(i - 1, pipes) + PIPE_W);
+    } else if(i != len - 1) {
+        poffset = &pipes[i * 2];
+        if(unlikely(pipe(poffset) < 0)) die();
+        else {
+            ctx->pipefd[PIPE_R] = poffset[-2];
+            ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+            ctx->closefd = poffset[PIPE_R];
         }
     } else {
-        ctx->pipefd[PIPE_R] = *pipe_at(i - 1, pipes);
-        ctx->closefd = *(pipe_at(i - 1, pipes) + PIPE_W);
+        poffset = &pipes[--i * 2];
+        ctx->pipefd[PIPE_R] = poffset[PIPE_R];
+        ctx->closefd = poffset[PIPE_W];
     }
-
-#undef pipe_at
 }
 
 
-static finline ubyte fd_is_valid(int32 fd)
-{
-    return (fcntl(fd, F_GETFD) != -1 || errno != EBADF);
-}
-
-
-static int32 add_envs_to_environ(const ArrayBuffer* env)
+static int32 add_envvars(const ArrayCharptr* env)
 {
     memmax len = env->len;
     for(memmax i = 0; i < len; i++) {
-        char* name = ArrayBuffer_index(env, i)->data;
+        char* name = env->data[i];
         char* sep = strchr(name, '=');
         char* value = sep + 1;
         *sep = '\0';
         if(unlikely(setenv(name, value, 1) < 0)) {
-            print_warning("failed exporting variable" bold(bred(" %s")), name);
+            printf_error("failed exporting variable '%s'.", name);
             print_errno();
             return -1;
         }
@@ -87,33 +108,76 @@ static int32 add_envs_to_environ(const ArrayBuffer* env)
 }
 
 
-static int32 run_cmd_nofork(ArrayBuffer* argv, ArrayBuffer* env)
+static finline ubyte fd_isvalid(int32 fd)
+{
+    return (fcntl(fd, F_GETFD) != -1 || errno != EBADF);
+}
+
+/* Auxiliary to 'resolve_fdcs()' */
+static void setfd(int32* fdp, ubyte write)
+{
+    int32 fd = *fdp;
+    if(fd == -1) return;
+    if(!fd_isvalid(fd)) {
+        int64 fdmax = sysconf(_SC_OPEN_MAX);
+        ubyte error = ERR_FDNOTOPEN;
+        if(fdmax > fd) error = ERR_FDLIMIT;
+        fprint_warning(runerrors[error], fd);
+        *fdp = (write ? STDOUT_FILENO : STDIN_FILENO);
+    }
+}
+
+
+/* Resolves file descriptor context array by setting/closing
+ * the file descriptors accordingly and resolving the redirections.
+ * Note: this is invoked either just before executing builtin command
+ * or inside of a forked process, meaning changes to file handlers (file descriptors)
+ * inside of the current process are permanent (until program end). */
+static int32 cmd_resolve_redirections(Command* cmd)
+{
+    ArrayFDContext* fdcs = &cmd->fdcs;
+    ubyte exec = strcmp(cmd->argv.data[0].data, "exec") == 0;
+    for(memmax i = 0; i < fdcs->len; i++) {
+        FileHandle* fdc = ArrayFDContext_index(fdcs, i);
+        if(fdc->close && exec) { // close file descriptor ?
+
+        } else {
+            setfd(&fdc->fd_left, fdc->write);
+            setfd(&fdc->fd_right, fdc->write);
+            if(fdc->file.cap != 0) { // file redirection
+                if(fdc->write) fdc->fd_right = ashe_wopen(fdc->file.data, fdc->append);
+                else fdc->fd_right = ashe_ropen(fdc->file.data);
+                if(fdc->fd_right < 0) {
+                    print_errno();
+                    return -1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+
+static int32 run_cmd_nofork(Command* cmd)
 {
     int32 status, out, err, in;
+    ArrayBuffer* env = &cmd->env;
+    ArrayBuffer* argv = &cmd->argv;
     status = 0;
 
-    if(unlikely(add_envs_to_environ(env) == -1)) {
-        die();
-    }
-
-    /// Early return if there are no commands
-    /// to execute (no pipelines, conditionals, ...)
-    if(argv->len == 0) {
-        return status;
-    }
+    if(unlikely(add_envvars(env) == -1)) die();
+    if(argv->len == 0) return status;
 
     in = STDIN_FILENO;
     out = STDOUT_FILENO;
     err = STDERR_FILENO;
 
-    if(unlikely(
-           (in = dup(STDIN_FILENO)) < 0 || (out = dup(STDOUT_FILENO)) < 0 ||
-           (err = dup(STDERR_FILENO)) < 0))
-    {
+    /* dup() default descriptors in order to restore them later */
+    if(unlikely((in = dup(STDIN_FILENO)) < 0 || (out = dup(STDOUT_FILENO)) < 0 || (err = dup(STDERR_FILENO)) < 0))
         die();
-    }
 
-    resolve_redirections(argv);
+    ArrayFDContext* rds = &cmd->fdcs;
+    cmd_resolve_redirections(argv);
     status = run_builtin(argv[0], argv, 1);
 
     if(unlikely(
@@ -132,7 +196,7 @@ static int32 run_cmd_nofork(ArrayBuffer* argv, ArrayBuffer* env)
 }
 
 
-static int32 run_cmd(byte* const* argv, byte* const* env, Context* ctx, Job* job)
+static int32 run_cmd(byte* const* argv, byte* const* env, PipeContext* ctx, Job* job)
 {
     pid_t childPID = fork();
 
@@ -161,7 +225,7 @@ static int32 run_cmd(byte* const* argv, byte* const* env, Context* ctx, Job* job
         if(unlikely(is_null(argv[0]))) _exit(EXIT_SUCCESS);
 
         /// Export env variables
-        if(unlikely(add_envs_to_environ(env) < 0)) _exit(EXIT_FAILURE);
+        if(unlikely(add_envvars(env) < 0)) _exit(EXIT_FAILURE);
 
         pid_t pid = getpid(); /* Current process ID */
 
@@ -190,7 +254,7 @@ static int32 run_cmd(byte* const* argv, byte* const* env, Context* ctx, Job* job
         /// Connect stdin and stdout to pipe
         connect_io_with_pipe(ctx);
         /// Parse and configure all the redirections
-        resolve_redirections(argv);
+        cmd_resolve_redirections(argv);
 
         /// If builtin then execute
         if(is_builtin(argv[0])) _exit(run_builtin(argv[0], argv, 0));
@@ -239,13 +303,13 @@ static int32 Pipeline_run(Pipeline* pipeline, ubyte bg)
 
     /// Run the entire pipeline
     for(memmax i = 0; i < cmdn; i++) {
-        Context ctx;
+        PipeContext ctx;
         Context_init(&ctx);
         Command* cmd = ArrayCommand_index(commands, i);
 
         if(cmdn > 1) {
             ashe.sh_exit = 0; /* User is not exiting the shell */
-            configure_pipes(i, pipes, cmdn, &ctx);
+            configure_pipe_at(i, pipes, cmdn, &ctx);
         } else if(job.foreground && (cmd->argv.len == 0 || is_builtin(cmd->argv.data->data))) {
             /// In case we don't have a pipeline or conditional and
             /// only a single command that is run in foreground and
@@ -345,16 +409,14 @@ static void Command_getenv(Command* cmd, byte* out[], memmax len)
     }
 }
 
-static int32 close_pipe(int32* pp)
+static int32 close_pipe(int32* pipe)
 {
-    if(unlikely(close(*pp) < 0 || close(*(pp + 1)) < 0)) {
-        ATOMIC_PRINT({
-            PW_CPIPE(pp);
-            perr();
-        });
-        return FAILURE;
+    if(unlikely(close(pipe[PIPE_R]) < 0 || close(pipe[PIPE_W]) < 0)) {
+        PW_CPIPE(pipe);
+        perr();
+        return -1;
     }
-    return SUCCESS;
+    return 0;
 }
 
 static int32 rm_envs_from_environ(byte* const* envp)
@@ -379,7 +441,7 @@ static int32 rm_envs_from_environ(byte* const* envp)
     return SUCCESS;
 }
 
-static void connect_io_with_pipe(Context* ctx)
+static void connect_io_with_pipe(PipeContext* ctx)
 {
     if(unlikely(
            dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
@@ -391,78 +453,3 @@ static void connect_io_with_pipe(Context* ctx)
 
 }
 
-static void resolve_redirections(byte* const* argvp)
-{
-    /// Default streams
-    int32 infd = STDIN_FILENO; /* Default input stream */
-    int32 outfd = STDOUT_FILENO; /* Default output stream */
-    int32 errfd = STDERR_FILENO; /* Default err stream */
-    int32 redfd = -1; /* Redirections fd */
-
-    /// Parse redirections and also prune out argv leaving
-    /// only command and its arguments without redirections
-    ubyte append = 0;
-    const byte** pargvp = (const byte**)argvp;
-
-    for(; is_some(*argvp); argvp++) {
-        switch(**argvp) {
-            case '>':
-                if(*(*argvp + 1) == '>') append = 1;
-
-                if(unlikely((redfd = openf(*(++argvp), append)) < 0)) {
-                    ATOMIC_PRINT({
-                        PW_OPENF(*argvp);
-                        die();
-                    });
-                } else if(unlikely(close(outfd) < -1)) {
-                    ATOMIC_PRINT({
-                        PW_CLOSEF(outfd);
-                        die();
-                    });
-                } else outfd = redfd;
-                break;
-            case '<':
-                if(unlikely((redfd = open(*(++argvp), O_RDONLY)) < 0)) {
-                    ATOMIC_PRINT({
-                        PW_OPENF(*argvp);
-                        die();
-                    });
-                } else if(unlikely(close(infd) < 0)) {
-                    ATOMIC_PRINT({
-                        PW_CLOSEF(infd);
-                        die();
-                    });
-                } else infd = redfd;
-                break;
-            case '2':
-                if(*(*argvp + 1) == '>') {
-                    if(*(*argvp + 2) == '>') append = 1;
-
-                    if(unlikely((redfd = openf(*(++argvp), append)) < 0)) {
-                        ATOMIC_PRINT({
-                            PW_OPENF(*argvp);
-                            die();
-                        });
-                    } else if(unlikely(close(errfd) == -1)) {
-                        ATOMIC_PRINT({
-                            PW_CLOSEF(errfd);
-                            die();
-                        });
-                    } else errfd = redfd;
-                    break;
-                }
-                // FALLTHRU
-            default: *pargvp++ = *argvp; break;
-        }
-        append = 0;
-    }
-    *pargvp = NULL; /* Null out the pruned argv */
-
-    /// Ensure all the redirections are taken care of
-    if(unlikely(
-           dup2(infd, STDIN_FILENO) == -1 || dup2(outfd, STDOUT_FILENO) == -1 ||
-           dup2(errfd, STDERR_FILENO) == -1))
-    {
-        ATOMIC_PRINT(die());
-    }
-}
