@@ -23,6 +23,7 @@ typedef size_t memmax;
 typedef ssize_t ssize;
 
 typedef pid_t pid;
+typedef void (*sighandler)(int);
 /* -------------------------------- */
 
 
@@ -42,6 +43,12 @@ typedef enum {
 #define ispow2(x) (((x) & ((x)-1)) == 0)
 #define UINT_DIGITS 20
 /* -------------------------------- */
+
+
+/* Function visibility */
+#define ASHE_PRIVATE static
+#define ASHE_PUBLIC extern
+
 
 /* Compiler intrinsics */
 #if defined(__GNUC__)

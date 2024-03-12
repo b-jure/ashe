@@ -9,7 +9,6 @@
 #include <stdlib.h>
 
 
-
 #define ARRAY_INITIAL_SIZE 8
 #define GROW_ARRAY_CAPACITY(cap, initial_size) ((cap) < (initial_size) ? (initial_size) : (cap) * 2)
 
@@ -41,6 +40,16 @@ typedef void (*FreeFn)(void* value);
         self->len = 0;                                                                             \
         self->data = NULL;                                                                         \
     }                                                                                              \
+ \
+    static finline uint32 _ARRAY_METHOD(name, len) \
+    { \
+        return self->len; \
+    } \
+ \
+    static finline uint32 _ARRAY_METHOD(name, cap) \
+    { \
+        return self->cap; \
+    } \
                                                                                                    \
     static finline void _ARRAY_METHOD(name, init_cap, uint32 cap)                                  \
     {                                                                                              \
@@ -48,7 +57,7 @@ typedef void (*FreeFn)(void* value);
         self->cap = cap;                                                                           \
     }                                                                                              \
                                                                                                    \
-    static finline void _ARRAY_METHOD(name, grow)                                                  \
+    static void _ARRAY_METHOD(name, grow)                                                  \
     {                                                                                              \
         uint32 oldcap = self->cap;                                                                 \
         if(oldcap != 0 && !ispow2(oldcap)) {                                                       \

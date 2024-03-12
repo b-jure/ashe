@@ -36,11 +36,11 @@ static const ubyte is_n_redirection[] = {
 
 
 /* Parsing errors */
-#define ERR_EXPECT 0
-#define ERR_CMDSUBS 1
+#define ERR_EXPECT      0
+#define ERR_CMDSUBST    1
 static const char* perrors[] = {
-    "expected %s, instead got '%s'",
-    "can't have command substitution as first argument",
+    "expected %s, instead got '%s'.",
+    "can't have command substitution here.",
 };
 
 
@@ -69,7 +69,7 @@ static finline void Command_init(Command* cmd)
     ArrayCharptr_init(&cmd->argv);
     ArrayCharptr_init(&cmd->env);
     ArrayFileHandle_init(&cmd->fhandles);
-    cmd->stderr_pip = 0;
+    cmd->pipand = 0;
 }
 
 void Command_free(Command* cmd)
@@ -143,14 +143,14 @@ static void duplicate_or_close(Lexer* lexer, FileHandle* fh)
     Tokentype type = lexer->curr.type;
     if(type != TK_MINUS) {
         if(type == TK_WORD || type == TK_KVPAIR) {
-            fhdup(fh).fdstr = CSTR(lexer);
+            fh->filepath = CSTR(lexer);
         } else { 
             expect(lexer, 0, BM(TK_NUMBER), "file descriptor");
-            fhdup(fh).fddup = CNM(lexer);
+            fh->fddup = CNM(lexer);
         }
         return;
     }
-    fh->op = OP_CLOSE_N;
+    fh->op = OP_CLOSE;
 }
 
 
@@ -166,7 +166,7 @@ static void redirection(Lexer* lexer, Command* cmd)
 
     switch(lexer->curr.type) {
         case TK_AND_GREATER_GREATER:
-            fhredirect(&fh).append = 1;
+            fh.append = 1;
         case TK_AND_GREATER: {
             ashe_assert(!have_n, "parser fatal error, can't have number before '&>'");
             fh.op = OP_REDIRECT_ERROUT;
@@ -198,22 +198,22 @@ static void redirection(Lexer* lexer, Command* cmd)
             goto l_greater;
         }
         case TK_GREATER_GREATER:
-            fhredirect(&fh).append = 1;
+            fh.append = 1;
         case TK_GREATER: {
         l_greater:
             fh.op = OP_REDIRECT_OUT;
             fd = STDOUT_FILENO;
         l_redirect_fin:
-            fhredirect(&fh).fd = NFD_OR(have_n, fd);
+            fh.fd = NFD_OR(have_n, fd);
             expect(lexer, 1, BM(TK_WORD) | BM(TK_KVPAIR), "string");
-            fhredirect(&fh).filepath = CSTR(lexer);
+            fh.filepath = CSTR(lexer);
             break;
         }
         case TK_LESS_AND: {
             fh.op = OP_DUP_IN;
             fd = STDIN_FILENO;
         l_dup_fin:
-            fhredirect(&fh).fd = NFD_OR(have_n, fd);
+            fh.fd = NFD_OR(have_n, fd);
             duplicate_or_close(lexer, &fh);
             break;
         }
@@ -229,10 +229,10 @@ static void redirection(Lexer* lexer, Command* cmd)
 
 static int32 number(Lexer* lexer, Command* cmd)
 {
-    char* number_string = *ArrayCharptr_last(&ashe.sh_buffers);
     next_token(lexer);
     Tokentype type = lexer->curr.type;
     if(lexer->ws || !isnredirect(type)) { 
+        char* number_string = *ArrayCharptr_last(&ashe.sh_buffers);
         ArrayCharptr_push(&cmd->argv, number_string);
         return 0; // not a file descriptor (n)
     }
@@ -241,7 +241,7 @@ static int32 number(Lexer* lexer, Command* cmd)
 }
 
 
-static ubyte get_first_string(Lexer* lexer, Command* cmd)
+static ubyte get_first_command(Lexer* lexer, Command* cmd)
 {
     Tokentype type;
     Token* token;
@@ -284,7 +284,7 @@ static void command(Lexer* lexer, ArrayPipeline* arpip, Command* cmd, memmax dep
 {
     ArrayCharptr* target;
 
-    if(get_first_string(lexer, cmd)) goto l_switch; // we are 1 token ahead
+    if(get_first_command(lexer, cmd)) goto l_switch; // we are 1 token ahead
     if(cmd->argv.len == 0) return; // hit TK_EOL, have only env vars
 
     for(;;) {
@@ -292,7 +292,7 @@ static void command(Lexer* lexer, ArrayPipeline* arpip, Command* cmd, memmax dep
         l_switch:
         switch(lexer->curr.type) {
             case TK_PIPE_AND: {
-                cmd->stderr_pip = 1;
+                cmd->pipand = 1;
                 return; // this is a pipeline token
             }
             case TK_AND_GREATER:
@@ -312,6 +312,12 @@ static void command(Lexer* lexer, ArrayPipeline* arpip, Command* cmd, memmax dep
                 break;
             }
             case TK_LPAREN: {
+                Tokentype prevt = lexer->prev.type;
+                if(!lexer->ws && (prevt == TK_WORD || prevt == TK_NUMBER)) {
+                    printf_error(perrors[ERR_CMDSUBST]);
+                    print_input_and_invalid_token(lexer, &lexer->curr);
+                    jump_out(-1);
+                }
                 Pipeline pip;
                 Pipeline_init(&pip);
                 // Have to insert immediately in order to be able to
@@ -324,7 +330,7 @@ static void command(Lexer* lexer, ArrayPipeline* arpip, Command* cmd, memmax dep
                 ArrayPipeline_insert(arpip, index, pip);
                 next_token(lexer);
                 pipeline(lexer, arpip, &arpip->data[index], depth + 1);
-                expect(lexer, 0, BM(TK_RPAREN), "')' (end of command substitution)");
+                expect(lexer, 0, BM(TK_RPAREN), "')' (missing end of command substitution)");
                 break;
             }
             case TK_WORD: {

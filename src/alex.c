@@ -8,29 +8,14 @@
 #include <stdio.h>
 
 
-/* error token buffer size */
-#define BUFF_ERR_SIZE 100
-
-
-/* integers returned from 'fd_left()' and 'fd_right()'. */
-#define BIGFD(fd) ((fd) == -1)
-#define BADFD(fd) ((fd) == -2)
-
-
 /*
  * TODO: Implement ****GLOB OPERATOR****, and rest of the regular expressions
  * #include <glob.h>
  */
 
 
-
-/* Lexer errors */
-#define ERR_FDOVF 0
-#define ERR_FDINV 1
-static const char* lexerrors[] = {
-    "file descriptor too large '%s'.",
-    "invalid file descriptor.",
-};
+/* error token buffer size */
+#define BUFF_ERR_SIZE 100
 
 
 
@@ -43,7 +28,7 @@ static const char* tokenstr[] = {
 
 
 /* Return 1 if character 'c' is a char token. */
-static finline ubyte c_is_unique(int32 c)
+static finline ubyte has_precedence(int32 c)
 {
     switch(c) {
         case '>':
@@ -118,7 +103,7 @@ static Token Token_string(Lexer* lexer)
     dq = escape = 0;
 
     while((c = peek(lexer, 0))) {
-        if(!dq && (isspace(c) || (!escape && c_is_unique(c)))) break;
+        if(!dq && (isspace(c) || (!escape && has_precedence(c)))) break;
         if(!escape && c == '"') dq ^= 1;
         else if(c == '\\' || escape) escape ^= 1;
         Buffer_push(&buffer, c);

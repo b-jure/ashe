@@ -1,16 +1,11 @@
 #ifndef AASYNC_H
 #define AASYNC_H
 
-#include "ashe_utils.h"
+#include "autils.h"
 
-void mask_signal(int signum, int how);
-void setup_default_signal_handling(void);
-void disable_async_joblist_update(void);
-void enable_async_joblist_update(void);
-void sigchld_handler(int signum);
-void sigint_handler(__attribute__((unused)) int signum);
-void try_wait_missed_sigchld_signals(void);
-void unblock_signals(void);
-void block_signals(void);
+int32 init_signal_handlers(void);
+void ashe_mask_signals(int32 how);
+void disable_async_jobcntl_updates(void);
+void enable_async_jobcntl_updates(void);
 
 #endif

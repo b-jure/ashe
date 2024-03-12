@@ -1,7 +1,7 @@
 #include "aconf.h"
-#include "async.h"
-#include "errors.h"
-#include "shell.h"
+#include "aasync.h"
+#include "aerrors.h"
+#include "ashell.h"
 #include "aalloc.h"
 
 
@@ -38,42 +38,24 @@ static void print_welcome(void)
 }
 
 
-static void wrapped_aalloc(void* ptr)
-{
-    aalloc(ptr, 0);
-}
-
-void Shell_cleanup(void)
-{
-    Joblist_drop(&ashe.sh_jlist);
-    ArrayCharptr_free(&ashe.sh_buffers, wrapped_aalloc);
-    Lexer_free(&ashe.sh_lexer);
-}
-
-void Fork_cleanup(void)
-{
-    // Implement
-}
-
-
 void Shell_init(Shell* sh)
 {
     pid_t sh_pgid = getpgrp();
     int shell_is_interactive = isatty(STDIN_FILENO);
 
     if(shell_is_interactive) {
-        Joblist_init(&sh->sh_jlist);
+        JobControl_init(&sh->sh_jobcntl);
         Terminal_init(&sh->sh_term);
 
         /* Setup status environment variable */
         if(unlikely(setenv(ASHE_STATUS_VAR, "0", 1) < 0)) {
-            fprint_warning("failed creating status environment variable" bold(bred(ASHE_STATUS_VAR)));
+            printf_error("failed creating status environment variable '" ASHE_STATUS_VAR "'");
             die();
         }
 
         /* Setup shell cleanup, just to be polite and
          * provide forked processes with proper cleanup. */
-        if(unlikely(atexit(shell_cleanup))) {
+        if(unlikely(atexit(Fork_cleanup))) {
             PW_SHCLEANUP_INIT;
             die();
         }
@@ -95,7 +77,7 @@ void Shell_init(Shell* sh)
         if(unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0)) ATOMIC_PRINT(die());
 
         /* Setup shell signal handling (async) */
-        setup_default_signal_handling();
+        init_sighandlers();
 
         /* Print welcome message if it is set */
         print_welcome();

@@ -1,10 +1,10 @@
 #include "acommon.h"
-#include "errors.h"
-#include "jobctl.h"
-#include "input.h"
-#include "shell.h"
-#include "async.h"
-#include "parser.h"
+#include "aerrors.h"
+#include "ajobcntl.h"
+#include "ainput.h"
+#include "ashell.h"
+#include "aasync.h"
+#include "aparser.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -799,8 +799,10 @@ static void pbuiltin(void)
     });
 }
 
-int32 run_builtin(const char *command, char *const *argv, ubyte shell)
+int32 run_builtin(Command* cmd, ubyte shell)
 {
+    const char* command = ARGV(cmd, 0);
+    ArrayCharptr* argv = &cmd->argv;
     int32 status = 0;
 
     if(strcmp(command, "exit") == 0) return exit_builtin(argv, shell);

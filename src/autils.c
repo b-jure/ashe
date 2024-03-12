@@ -1,7 +1,6 @@
 #include "acommon.h"
 #include "aconf.h"
-#include "ashe_utils.h"
-#include "async.h"
+#include "autils.h"
 
 #include <errno.h>
 #include <string.h>
@@ -10,12 +9,10 @@
 
 void vprintf_error_wprefix(const char* errfmt, va_list argp)
 {
-    block_signals();
     fprintf(stderr, ASHE_ERR_PREFIX "");
     vfprintf(stderr, errfmt, argp);
     fputc('\n', stderr);
     fflush(stderr);
-    unblock_signals();
 }
 
 void printf_error(const char* errfmt, ...)
@@ -28,33 +25,29 @@ void printf_error(const char* errfmt, ...)
 
 void print_errno(void)
 {
-    block_signals(); // block early
     ashe_assert(errno != 0, "invalid errno");
     const char* errmsg = strerror(errno);
     printf_error(stderr, errmsg); // unblock_signals() in here
 }
 
 
+/* TODO: Maybe die() and die_err() should dump a log file ? */
 void die_err(const char* err)
 {
-    block_signals();
     panic(err);
 }
 
 void die(void)
 {
-    block_signals();
     panic(NULL);
 }
 
 
 void vprintf_info_wprefix(const char* ifmt, va_list argp)
 {
-    block_signals();
     fprintf(stderr, ASHE_INFO_PREFIX "");
     vfprintf(stderr, ifmt, argp);
     fputc('\n', stderr);
-    unblock_signals();
 }
 
 void printf_info(const char* ifmt, ...)
@@ -63,6 +56,16 @@ void printf_info(const char* ifmt, ...)
     va_start(argp, ifmt);
     vprintf_info_wprefix(ifmt, argp);
     va_end(argp);
+}
+
+
+char* dupstr(const char* str)
+{
+    char* dup = NULL;
+    memmax len = strlen(str) + 1;
+    dup = aalloc(dup, len);
+    memcpy(dup, str, len);
+    return dup;
 }
 
 
@@ -183,4 +186,3 @@ void unescape(Buffer* buffer)
     *newp = '\0';
     buffer->len = (newp - buffer->data) + 1;
 }
-

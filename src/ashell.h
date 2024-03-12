@@ -20,7 +20,6 @@ typedef struct {
 
 
 
-
 typedef enum {
     SETTING_EXIT      = (1 << 0),
     SETTING_NOCLOBBER = (1 << 1),
@@ -34,23 +33,33 @@ typedef struct {
 
 
 
+typedef struct {
+    ubyte exit      : 1;  /* set if last command was 'exit' */
+    ubyte interrupt : 1;  /* set if we got interrupted */
+    ubyte isfork    : 1;  /* set if this is forked shell process */
+} Flags;
+
+
 
 /* Note: 
  * sh_buffers index 0 (first value) -> welcome message cstring
  * sh_buffers index 1 (second value) -> prompt cstring
  * sh_buffers index >=2 (other values) -> cstring tokens */
 typedef struct {
-    JobControl sh_jobctl;
+    JobControl sh_jobcntl;
     Terminal sh_term;
     Lexer sh_lexer;
     ArrayCharptr sh_buffers;
     ArrayConditional sh_conds;
     AsheJmpBuf sh_buf;
     Settings sh_settings;
-    volatile ubyte sh_int; /* set if we got interrupted */
+    Flags sh_flags;
 } Shell;
 
 extern Shell ashe;  /* global */
+
+#define ashe_input() ashe.sh_term.tm_input.in_buffer.data
+#define ashe_input_len() ashe.sh_term.tm_input.in_buffer.len
 
 
 void Shell_init(Shell* shell);

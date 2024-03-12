@@ -23,7 +23,6 @@ typedef struct {
 
 
 void Lexer_init(Lexer* lexer, const char* start);
-void Lexer_free(Lexer* lexer);
 Token Lexer_next(Lexer* lexer);
 const char* Token_tostr(Token* token);
 

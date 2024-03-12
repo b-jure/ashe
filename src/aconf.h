@@ -27,6 +27,14 @@
 
 
 
+/* ---- Reserved file descriptors ----
+ * These are file descriptors ashe uses internally,
+ * you can change them if you know what you are doing. */
+#define ASHE_FD_0 10
+#define ASHE_FD_1 11
+#define ASHE_FD_2 12
+
+
 
 /* ---- Placeholders ---- */
 #define PP_HOST "%host" // host name
@@ -61,6 +69,15 @@
 /* ---- Settings ---- */
 #define ASHE_SETTING_WARN_ON_EXIT 1
 #define ASHE_SETTING_NOCLOBBER 1
+
+
+
+/* ---- Shell exit ---- */
+/* Sleep time in-between shell sending a kill signal
+ * to its child processes and trying to harvest them.
+ * Time is in milliseconds and can be >=0 or up to 1000
+ * milliseconds (1 second). */
+#define ASHE_WAIT_BEFORE_HARVEST_MS 100
 
 
 #endif

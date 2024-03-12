@@ -3,6 +3,7 @@
 
 #include "acommon.h"
 #include "aarray.h"
+#include "atoken.h"
 
 #include <termios.h>
 
@@ -41,7 +42,7 @@
 #define sv_cur_pos ESC(s)
 #define ld_cur_pos ESC(u)
 #define mv_cur_pos(row, col) ESC(row ";" col) "H"
-#define req_cur_pos ESC(6n)
+#define request_cur_pos ESC(6n)
 #define hide_cur ESC(?25l)
 #define show_cur ESC(?25h)
 /*-------------------------------------*/
@@ -102,44 +103,41 @@ typedef struct {
     memmax len; /* line length (bytes) */
 } Line;
 
-
-/* Array of 'Line's */
 ARRAY_NEW(ArrayLine, Line);
+
+
 typedef struct {
-    char in_buffer[ARG_MAX]; /* buffer for storing terminal input */
-    ArrayLine in_lines; /* array of newline separated or wrapped terminal input */
-    memmax in_len; /* input length (in bytes) */
-    Cursor in_cur; /* terminal cursor */
+    Buffer in_buffer; /* input buffer */
+    Buffer in_dbuffer; /* draw buffer */
+    ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
+    Cursor in_cursor; /* terminal cursor */
 } TerminalInput;
 
+void TerminalInput_clear(TerminalInput* tinput);
+void TerminalInput_read(TerminalInput* tinput);
+void TerminalInput_redraw(TerminalInput* tinput);
+void TerminalInput_gotoend(TerminalInput* tinput);
+
+
 
 typedef struct {
+    TerminalInput tm_input;
     struct termios tm_dfltermios; /* default mode */
     struct termios tm_rawtermios; /* raw mode */
-    TerminalInput tm_input;
     uint32 tm_rows; /* terminal rows */
     uint32 tm_columns; /* terminal columns */
     uint32 tm_col; /* current terminal column */
-    uint32 tm_plen; /* @? */
-    ubyte tm_cfgp; /* @? */
-    ubyte tm_reading; /* flag indicating if we are reading from or waiting for input */
+    memmax tm_promptlen; /* prompt length */
+    ubyte tm_reading; /* flag indicating if we are reading input */
 } Terminal;
 
-
 void Terminal_init(Terminal* term);
-void TerminalInput_clear(TerminalInput* buffer);
-void TerminalInput_read(TerminalInput* buffer);
-void TerminalInput_redraw(TerminalInput* buffer);
-void TerminalInput_gotoend(TerminalInput* buffer);
-
-void set_raw_mode(struct termios* rawterm);
-void set_default_mode(struct termios* dflterm);
-void set_terminal_mode(struct termios* tmode);
+void Terminal_free(Terminal* term);
 
 void print_prompt(void);
 
-int32 get_window_size(uint32* height, uint32* width);
 int32 get_window_size_fallback(uint32* height, uint32* width);
+int32 get_window_size(uint32* height, uint32* width);
 int32 get_cursor_pos(uint32* row, uint32* col);
 
 #endif

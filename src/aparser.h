@@ -8,39 +8,25 @@
 #include "atoken.h"
 
 
-ARRAY_NEW(ArrayCharptr, char*);
-
-
 typedef enum {
-    OP_REDIRECT_ERROUT = 0,   /* '>&'string | '&>'string | '&>>'string  */
-    OP_REDIRECT_OUT,          /* [n]'>'string | [n]'>>'string           */
-    OP_REDIRECT_IN,           /* [n]'<'string                           */
-    OP_REDIRECT_INOUT,        /* [n]'<>'string                          */
-    OP_DUP_IN,                /* [n]'<&'n                               */
-    OP_DUP_OUT,               /* [n]'>&'n                               */
-    OP_CLOSE_N,               /* [n]'>&-' | [n]'<&-'                    */
+    OP_REDIRECT_ERROUT = 0,     /* '>&'string | '&>'string | '&>>'string  */
+    OP_REDIRECT_OUT,            /* [n]'>'string | [n]'>>'string           */
+    OP_REDIRECT_IN,             /* [n]'<'string                           */
+    OP_REDIRECT_INOUT,          /* [n]'<>'string                          */
+    OP_DUP_IN,                  /* [n]'<&'n                               */
+    OP_DUP_OUT,                 /* [n]'>&'n                               */
+    OP_CLOSE,                   /* [n]'>&-' | [n]'<&-'                    */
 } Operation;
 
 typedef struct {
-    union {
-        struct {
-            const char* filepath;  // redirection filepath
-            memmax fd;             // file descriptor
-            ubyte append;          // open file with append flag
-        } s1; // used when redirecting to a file
-        struct {
-            memmax fd;          // file descriptor
-            memmax fddup;       // file descriptor to duplicate
-            const char* fdstr;  // special files (stdin...)
-        } s2; // used when duplicating file descriptors
-    } u;
+    const char* filepath;  /* redirection filepath */
+    memmax fd;             /* file descriptor */
+    memmax fddup;          /* file descriptor to duplicate */
+    ubyte append;          /* open file with append flag */
     Operation op;
 } FileHandle;
 
 ARRAY_NEW(ArrayFileHandle, FileHandle);
-
-#define fhredirect(fh) ((fh)->u.s1)
-#define fhdup(fh) ((fh)->u.s2)
 
 
 
@@ -50,13 +36,13 @@ typedef struct {
     ArrayCharptr env;           /* environmental variables */
     ArrayFileHandle fhandles;   /* file handles */
     uint32 cmd_settings;        /* bitmask of settings [@builtin.h] */
-    ubyte stderr_pip;           /* is this '|&' pipeline */
+    ubyte pipand;           /* is this '|&' pipeline */
 } Command;
 
 ARRAY_NEW(ArrayCommand, Command);
 
-#define ARGV(cmd, n) ArrayBuffer_index(&(cmd)->argv, n)->data
-#define ENV(cmd, n) ArrayBuffer_index(&(cmd)->env, n)->data
+#define ARGV(cmd, n) (cmd)->argv.data[n]
+#define ENV(cmd, n) (cmd)->env.data[n]
 
 
 

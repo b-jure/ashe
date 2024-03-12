@@ -1,9 +1,29 @@
 #include "aalloc.h"
-#include "ashe_utils.h"
+#include "ajobcntl.h"
+#include "ashell.h"
 
 #include <stdarg.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+
+
+void cleanup_all(void)
+{
+    JobControl_free_and_harvest(&ashe.sh_jobcntl);
+    ArrayCharptr_free(&ashe.sh_buffers, NULL);
+    ArrayConditional_free(&ashe.sh_conds, (FreeFn) Conditional_free);
+}
+
+
+void cleanup_fork(void)
+{
+    JobControl_free(&ashe.sh_jobcntl);
+    ArrayCharptr_free(&ashe.sh_buffers, NULL);
+    ArrayConditional_free(&ashe.sh_conds, (FreeFn) Conditional_free);
+}
+
 
 void panic(const char* errmsg, ...)
 {
@@ -13,9 +33,11 @@ void panic(const char* errmsg, ...)
         vfprintf(stderr, errmsg, argp);
         va_end(argp);
     }
-    Shell_cleanup();
+    if(ashe.sh_flags.isfork) cleanup_fork();
+    else cleanup_all();
     abort();
 }
+
 
 void* aalloc(void* ptr, memmax size)
 {
@@ -25,8 +47,8 @@ void* aalloc(void* ptr, memmax size)
     }
     ptr = realloc(ptr, size);
     if(unlikely(ptr == NULL)) {
-        panic("out of memory (tried allocating - '%lu')", size);
-        // unreachable;
+        perror(ENOMEM);
+        panic(NULL);
     }
     return ptr;
 }

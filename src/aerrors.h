@@ -39,7 +39,7 @@
 #define PW_PGRPSET(pid, pgid)                                                                      \
     print_warning(                                                                                 \
         obrack bold(blue("P_%d")) cbrack                                                           \
-        " failed setting itself into process group " bold(blue("%d")),                             \
+        "pid:%d failed setting itself into process group %d" bold(blue("%d")),                             \
         (pid),                                                                                     \
         (pgid))
 

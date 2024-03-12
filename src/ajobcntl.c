@@ -1,577 +1,634 @@
-#include "errors.h"
-#include "input.h"
-#include "jobcntl.h"
-#include "shell.h"
+#include "ajobcntl.h"
+#include "aconf.h"
+#include "ainput.h"
+#include "ajobcntl.h"
+#include "ashell.h"
+#include "autils.h"
 
-#include <assert.h>
 #include <errno.h>
-#include <stdarg.h>
+#include <time.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+
+#if !defined(ASHE_WAIT_BEFORE_HARVEST_MS) || ASHE_WAIT_BEFORE_HARVEST_MS < 0
+#undef ASHE_WAIT_BEFORE_HARVEST_MS
+#define ASHE_WAIT_BEFORE_HARVEST_MS 100
+#endif
 
 
 
-#define POLITE(status) (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
+/* ==== PROCESS ==== */
 
-#define job_completed_format green("completed") obrack red("-") cbrack
-#define job_stopped_format   red("stopped") obrack magenta("!") cbrack
-#define job_started_format   byellow("started") obrack green("+") cbrack
-#define print_sigterm(status, polite)                                                          \
-    process_format(                                                                            \
-        proc,                                                                                  \
-        "was " bold(bred("TERMINATED")) " by " bold(magenta("SIG")) bold(magenta("%s")) " %s", \
-        sigabbrev_np(status),                                                                  \
-        ((polite) ? " (" italic("polite") ")" : ""))
-
+/* Initialize the 'proc' with 'pid' */
+ASHE_PUBLIC void Process_init(Process* proc, pid pid)
+{
+    proc->pid = pid;
+    proc->status = 0;
+    proc->stopped = 0;
+    proc->completed = 0;
+}
 
 
-void Joblist_init(JobControl* jobcntl)
+
+
+
+/* ==== JOB ==== */
+
+/* Initialize the 'job', store 'input' for debug and
+ * 'bg' is a flag indicating if this job is running in background. */
+ASHE_PUBLIC void Job_init(Job* job, const char* input, ubyte bg)
+{
+    job->tmodes = ashe.sh_term.tm_dfltermios;
+    ArrayProcess_init(&job->processes);
+    job->id = 0;
+    job->pgid = 0;
+    job->notified = 0;
+    job->foreground = !bg;
+    job->input = input;
+}
+
+
+/* Gets process at 'i'. */
+ASHE_PRIVATE finline Process* Job_get_process(Job* job, memmax i)
+{
+    return ArrayProcess_index(&job->processes, i);
+}
+
+
+/* Returns 1 if 'job' contains process with 'pid', 0 otherwise. */
+ASHE_PRIVATE finline ubyte Job_contains_pid(Job* job, pid pid)
+{
+    memmax jobcnt = Job_processes(job);
+    while(jobcnt--)
+        if(Job_get_process(job, jobcnt)->pid == pid) 
+            return 1;
+    return 0;
+}
+
+
+/* Returns the number of processes currently in the 'job'. */
+ASHE_PUBLIC memmax Job_processes(Job* job)
+{
+    return ArrayProcess_len(&job->processes);
+}
+
+
+/* Add 'process' into 'job'. */
+ASHE_PUBLIC void Job_add_process(Job* job, Process process)
+{
+    ArrayProcess_push(&job->processes, process);
+}
+
+
+/* Return 1 if 'job' is stopped, otherwise 0. */
+ASHE_PUBLIC ubyte Job_is_stopped(Job* job)
+{
+    memmax len = Job_processes(job);
+    for(memmax i = 0; i < len; i++)
+        if(Job_get_process(job, i)->stopped) 
+            return 1;
+    return 0;
+}
+
+
+/* Return 1 if 'job' is completed, otherwise 0. */
+ASHE_PUBLIC ubyte Job_is_completed(Job* job)
+{
+    memmax len = Job_processes(job);
+    for(memmax i = 0; i < len; i++)
+        if(!Job_get_process(job, i)->completed)
+            return 0;
+    return 1;
+}
+
+
+/* Marks the 'job' as running in the background.
+ * If 'cont' is non zero then SIGCONT signal is
+ * sent to the job's process group ID. */
+ASHE_PUBLIC void Job_mark_as_background(Job* job, ubyte cont)
+{
+    job->foreground = 0;
+    if(unlikely(cont && kill(-job->pgid, SIGCONT) < 0))
+        print_errno();
+}
+
+
+/* Updates the process 'pid' that is part of the 'job'.
+ * Auxiliary to 'Job_wait()'. */
+ASHE_PRIVATE ubyte Job_update_process(Job* job, pid pid, int32 status)
+{
+    memmax len  = Job_processes(job);
+    Process* proc = NULL;
+
+    if(pid > 0) {
+        for(memmax i = 0; i < len; i++) {
+            proc = Job_get_process(job, i);
+            if(proc->pid == pid) {
+                if(WIFSTOPPED(status)) {
+                    proc->stopped = 1;
+                } else {
+                    proc->completed = 1;
+                    if(WIFSIGNALED(status)) {
+                        proc->status = WTERMSIG(status);
+                    } else {
+                        ashe_assert(WIFEXITED(status), "process somehow didn't _exit/_Exit/exit");
+                        proc->status = WEXITSTATUS(status);
+                    }
+                }
+                return 1;
+            }
+        }
+        ashe_assert(0, "foreground job was trying to update invalid process!");
+    } else if(ECHILD != errno)
+        print_errno();
+
+    return 0;
+}
+
+
+/* Waits for the 'job' to finish or until it gets paused.
+ * Auxiliary to 'Job_move_to_foreground()'. */
+ASHE_PRIVATE int32 Job_wait(Job* job)
+{
+    int32 status;
+    pid pid;
+    ubyte stopped = 0;
+
+    do {
+        pid = waitpid(-job->pgid, &status, WUNTRACED);
+    } while(Job_update_process(job, pid, status) && !(stopped = Job_is_stopped(job)) && !Job_is_completed(job));
+
+    if(stopped) return -1;
+    else return ArrayProcess_last(&job->processes)->status;
+}
+
+
+/* Moves the 'job' into foreground.
+ * If 'cont' is non zero then SIGCONT signal is sent
+ * to the 'job's process group ID. */
+ASHE_PUBLIC int32 Job_move_to_foreground(Job* job, ubyte cont)
+{
+    job->foreground = 1;
+
+    /* Put job's process group into the foreground.
+     * This should never fail, if it fails then panic. */
+    if(unlikely(tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
+        goto l_panic;
+
+    /* If 'cont' is set, send 'SIGCONT' signal to the job's process group, additionally 
+     * set terminal attributes to match the ones that were in effect when job was initialized. */
+    if(unlikely(cont && tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes) < 0 || kill(-job->pgid, SIGCONT) < 0))
+        goto l_panic;
+
+    /* Wait for job to either complete or get stopped. */
+    int32 status = Job_wait(job);
+
+    /* If job was originally ran in the foreground without being stopped prior
+     * and now it is stopped, then add it to 'JobControl'. */
+    if(!cont && status == -1)
+        JobControl_add_job(&ashe.sh_jobcntl, job);
+
+    /* Put shell back into the foreground, if this somethow fails then panic. */
+    if(unlikely(tcsetpgrp(STDIN_FILENO, getpgrp()) < 0))
+        goto l_panic;
+
+    /* Update the terminal modes for the job and load the default shell terminal mode. */
+    if(unlikely(tcgetattr(STDIN_FILENO, &job->tmodes) || tcsetattr(STDIN_FILENO, TCSADRAIN, &ashe.sh_term.tm_dfltermios) < 0))
+        goto l_panic;
+
+    return status;
+
+    l_panic:
+    print_errno();
+    panic(NULL);
+    return 0; // so the compiler doesn't complain
+}
+
+
+/* Set 'job' as running by setting all processes that
+ * belong to the 'job' as not stopped.
+ * Auxiliary to 'Job_continue()'. */
+ASHE_PRIVATE finline void Job_set_as_running(Job* job)
+{
+    memmax len = Job_processes(job);
+    for(memmax i = 0; i < len; i++) Job_get_process(job, i)->stopped = 0;
+    job->notified = 0;
+}
+
+
+/* Sets the 'job' as running and if 'isfg' is a non zero
+ * value then the job is moved into foreground.
+ * If 'isfg' is 0, then the job is not moved into foreground
+ * and is marked as background.
+ * Additionally SIGCONT signal is sent to the job's process 
+ * group ID in case the 'job' was stopped. */
+ASHE_PUBLIC void Job_continue(Job* job, ubyte isfg)
+{
+    Job_set_as_running(job);
+    if(isfg) {
+        /* Move the job to foreground and continue it if it was stopped. */
+        Job_move_to_foreground(job, 1);
+
+        /* If job is completed remove it from 'JobControl'.
+         * If this fails the something is really wrong, panic. */
+        if(unlikely(Job_is_completed(job) && !JobControl_remove_job(&ashe.sh_jobcntl, job)))
+            panic("Couldn't remove the job from 'JobControl'.");
+
+    } else {
+        Job_mark_as_background(job, 1);
+    }
+}
+
+
+/* Frees the 'job' resources. */
+ASHE_PUBLIC void Job_free(Job* job)
+{
+    ArrayProcess_free(&job->processes, NULL);
+    aalloc((void*)job->input, 0);
+}
+
+
+
+
+
+
+/* ==== JOB-CONTROL ==== */
+
+/* Initialize the 'jobcntl'. */
+ASHE_PUBLIC void Joblist_init(JobControl* jobcntl)
 {
     ArrayJob_init(&jobcntl->jobs);
 }
 
-static memmax Joblist_id(JobControl* jobcntl)
+
+/* Return the number of jobs in 'jobcntl'. */
+ASHE_PUBLIC memmax JobControl_jobs(JobControl* jobcntl)
+{
+    return ArrayJob_len(&jobcntl->jobs);
+}
+
+
+/* Generate new id.
+ * Auxiliary to 'JobControl_add_job()'. */
+ASHE_PRIVATE finline memmax Joblist_id(JobControl* jobcntl)
 {
     static int32 id = 1;
     if(jobcntl->jobs.len == 0) id = 1;
     return id++;
 }
 
-ubyte joblist_push(JobControl* jobcntl, Job* job)
+
+/* Add 'job' to 'jobcntl' and assign it new id. */
+ASHE_PUBLIC void JobControl_add_job(JobControl* jobcntl, Job* job)
 {
     job->id = Joblist_id(jobcntl);
-    return ArrayJob_push(&jobcntl->jobs, *job);
+    ArrayJob_push(&jobcntl->jobs, *job);
 }
 
-static finline void joblist_remove(JobControl* jobcntl, memmax i)
+
+/* Remove 'Job' from 'jobcntl' located at index 'i'.
+ * Additionally cleanup the 'Job' memory.
+ * Auxiliary to 'JobControl_remove_job()'. */
+ASHE_PRIVATE finline void JobControl_remove(JobControl* jobcntl, uint32 i)
 {
     Job job = ArrayJob_remove(&jobcntl->jobs, i);
     Job_free(&job);
 }
 
-ubyte joblist_remove_job(JobControl* jobcntl, Job* job)
+
+/* Getter, returns Job at 'i' located in 'jobcntl'. */
+ASHE_PRIVATE finline Job* JobControl_get_job_at(JobControl* jobcntl, uint32 i)
 {
-    memmax len = joblist_len(jobcntl);
-    for(memmax i = 0; i < len; i++) {
-        if(Joblist_get_job(jobcntl, i)->id == job->id) {
-            joblist_remove(jobcntl, i);
-            return true;
+    return ArrayJob_index(&jobcntl->jobs, i);
+}
+
+
+/* Remove 'job' from 'jobcntl'.
+ * If 'job' was found, remove it and free its resources, this returns 1.
+ * Return 0 if the job was not found. */
+ASHE_PUBLIC ubyte JobControl_remove_job(JobControl* jobcntl, Job* job)
+{
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    for(memmax i = 0; i < jobcnt; i++) {
+        if(JobControl_get_job_at(jobcntl, i)->pgid == job->pgid) {
+            JobControl_remove(jobcntl, i);
+            return 1;
         }
     }
-    return false;
+    return 0;
 }
 
-memmax joblist_len(JobControl* jlist)
+
+/* Return string representation of 'sig'.
+ * This function only handles signals specified by ISO C.
+ * Auxiliary to 'JobControl_update_process()'. */
+ASHE_PRIVATE const char* sigstr(int32 sig)
 {
-    return vec_len(jlist->jobs);
+    switch(sig) {
+        case SIGABRT: return "ABRT";
+        case SIGFPE: return "FPE";
+        case SIGILL: return "ILL";
+        case SIGINT: return "INT";
+        case SIGSEGV: return "SEGV";
+        case SIGTERM: return "TERM";
+        default: return NULL;
+    }
 }
 
-void joblist_update(JobControl* jobcntl)
+
+/* Update process corresponding to 'pid' with 'status'.
+ * Additionally report if the process was terminated by a signal.
+ * Auxiliary to 'JobControl_update()'. */
+ASHE_PRIVATE ubyte JobControl_update_process(JobControl* jobcntl, pid pid, int32 status)
 {
-    int32   status;
+#define POLITE(status) (WTERMSIG((status)) & (SIGTERM | SIGINT | SIGQUIT | SIGKILL | SIGHUP))
+
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    Process* proc = NULL;
+
+    if(pid > 0) {
+        for(memmax i = 0; i < jobcnt; i++) {
+            Job* job  = JobControl_get_job_at(jobcntl, i);
+            memmax jobn = Job_processes(job);
+
+            for(memmax j = 0; j < jobn; j++) {
+                proc = Job_get_process(job, j);
+
+                if(proc->pid == pid) {
+                    proc->status = status;
+                    if(WIFSTOPPED(status)) { // check if stopped
+                        proc->stopped = 1;
+                    } else {
+                        proc->completed = 1;
+                        if(WIFSIGNALED(status)) { // check if terminated
+                            proc->status = WTERMSIG(status);
+                            ubyte polite = POLITE(status);
+                            const char* sig = sigstr(status);
+                            printf_info("PID-%d was terminated by SIG%s %s",
+                                         proc->pid,
+                                         sig ? sig : "NULL",
+                                         (polite ? "(polite)" : ""));
+                        } else if(WIFEXITED(status)) {
+                            proc->status = WEXITSTATUS(status);
+                        }
+                    }
+                    return 1;
+                }
+            }
+        }
+        ashe_assert(0, "unrechable: can't update process that is not inside the 'JobControl'");
+    } else if(pid != 0 && errno != ECHILD) {
+        print_errno();
+    }
+
+    return 0;
+
+#undef POLITE
+}
+
+
+/* Wait for any child process to stop or terminate and update it.
+ * This runs until there are no any process that stopped or were terminated.
+ * Auxiliary to 'JobControl_update_and_notify'. */
+ASHE_PRIVATE void JobControl_update(JobControl* jobcntl)
+{
+    int32 status;
     pid pid;
-
     do {
         pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
-    } while(update_process(jobcntl, pid, status));
+    } while(JobControl_update_process(jobcntl, pid, status));
 }
 
-/* Gets called on interrupt, so we have to take care
- * of the terminal input and drawing the screen properly. */
-void Joblist_update_and_notify(JobControl* jobcntl, int32 signum)
+
+
+/* Updates the 'JobControl' by removing all of the finished jobs.
+ * Additionally reports any of the jobs that were completed and/or stopped.
+ * In most cases gets called inside the signal handler, so we have to take
+ * care of the terminal input and about redrawing the screen properly.
+ * Calling this directly without masking off the other signals with 
+ * SIG_BLOCK is highly unsafe and will probably break something. */
+ASHE_PUBLIC void JobControl_update_and_notify(JobControl* jobcntl)
 {
-    unused(signum);
-    memmax len = joblist_len(jobcntl);
-    Job* job;
+    Terminal* term = &ashe.sh_term;
+    TerminalInput* tinput = &term->tm_input;
+    memmax jobcnt = JobControl_jobs(jobcntl);
 
-    joblist_update(jobcntl);
+    /* Update all jobs. */
+    JobControl_update(jobcntl);
 
-    for(memmax i = 0; i < len;) {
-        job = Joblist_get_job(jobcntl, i);
+    /* Cache positions and old prompt length, because
+     * we will have to redraw cached input correctly. */
+    uint32 col  = term->tm_input.in_cursor.cr_col;
+    uint32 row  = term->tm_input.in_cursor.cr_row;
+    uint32 tcol = term->tm_col;
+    uint32 plen = term->tm_promptlen;
 
-        /* Cache positions and old prompt length */
-        uint32 col  = inbuff.in_cur.cr_col;
-        uint32 row  = inbuff.in_cur.cr_row;
-        uint32 tcol = terminal.tm_col;
-        uint32 plen = terminal.tm_plen;
+    for(memmax i = 0; i < jobcnt;) {
+        Job* job = JobControl_get_job_at(jobcntl, i);
+        ubyte completed = 0;
 
-        /// TODO: less repeats refactor the control flow
-        if(job_completed(job)) {
-            if(!job->foreground) {
-                if(ashe.sh_term.tm_reading) {
-                    inbuff_goto_end(&inbuff);
-                }
-
-                job_format(job, job_completed_format);
-                joblist_remove(jobcntl, i);
-                pprompt();
-
-                if(ashe.sh_term.tm_reading) {
-                    inbuff.in_cur.cr_col = col;
-                    inbuff.in_cur.cr_row = row;
-                    if(plen >= terminal.tm_plen) {
-                        terminal.tm_col = tcol - (plen - terminal.tm_plen);
-                    } else {
-                        terminal.tm_col = tcol + (terminal.tm_plen - plen);
-                    }
-                    inbuff_redraw(&inbuff);
-                }
-            } else {
-                joblist_remove(jobcntl, i);
-            }
-
-            len--;
+        if(Job_is_completed(job)) {
+            completed = 1;
+            JobControl_remove(jobcntl, i);
+            jobcnt--;
+            if(!job->foreground) 
+                goto l_redraw;
             continue;
-        } else if(job_stopped(job) && !job->notified) {
-            if(ashe.sh_term.tm_reading) {
-                inbuff_goto_end(&inbuff);
-            }
+        } else if(Job_is_stopped(job) && !job->notified) {
+            l_redraw:
+            if(ashe.sh_term.tm_reading) // function called from signal handler ?
+                TerminalInput_gotoend(tinput);
 
-            job_format(job, job_stopped_format);
-            pprompt();
+            /* Print info */
+            printf_info("job (pgid:%d) %s", job->pgid, (completed ? "completed [+]" : "stopped [-]"));
 
-            if(ashe.sh_term.tm_reading) {
-                inbuff.in_cur.cr_col = col;
-                inbuff.in_cur.cr_row = row;
-                if(plen >= terminal.tm_plen) {
-                    terminal.tm_col = tcol - (plen - terminal.tm_plen);
+            /* Reprint prompt */
+            print_prompt();
+
+            if(term->tm_reading) { // function called from signal handler ?
+                tinput->in_cursor.cr_col = col;
+                tinput->in_cursor.cr_row = row;
+                if(plen >= term->tm_promptlen) {
+                    term->tm_col = tcol - (plen - term->tm_promptlen);
                 } else {
-                    terminal.tm_col = tcol + (terminal.tm_plen - plen);
+                    term->tm_col = tcol + (term->tm_promptlen - plen);
                 }
-                inbuff_redraw(&inbuff);
+                TerminalInput_redraw(tinput);
             }
-            job->notified = true;
+
+            if(completed) continue;
+            else job->notified = 1;
         }
         i++;
     }
 }
 
-static Job* joblist_get_job(JobControl* jobcntl, ubyte foreground)
+
+/* Returns address of a Job that has a matching 'id' inside of 'jobcntl'.
+ * If no matching Job was found this returns NULL. */
+ASHE_PUBLIC Job* JobControl_get_job_with_id(JobControl* jobcntl, memmax id)
 {
-    memmax len = joblist_len(jobcntl);
-    Job* job;
-
-    while(len--) {
-        job = Joblist_get_job(jobcntl, len);
-        if(job->foreground == foreground) return job;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    for(memmax i = 0; i < jobcnt; i++) {
+        Job* job = JobControl_get_job_at(jobcntl, i);
+        if(job->id == id) 
+            return job;
     }
-
     return NULL;
 }
 
-static Job* joblist_get_pid(JobControl* jobcntl, pid pid, ubyte foreground)
+
+/* Returns address of a Job that contains a process with matching
+ * 'pid' inside of 'jobcntl'.
+ * If no matching Job was found this returns NULL. */
+ASHE_PUBLIC Job* JobControl_get_job_with_pid(JobControl* jobcntl, pid pid)
 {
-    memmax len = joblist_len(jobcntl);
-    Job* job;
-
-    while(len--) {
-        job = Joblist_get_job(jobcntl, len);
-        if(job->foreground == foreground && job_contains_pid(job, pid)) return job;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    for(memmax i = 0; i < jobcnt; i++) {
+        Job* job  = JobControl_get_job_at(jobcntl, i);
+        memmax proc_cnt = Job_processes(job);
+        for(memmax j = 0; j < proc_cnt; j++)
+            if(Job_get_process(job, j)->pid == pid) 
+                return job;
     }
-
     return NULL;
 }
 
-static Job* joblist_get_id(JobControl* jobcntl, memmax id, ubyte foreground)
+
+/* Returns address of a Job that has a matching 'pgid' inside of 'jobcntl'.
+ * If no matching Job was found this returns NULL. */
+ASHE_PUBLIC Job* JobControl_get_job_with_pgid(JobControl* jobcntl, pid pgid)
 {
-    memmax len = joblist_len(jobcntl);
-    Job* job;
-
-    while(len--) {
-        job = Joblist_get_job(jobcntl, len);
-        if(job->id == id && job->foreground == foreground) return job;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    for(memmax i = 0; i < jobcnt; i++) {
+        Job* job = JobControl_get_job_at(jobcntl, i);
+        if(job->pgid == pgid) 
+            return job;
     }
-
     return NULL;
 }
 
-static ubyte job_contains_pid(Job* job, pid pid)
+
+/* Gets the Job from 'jobcntl' that matches the 'where' flag.
+ * If 'where' is a non zero value then only foreground jobs can be returned. 
+ * If 'where' is zero then only a background job can be returned.
+ * If no matching jobs were found, NULL is returned.
+ * If the job is found it will be returned as in fifo (first in first out). */
+ASHE_PUBLIC Job* JobControl_get_job_from(JobControl* jobcntl, ubyte where)
 {
-    memmax len = job_len(job);
-    while(len--) {
-        if(job_at(job, len)->pid == pid) return true;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    while(jobcnt--) {
+        Job* job = JobControl_get_job_at(jobcntl, jobcnt);
+        if(job->foreground == where)
+            return job;
     }
-    return false;
-}
-
-Job* joblist_find_id(JobControl* jobcntl, memmax id)
-{
-    memmax len = joblist_len(jobcntl);
-    Job* job;
-
-    for(memmax i = 0; i < len; i++) {
-        job = Joblist_get_job(jobcntl, i);
-        if(job->id == id) return job;
-    }
-
     return NULL;
 }
 
-Job* joblist_find_pid(JobControl* jobcntl, pid pid)
+
+/* Gets the Job from 'jobcntl' that matches 'where' and has matching 'id'.
+ * If 'where' is a non zero value then only foreground jobs can be returned.
+ * If 'where is zero then only a background job can be returned.
+ * Job additionally must have matching 'id'.
+ * If no matching jobs were found, NULL is returned.
+ * If the job is found it will be returned as in fifo (first in first out). */
+ASHE_PUBLIC Job* JobControl_get_job_with_id_from(JobControl* jobcntl, memmax id, ubyte where)
 {
-    memmax len = joblist_len(jobcntl);
-    Job* job;
-    memmax jobn;
-
-    for(memmax i = 0; i < len; i++) {
-        job  = Joblist_get_job(jobcntl, i);
-        jobn = job_len(job);
-
-        for(memmax j = 0; j < jobn; j++)
-            if(job_at(job, j)->pid == pid) return job;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    while(jobcnt--) {
+        Job* job = JobControl_get_job_at(jobcntl, jobcnt);
+        if(job->id == id && job->foreground == where)
+            return job;
     }
-
     return NULL;
 }
 
-Job* joblist_get_bg_pid(JobControl* jobcntl, pid pid)
+
+/* Gets the Job from 'jobcntl' that matches 'where' and 'pid'.
+ * If 'where' is a non zero value then only foreground jobs can be returned.
+ * If 'where is zero then only a background job can be returned.
+ * Job additionally must have matching 'pid'.
+ * If no matching jobs were found, NULL is returned.
+ * If the job is found it will be returned as in fifo (first in first out). */
+ASHE_PUBLIC Job* JobControl_get_job_with_pid_from(JobControl* jobcntl, pid pid, ubyte where)
 {
-    return joblist_get_pid(jobcntl, pid, false);
-}
-
-Job* joblist_get_bg_id(JobControl* jobcntl, memmax id)
-{
-    return joblist_get_id(jobcntl, id, false);
-}
-
-Job* joblist_get_bg_job(JobControl* jobcntl)
-{
-    return joblist_get_job(jobcntl, false);
-}
-
-Job* joblist_get_fg_pid(JobControl* jobcntl, pid pid)
-{
-    return joblist_get_pid(jobcntl, pid, true);
-}
-
-Job* joblist_get_fg_id(JobControl* jobcntl, memmax id)
-{
-    return joblist_get_id(jobcntl, id, true);
-}
-
-Job* joblist_get_fg_job(JobControl* jobcntl)
-{
-    return joblist_get_job(jobcntl, true);
-}
-
-/* ------------------------------------------ */
-
-
-
-
-/* ========= JOB ========= */
-
-void Job_init(Job* job, byte connection, ubyte bg)
-{
-    job->pgid = 0;
-    job->notified = 0;
-    job->connection = connection;
-    job->foreground = (!bg || (connection != JC_NONE));
-    ArrayProcess_init(&job->processes);
-    job->id = 0;
-    job->tmodes = ashe.sh_term.tm_dfltermios;
-}
-
-void Job_free(Job* job)
-{
-    ProcessArray_free(&job->processes, Buffer_free)
-}
-
-void Joblist_free(JobControl* jobcntl)
-{
-    memmax len = jobcntl->jobs.len;;
-    while(len--) {
-        Job* job = Joblist_get_job(jobcntl, len);
-        Job_kill_and_harvest(job);
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    while(jobcnt--) {
+        Job* job = JobControl_get_job_at(jobcntl, jobcnt);
+        if(job->foreground == where && Job_contains_pid(job, pid)) 
+            return job;
     }
-    JobArray_free(&jobcntl->jobs, Job_free);
-}
-
-Process* job_at(Job* job, memmax i)
-{
-    return vec_index(job->processes, i);
-}
-
-void Job_format(Job* job, byte* fmt, ...)
-{
-    memmax  len = job_len(job);
-    va_list argp;
-
-    va_start(argp, fmt);
-    fprintf(stderr, "\r\n" obrack bold(byellow("J_%ld")) cbrack obrack blue("\""), job->id);
-    for(memmax i = 0; i < len; i++)
-        fprintf(stderr, bred("%s %s"), job_at(job, i)->cmd, (i + 1 == len) ? "" : "| ");
-    fprintf(stderr, blue("\b\"") cbrack cyan(" -> "));
-    vfprintf(stderr, fmt, argp);
-    fprintf(stderr, "\r\n");
-    va_end(argp);
-}
-
-ubyte job_add_process(Job* job, Process* process)
-{
-    if(unlikely(!vec_push(job->processes, process))) {
-        ATOMIC_PRINT(PW_PROCTOJOB(process->pid));
-        return false;
-    }
-    return true;
-}
-
-Job* joblist_getjob(JobControl* jlist, pid pgid)
-{
-    vec_t* list = jlist->jobs;
-    memmax len  = vec_len(list);
-    Job* job;
-    for(memmax i = 0; i < len; i++)
-        if((job = vec_index(list, i))->pgid == pgid) return job;
     return NULL;
 }
 
-ubyte job_stopped(Job* job)
+
+/* Gets the Job from 'jobcntl' that matches 'where' and has matching 'pgid'.
+ * If 'where' is a non zero value then only foreground jobs can be returned.
+ * If 'where is zero then only a background job can be returned.
+ * Job additionally must have matching 'pgid'.
+ * If no matching jobs were found, NULL is returned.
+ * If the job is found it will be returned as in fifo (first in first out). */
+ASHE_PUBLIC Job* JobControl_get_job_with_pgid_from(JobControl* jobcntl, pid pgid, ubyte where)
 {
-    memmax len = job_len(job);
-    for(memmax i = 0; i < len; i++)
-        if(job_at(job, i)->stopped) return true;
-    return false;
+    memmax jobcnt = JobControl_jobs(jobcntl);
+    while(jobcnt--) {
+        Job* job = JobControl_get_job_at(jobcntl, jobcnt);
+        if(job->pgid == pgid && job->foreground == where)
+            return job;
+    }
+    return NULL;
 }
 
-ubyte job_completed(Job* job)
+
+/* Frees the memory occupied by 'jobcntl'. */
+ASHE_PUBLIC void JobControl_free(JobControl* jobcntl)
 {
-    memmax len = job_len(job);
-    for(memmax i = 0; i < len; i++)
-        if(!job_at(job, i)->completed) return false;
-    return true;
+    ArrayJob_free(&jobcntl->jobs, (FreeFn) Job_free);
 }
 
-Process* job_lastp(Job* job)
-{
-    return vec_back(job->processes);
-}
 
-static int32 job_wait(Job* job)
-{
-    int32   status;
-    pid pid;
-
-    do {
-        pid = waitpid(-job->pgid, &status, WUNTRACED);
-    } while(job_update(job, pid, status) && !job_stopped(job) && !job_completed(job));
-
-    if(job_stopped(job)) return 0;
-    else return job_lastp(job)->status;
-}
-
-static void Job_kill_and_harvest(Job* job)
+/* Sends SIGKILL signal to all the processes that belong to 'job'. */
+ASHE_PRIVATE void Job_kill_and_harvest(Job* job)
 {
     pid  pid;
     memmax zombies = 0;
+    memmax processes = Job_processes(job);
 
-    if(kill(-job->pgid, SIGKILL) < 0) {
-        ATOMIC_PRINT({
-            pwarn("failed sending a SIGKILL to process group ID:%d", job->pgid);
-            perr();
-        });
-    }
+    /* Send SIGKILL signal to all processes belonging to 'job' */
+    if(kill(-job->pgid, SIGKILL) < 0)
+        print_errno();
 
+    /* Wait a bit before harvesting */
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = (ASHE_WAIT_BEFORE_HARVEST_MS % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+
+    /* Start harvesting */
     do {
-        pid = waitpid(-job->pgid, NULL, WNOHANG);
+        pid = waitpid(-job->pgid, NULL, WUNTRACED);
         if(pid == 0) zombies++;
-    } while(errno != ECHILD);
+        processes--;
+    } while(pid != -1 && processes > 0);
 
     if(unlikely(zombies > 0))
-        pwarn("%d zombie processes not reaped in the process group ID %d", zombies, job->pgid);
+        printf_error("was unable to reap %d processes from process group ID:%d", zombies, job->pgid);
 }
 
-ubyte job_update(Job* job, pid pid, int32 status)
+
+
+/* Same as 'JobControl_free()' except this additionally sends 'SIGKILL'
+ * signal to all processes inside of 'jobcntl and harvests them all. */
+ASHE_PUBLIC void JobControl_free_and_harvest(JobControl* jobcntl)
 {
-    memmax     len  = job_len(job);
-    Process* proc = NULL;
-
-    if(pid > 0) {
-        for(memmax i = 0; i < len; i++) {
-            proc = job_at(job, i);
-
-            if(proc->pid == pid) {
-                if(WIFSTOPPED(status)) {
-                    proc->stopped = true;
-                } else {
-                    proc->completed = true;
-                    if(WIFSIGNALED(status)) {
-                        proc->status = WTERMSIG(status);
-                    } else {
-                        assert(WIFEXITED(status));
-                        proc->status = WEXITSTATUS(status);
-                    }
-                }
-                return true;
-            }
-        }
-        /// Invariant broken
-        pwarn(
-            "FIX ME: foreground job was trying to update invalid process! PROCESS -> "
-            "PID:%d, CMDLINE:'%s'\r\n",
-            proc->pid,
-            proc->cmd);
-        return false;
-    } else if(ECHILD == errno) {
-        return false;
-    } else {
-        perr();
-        return false;
+    memmax len = jobcntl->jobs.len;
+    while(len--) {
+        Job* job = JobControl_get_job_at(jobcntl, len);
+        Job_kill_and_harvest(job);
     }
-}
-
-int32 job_move_to_fg(Job* job, ubyte cont)
-{
-    /* Mark job as foreground */
-    job->foreground = true;
-
-    /* Put job process group into the foreground */
-    tcsetpgrp(TERMINAL_FD, job->pgid); /* Can't fail */
-
-    /* If continue flag is set, send SIGCONT signal to the job process group */
-    if(cont) {
-        if(unlikely(
-               tcsetattr(TERMINAL_FD, TCSADRAIN, &job->tmodes) < 0 || kill(-job->pgid, SIGCONT) < 0))
-        {
-            ATOMIC_PRINT(perr());
-        }
-    }
-
-    /* Wait for job to either complete or get stopped */
-    int32 status = job_wait(job);
-
-    /* If job was originally ran in the foreground without being stopped prior
-     * and now it is stopped, then move it into the jobcntl */
-    if(unlikely(!cont && job_stopped(job) && !joblist_push(&ashe.sh_jlist, job))) {
-        ATOMIC_PRINT(PW_ADDJ(job));
-        exit(EXIT_FAILURE);
-    }
-
-    /* put shell back into the foreground */
-    tcsetpgrp(TERMINAL_FD, getpgrp()); /* Can't fail */
-
-    /* Update the terminal modes for the job and load the default shell terminal mode. */
-    if(unlikely(
-           tcgetattr(TERMINAL_FD, &job->tmodes)
-           || tcsetattr(TERMINAL_FD, TCSADRAIN, &shell.sh_term.tm_dflterm) < 0))
-    {
-        ATOMIC_PRINT({
-            PW_SHDFLMODE;
-            perr();
-        });
-    }
-
-    return status;
-}
-
-void job_move_to_bg(Job* job, ubyte cont)
-{
-    job->foreground = false;
-    if(cont)
-        if(unlikely(kill(-job->pgid, SIGCONT) < 0)) ATOMIC_PRINT(perr(););
-}
-
-memmax job_len(Job* job)
-{
-    return vec_len(job->processes);
-}
-
-void job_sa_running(Job* job)
-{
-    memmax len = job_len(job);
-    for(memmax i = 0; i < len; i++) job_at(job, i)->stopped = false;
-    job->notified = 0;
-}
-
-void Job_continue(Job* job, ubyte foreground)
-{
-    job_sa_running(job);
-    if(foreground) {
-        job_move_to_fg(job, true);
-        if(unlikely(job_completed(job) && !joblist_remove_job(&ashe.sh_jlist, job))) {
-            /// Invariant broken
-            ATOMIC_PRINT(pwarn("FIX ME: tried removing background job that was not in the jobcntl!"));
-            exit(EXIT_FAILURE);
-        }
-    } else job_move_to_bg(job, true);
-}
-
-void Process_init(Process* proc, pid pid, char* argv)
-{
-    proc->status = 0;
-    proc->stopped = 0;
-    proc->completed = 0;
-    proc->pid = pid;
-    proc->cmd = argv;
-}
-
-void Process_free(Process* proc)
-{
-    Buffer_free(&(proc)->cmd, NULL);
-}
-
-static void process_format(Process* p, byte* fmt, ...)
-{
-    va_list argp;
-    va_start(argp, fmt);
-
-    ATOMIC_PRINT({
-        fprintf(
-            stderr,
-            "\r\n" obrack bold(blue("P_%d")) cbrack obrack blue("\"") bred("%s") blue("\"")
-                cbrack                                     cyan(" -> "),
-            p->pid,
-            p->cmd);
-        vfprintf(stderr, fmt, argp);
-        fprintf(stderr, "\r\n");
-    });
-
-    va_end(argp);
-}
-
-static ubyte update_process(JobControl* jobcntl, pid pid, int32 status)
-{
-    memmax     joblistn = joblist_len(jobcntl);
-    Process* proc     = NULL;
-
-    if(pid > 0) {
-        for(memmax i = 0; i < joblistn; i++) {
-            Job* job  = Joblist_get_job(jobcntl, i);
-            memmax jobn = job_len(job);
-
-            for(memmax j = 0; j < jobn; j++) {
-                proc = job_at(job, j);
-
-                if(proc->pid == pid) {
-                    proc->status = status;
-                    if(WIFSTOPPED(status)) {
-                        proc->stopped = true;
-                    } else {
-                        proc->completed = true;
-                        if(WIFSIGNALED(status)) {
-                            proc->status = WTERMSIG(status);
-                            ATOMIC_PRINT(print_sigterm(proc->status, POLITE(status)));
-                        } else if(WIFEXITED(status)) {
-                            proc->status = WEXITSTATUS(status);
-                        }
-                    }
-                    return true;
-                }
-            }
-        }
-        pwarn(
-            "FIX ME: tried to update process that is not inside the jobcntl! PROCESS -> "
-            "PID:%d, CMDLINE:'%s'",
-            proc->pid,
-            proc->cmd);
-        return false;
-    } else if(pid == 0 || errno == ECHILD) {
-        return false;
-    } else {
-        ATOMIC_PRINT({ perr(); });
-        return false;
-    }
-
-    return false;
+    JobControl_free(jobcntl);
 }

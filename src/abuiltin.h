@@ -2,8 +2,11 @@
 #define ABUILTIN_H
 
 #include "acommon.h"
+#include "aarray.h"
 
-int run_builtin(const char *command, char *const *argv, ubyte shell);
+ARRAY_NEW(ArrayCharptr, char*);
+
+int run_builtin(ArrayCharptr* argv);
 ubyte is_builtin(const char *command);
 
  

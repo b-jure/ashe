@@ -1,30 +1,71 @@
-#include "async.h"
-#include "errors.h"
-#include "input.h"
-#include "jobctl.h"
-#include "shell.h"
+#include "aasync.h"
+#include "acommon.h"
+#include "ainput.h"
+#include "ajobcntl.h"
+#include "ashell.h"
 
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 
-void sigwin_handler(int signum)
+
+
+
+/* Signals which we handle and block/unblock. */
+static const int32 signals[] = {
+    SIGINT,
+    SIGCHLD,
+    SIGWINCH,
+};
+
+
+PRIVATE void SIGINT_handler(int signum);
+PRIVATE void SIGCHLD_handler(int signum);
+PRIVATE void SIGWINCH_handler(int signum);
+
+static sighandler handlers[] = {
+    SIGINT_handler,
+    SIGCHLD_handler,
+    SIGWINCH_handler,
+};
+
+/* Number of elements in 'signals' and signal handlers. */
+#define SIGN (sizeof(signals) / sizeof(signals[0]))
+
+
+
+
+/* Mask signal 'signum' by specifying 'how'.
+ * 'how' should be SIG_BLOCK or SIG_UNBLOCK. */
+PRIVATE void mask_signal(int signum, int how)
+{
+    sigset_t signal;
+    sigemptyset(&signal);
+    sigaddset(&signal, signum);
+    sigprocmask(how, &signal, NULL);
+}
+
+
+/* SIGWINCH signal handler */
+PRIVATE void SIGWINCH_handler(int signum)
 {
     unused(signum);
     mask_signal(SIGCHLD, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
-    ashe.sh_int = 1;
+    ashe.sh_flags.interrupt = 1;
     get_size_or_die(&ashe.sh_term.tm_rows, &ashe.sh_term.tm_columns);
     mask_signal(SIGCHLD, SIG_UNBLOCK);
     mask_signal(SIGINT, SIG_UNBLOCK);
 }
 
-void sigint_handler(int signum)
+
+/* SIGINT signal handler */
+PRIVATE void SIGINT_handler(int signum)
 {
     unused(signum);
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGCHLD, SIG_BLOCK);
-    ashe.sh_int = 1;
+    ashe.sh_flags.interrupt = 1;
     TerminalInput_gotoend(&ashe.sh_term.tm_input);
     fprintf(stderr, "\r\n");
     print_prompt();
@@ -33,51 +74,41 @@ void sigint_handler(int signum)
     mask_signal(SIGCHLD, SIG_UNBLOCK);
 }
 
-void sigchld_handler(int signum)
+
+/* SIGCHLD signal handler */
+PRIVATE void SIGCHLD_handler(int signum)
 {
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
-    ashe.sh_int = true;
-    if(unlikely(get_cursor_pos(NULL, &ashe.sh_term.tm_col))) {
-        exit(EXIT_FAILURE);
-    } else {
-        Joblist_update_and_notify(&ashe.sh_jlist, signum);
-        mask_signal(SIGWINCH, SIG_UNBLOCK);
-        mask_signal(SIGINT, SIG_UNBLOCK);
-    }
-}
-
-void unblock_signals(void)
-{
-    mask_signal(SIGCHLD, SIG_UNBLOCK);
-    mask_signal(SIGINT, SIG_UNBLOCK);
+    ashe.sh_flags.interrupt = 1;
+    if(unlikely(get_cursor_pos(NULL, &ashe.sh_term.tm_col)))
+        panic("couldn't get cursor position.");
+    JobControl_update_and_notify(&ashe.sh_jobcntl);
     mask_signal(SIGWINCH, SIG_UNBLOCK);
+    mask_signal(SIGINT, SIG_UNBLOCK);
 }
 
-void block_signals(void)
+
+/* Masks signals in 'signals' array. */
+PUBLIC void ashe_mask_signals(int32 how)
 {
-    mask_signal(SIGCHLD, SIG_BLOCK);
-    mask_signal(SIGINT, SIG_BLOCK);
-    mask_signal(SIGWINCH, SIG_BLOCK);
+    for(int32 i = 0; i < SIGN; i++)
+        mask_signal(signals[i], how);
 }
 
-void mask_signal(int signum, int how)
-{
-    sigset_t signal;
-    sigemptyset(&signal);
-    sigaddset(&signal, signum);
-    sigprocmask(how, &signal, NULL);
-}
 
-void enable_async_joblist_update(void)
+/* Enables asynchronous 'JobControl' updates. */
+PUBLIC void enable_async_jobcntl_updates(void)
 {
     struct sigaction old_action;
     sigaction(SIGCHLD, NULL, &old_action);
-    old_action.sa_handler = sigchld_handler;
+    old_action.sa_handler = SIGCHLD_handler;
     sigaction(SIGCHLD, &old_action, NULL);
 }
 
-void disable_async_joblist_update(void)
+
+/* disables asynchronous 'JobControl' updates. */
+PUBLIC void disable_async_jobcntl_updates(void)
 {
     struct sigaction old_action;
     sigaction(SIGCHLD, NULL, &old_action);
@@ -85,37 +116,32 @@ void disable_async_joblist_update(void)
     sigaction(SIGCHLD, &old_action, NULL);
 }
 
-void setup_default_signal_handling(void)
+
+/* Initializes signal handlers. */
+PUBLIC int32 init_signal_handlers(void)
 {
     struct sigaction default_action;
     sigemptyset(&default_action.sa_mask);
-    default_action.sa_handler = sigint_handler;
-    default_action.sa_flags   = 0;
 
-    if(unlikely(sigaction(SIGINT, &default_action, NULL) < 0)) {
-        PW_SIGINITS("SIGINT");
-        die();
-    }
-
-    default_action.sa_handler = SIG_DFL;
-
-    if(unlikely(sigaction(SIGCHLD, &default_action, NULL) < 0)) {
-        PW_SIGINITS("SIGCHLD");
-        die();
+    for(int32 i = 0; i < SIGN; i++) {
+        sighandler handler = handlers[i];
+        if(signals[i] == SIGCHLD) handler = SIG_DFL;
+        default_action.sa_handler = handler;
+        default_action.sa_flags = 0;
+        if(unlikely(sigaction(signals[i], &default_action, NULL) < 0))
+            goto l_error;
     }
 
     default_action.sa_handler = SIG_IGN;
-
-    if(unlikely(
-           sigaction(SIGTTIN, &default_action, NULL) < 0 || sigaction(SIGTTOU, &default_action, NULL) < 0
-           || sigaction(SIGTSTP, &default_action, NULL) < 0 || sigaction(SIGQUIT, &default_action, NULL) < 0))
+    if(unlikely(sigaction(SIGTTIN, &default_action, NULL) < 0
+                || sigaction(SIGTTOU, &default_action, NULL) < 0
+                || sigaction(SIGTSTP, &default_action, NULL) < 0
+                || sigaction(SIGQUIT, &default_action, NULL) < 0))
     {
-        PW_SIGINIT;
-        die();
+        l_error:
+        print_errno();
+        return -1;
     }
-}
 
-void try_wait_missed_sigchld_signals(void)
-{
-    Joblist_update_and_notify(&ashe.sh_jlist, 0);
+    return 0;
 }

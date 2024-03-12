@@ -15,67 +15,69 @@ typedef struct {
     int32 status; /* exit status */
     ubyte stopped; /* flag indicating if process is stopped */
     ubyte completed; /* flag indicating if process is finished executing */
-    Buffer cmd; /* @?: debug */
 } Process;
 
 ARRAY_NEW(ArrayProcess, Process);
 
-void Process_init(Process* proc, pid pid, byte* argv);
-void Process_free(Process* proc);
-
+void Process_init(Process* proc, pid pid);
 
 
 
 
 typedef struct {
-    ArrayProcess processes;
+    struct termios tmodes; /* Terminal attributes/settings */
+    ArrayProcess processes; /* processes belonging to the job */
+    memmax id; /* job id, ordered (1,2,3...) */
     pid pgid; /* process group ID */
     ubyte notified; /* @? */
-    ubyte foreground; /* flag indicating if the job is running in foreground */
-    Connection connection; /* connection type */
-    memmax id;
-    struct termios tmodes;
+    ubyte foreground; /* set if job is running in foreground */
+    const char* input; /* input from terminal (debug) */
 } Job;
 
 ARRAY_NEW(ArrayJob, Job);
 
-void Job_init(Job* job, ubyte con, ubyte bg);
-Process* Job_get_process(Job* job, memmax i);
-memmax Job_proccesses(Job* job);
-ubyte Job_add_process(Job* job, Process* process);
+void Job_init(Job* job, const char* dbginput, ubyte isbg);
+memmax Job_processes(Job* job);
+void Job_add_process(Job* job, Process process);
 ubyte Job_is_stopped(Job* job);
 ubyte Job_is_completed(Job* job);
-void Job_move_to_background(Job* job, ubyte cont);
+void Job_mark_as_background(Job* job, ubyte cont);
 int32 Job_move_to_foreground(Job* job, ubyte cont);
-void Job_format(Job* job, byte* fmt, ...); /* ??? */
 void Job_continue(Job* job, ubyte foreground);
-ubyte Job_update_process(Job* job, pid pid, int32 status);
 void Job_free(Job* job); 
 
 
 
 
 
+/* ===== Interface to job control ==== */
+
 typedef struct {
     ArrayJob jobs; /* running/stopped jobs */
-} JobControl; // wrapper type for interface
+} JobControl; // wrapper type for job control interface
 
-/* Interface to job control */
 void JobControl_init(JobControl* jobcntl);
+
 memmax JobControl_jobs(JobControl* jobcntl);
-#define JobControl_get_job(jobcntl, i) ArrayJob_index(&(jobcntl)->jobs, i)
+void JobControl_add_job(JobControl* jobcntl, Job* job);
 ubyte JobControl_remove_job(JobControl* jobcntl, Job* job);
-void JobControl_update_and_notify(JobControl* jobcntl, int32 signum); /* Signal handler */
-ubyte JobControl_push(JobControl* jobcntl, Job* job);
-Job* JobControl_pgid_find_job(JobControl* jobcntl, pid pgid);
-Job* JobControl_pid_find_job(JobControl* jobcntl, pid pid);
-Job* JobControl_id_find_job(JobControl* jobcntl, memmax id);
+void JobControl_update_and_notify(JobControl* jobcntl);
+
+Job* JobControl_get_job_with_id(JobControl* jobcntl, memmax id);
+Job* JobControl_get_job_with_pid(JobControl* jobcntl, pid pid);
+Job* JobControl_get_job_with_pgid(JobControl* jobcntl, pid gpid);
+
+Job* JobControl_get_job_from(JobControl* jobcntl, ubyte where);
+Job* JobControl_get_job_with_id_from(JobControl* jobcntl, memmax id, ubyte where);
+Job* JobControl_get_job_with_pid_from(JobControl* jobcntl, pid pid, ubyte where);
+Job* JobControl_get_job_with_pgid_from(JobControl* jobcntl, pid pgid, ubyte where);
+
+Job* JobControl_get_job_with_id(JobControl* jobcntl, memmax id);
+Job* JobControl_get_job_with_pid(JobControl* jobcntl, pid pid);
+Job* JobControl_get_job_with_pgid(JobControl* jobcntl, pid pgid);
 Job* JobControl_get_foreground_job(JobControl* jobcntl);
-Job* JobControl_pid_get_foreground_job(JobControl* jobcntl, pid pid);
-Job* JobControl_id_get_foreground_job(JobControl* jobcntl, memmax id);
-Job* JobControl_get_background_job(JobControl* jobcntl);
-Job* JobControl_pid_get_background_job(JobControl* jobcntl, pid pid);
-Job* JobControl_id_get_background_job(JobControl* jobcntl, memmax id);
+
+void JobControl_free_and_harvest(JobControl* jobcntl);
 void JobControl_free(JobControl* jobcntl);
 
 #endif
