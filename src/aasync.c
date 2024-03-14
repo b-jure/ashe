@@ -19,9 +19,9 @@ static const int32 signals[] = {
 };
 
 
-PRIVATE void SIGINT_handler(int signum);
-PRIVATE void SIGCHLD_handler(int signum);
-PRIVATE void SIGWINCH_handler(int signum);
+ASHE_PRIVATE void SIGINT_handler(int signum);
+ASHE_PRIVATE void SIGCHLD_handler(int signum);
+ASHE_PRIVATE void SIGWINCH_handler(int signum);
 
 static sighandler handlers[] = {
     SIGINT_handler,
@@ -37,7 +37,7 @@ static sighandler handlers[] = {
 
 /* Mask signal 'signum' by specifying 'how'.
  * 'how' should be SIG_BLOCK or SIG_UNBLOCK. */
-PRIVATE void mask_signal(int signum, int how)
+ASHE_PRIVATE void mask_signal(int signum, int how)
 {
     sigset_t signal;
     sigemptyset(&signal);
@@ -47,7 +47,7 @@ PRIVATE void mask_signal(int signum, int how)
 
 
 /* SIGWINCH signal handler */
-PRIVATE void SIGWINCH_handler(int signum)
+ASHE_PRIVATE void SIGWINCH_handler(int signum)
 {
     unused(signum);
     mask_signal(SIGCHLD, SIG_BLOCK);
@@ -60,7 +60,7 @@ PRIVATE void SIGWINCH_handler(int signum)
 
 
 /* SIGINT signal handler */
-PRIVATE void SIGINT_handler(int signum)
+ASHE_PRIVATE void SIGINT_handler(int signum)
 {
     unused(signum);
     mask_signal(SIGWINCH, SIG_BLOCK);
@@ -76,7 +76,7 @@ PRIVATE void SIGINT_handler(int signum)
 
 
 /* SIGCHLD signal handler */
-PRIVATE void SIGCHLD_handler(int signum)
+ASHE_PRIVATE void SIGCHLD_handler(int signum)
 {
     mask_signal(SIGWINCH, SIG_BLOCK);
     mask_signal(SIGINT, SIG_BLOCK);
@@ -90,7 +90,7 @@ PRIVATE void SIGCHLD_handler(int signum)
 
 
 /* Masks signals in 'signals' array. */
-PUBLIC void ashe_mask_signals(int32 how)
+ASHE_PUBLIC void ashe_mask_signals(int32 how)
 {
     for(int32 i = 0; i < SIGN; i++)
         mask_signal(signals[i], how);
@@ -98,7 +98,7 @@ PUBLIC void ashe_mask_signals(int32 how)
 
 
 /* Enables asynchronous 'JobControl' updates. */
-PUBLIC void enable_async_jobcntl_updates(void)
+ASHE_PUBLIC void enable_async_jobcntl_updates(void)
 {
     struct sigaction old_action;
     sigaction(SIGCHLD, NULL, &old_action);
@@ -108,7 +108,7 @@ PUBLIC void enable_async_jobcntl_updates(void)
 
 
 /* disables asynchronous 'JobControl' updates. */
-PUBLIC void disable_async_jobcntl_updates(void)
+ASHE_PUBLIC void disable_async_jobcntl_updates(void)
 {
     struct sigaction old_action;
     sigaction(SIGCHLD, NULL, &old_action);
@@ -118,7 +118,7 @@ PUBLIC void disable_async_jobcntl_updates(void)
 
 
 /* Initializes signal handlers. */
-PUBLIC int32 init_signal_handlers(void)
+ASHE_PUBLIC int32 init_signal_handlers(void)
 {
     struct sigaction default_action;
     sigemptyset(&default_action.sa_mask);
