@@ -37,22 +37,22 @@
 
 
 /* ---- Placeholders ---- */
-#define PP_HOST "%host" // host name
-#define PP_USER "%user" // user name
-#define PP_JOBC "%jobc" // background jobs count
-#define PP_DIR "%dir" // current directory
-#define PP_ADIR "%adir" // current directory absolute path
-#define PP_NDIR(n) "%" #n "dir" // current directory trimmed to 'n' length
-#define PP_TIME "%time" // time in format - '19:15' (HH:MM)
-#define PP_DATE "%date" // date in format - '15.05.2024' (DD.MM.YY)
-#define PP_UPTIME "%uptime" // system uptime in format - '8:53' (H[H]:M[M])
-
+static const char* placeholders[] = {
+    "%host",    // host name
+    "%user",    // user name
+    "%jobc",    // number of background jobs
+    "%dir",     // current directory
+    "%adir",    // current directory absolute path
+    "%time",    // time in format - HH:MM
+    "%date",    // time in format - DD.MM.YY
+    "%uptime",  // system uptime in format - H[H]:M[M]
+};
 
 
 
 /* ---- Welcome message ---- */
 #define ASHE_WELCOME \
-    "Welcome %user!\n" \
+    "Welcome %host!\n" \
     "\tuptime - %uptime\n" \
     "\ttime   - %time\n" \
     "\tdate   - %date\n" \
@@ -61,7 +61,7 @@
 
 
 /* ---- Prompt ---- */
-#define ASHE_PROMPT "ashe $ "
+#define ASHE_PROMPT "(%user)ashe$ "
 
 
 
