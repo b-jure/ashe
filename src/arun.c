@@ -12,531 +12,494 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-
-
 #define DEV_DIR "/dev/"
-ASHE_PRIVATE const char* devfiles[] = {
-    DEV_DIR "stdin",
-    DEV_DIR "stdout",
-    DEV_DIR "stderr",
+ASHE_PRIVATE const char *devfiles[] = {
+	DEV_DIR "stdin",
+	DEV_DIR "stdout",
+	DEV_DIR "stderr",
 };
-
-#define DEVFILES_N (sizeof(devfiles) / sizeof(devfiles[0]))
-
-
 
 #define PIPE_R 0 /* Read end of a pipe */
 #define PIPE_W 1 /* Write end of a pipe */
 
-
-
-/* Reserved file descriptors */
-#ifndef ASHE_FD_0
-#define ASHE_FD_0 10
-#endif
-#ifndef ASHE_FD_1
-#define ASHE_FD_1 11
-#endif
-#ifndef ASHE_FD_2
-#define ASHE_FD_2 12
-#endif
-
-
-
 /* open file for writing '>' or '>>' */
 #define ashe_wopen(file, append) \
-    open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
+	open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
 
 /* open file for reading '<' */
 #define ashe_ropen(file) open(file, O_RDONLY)
 
 /* open file for reading and writing '<>' */
 #define ashe_rwopen(file, append) \
-    open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_RDWR, 0666)
+	open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_RDWR, 0666)
 
-
-
-
-#define ERR_FDNOTOPEN   0
-#define ERR_FDLIMIT     1
-#define ERR_VAREXPORT   2
-#define ERR_VARRM       3
-#define ERR_BADFD       4
-ASHE_PRIVATE const char* runerrors[] = {
-    "file descriptor '%d' is not open, fallback to default.",
-    "file descriptor '%d' is above the system limit (sysconf(_SC_OPEN_MAX)).",
-    "failed exporting variable '%s'.",
-    "couldn't remove variable '%s'.",
-    "bad file descriptor '%zu'.",
+#define ERR_VAREXPORT 0
+#define ERR_VARRM 1
+#define ERR_BADFD 2
+ASHE_PRIVATE const char *runerrors[] = {
+	"failed exporting variable '%s'.",
+	"couldn't remove variable '%s'.",
+	"bad file descriptor '%zu'.",
 };
-
-
-
 
 /* Instructs forked process which pipe stream to dup() and close. */
 typedef struct {
-    int32 pipefd[2];
-    int32 closefd;
+	int32 pipefd[2];
+	int32 closefd;
 } PipeContext;
 
-
-ASHE_PRIVATE finline void Context_init(PipeContext* ctx)
+ASHE_PRIVATE finline void Context_init(PipeContext *ctx)
 {
-    ctx->pipefd[0] = STDIN_FILENO;
-    ctx->pipefd[1] = STDOUT_FILENO;
-    ctx->closefd = -1;
+	ctx->pipefd[0] = STDIN_FILENO;
+	ctx->pipefd[1] = STDOUT_FILENO;
+	ctx->closefd = -1;
 }
 
-
-ASHE_PRIVATE void configure_pipe_at(int32* pipes, memmax len, memmax i, PipeContext* ctx)
+ASHE_PRIVATE void configure_pipe_at(int32 *pipes, memmax len, memmax i, PipeContext *ctx)
 {
-    int32* poffset = NULL;
-    if(i == 0) {
-        poffset = pipes;
-        if(unlikely(pipe(poffset) < 0)) {
-            print_errno();
-            panic(NULL);
-        } else {
-            ctx->pipefd[PIPE_W] = poffset[PIPE_W];
-            ctx->closefd = poffset[PIPE_R];
-        }
-    } else if(i != len - 1) {
-        poffset = &pipes[i * 2];
-        if(unlikely(pipe(poffset) < 0)) {
-            print_errno();
-            panic(NULL);
-        } else {
-            ctx->pipefd[PIPE_R] = poffset[-2];
-            ctx->pipefd[PIPE_W] = poffset[PIPE_W];
-            ctx->closefd = poffset[PIPE_R];
-        }
-    } else {
-        poffset = &pipes[--i * 2];
-        ctx->pipefd[PIPE_R] = poffset[PIPE_R];
-        ctx->closefd = poffset[PIPE_W];
-    }
+	int32 *poffset = NULL;
+	if (i == 0) {
+		poffset = pipes;
+		if (unlikely(pipe(poffset) < 0)) {
+			print_errno();
+			panic(NULL);
+		} else {
+			ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+			ctx->closefd = poffset[PIPE_R];
+		}
+	} else if (i != len - 1) {
+		poffset = &pipes[i * 2];
+		if (unlikely(pipe(poffset) < 0)) {
+			print_errno();
+			panic(NULL);
+		} else {
+			ctx->pipefd[PIPE_R] = poffset[-2];
+			ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+			ctx->closefd = poffset[PIPE_R];
+		}
+	} else {
+		poffset = &pipes[--i * 2];
+		ctx->pipefd[PIPE_R] = poffset[PIPE_R];
+		ctx->closefd = poffset[PIPE_W];
+	}
 }
 
-
-ASHE_PRIVATE int32 try_add_envvars(ArrayCharptr* env)
+ASHE_PRIVATE int32 try_add_envvars(ArrayCharptr *env)
 {
-    memmax len = env->len;
-    for(memmax i = 0; i < len; i++) {
-        char* name = env->data[i];
-        char* sep = strchr(name, '=');
-        char* value = sep + 1;
-        *sep = '\0';
-        if(unlikely(setenv(name, value, 1) < 0)) {
-            printf_error(runerrors[ERR_VAREXPORT], name);
-            print_errno();
-            return -1;
-        }
-    }
-    return 0;
+	memmax len = env->len;
+	for (memmax i = 0; i < len; i++) {
+		char *name = env->data[i];
+		char *sep = strchr(name, '=');
+		char *value = sep + 1;
+		*sep = '\0';
+		if (unlikely(setenv(name, value, 1) < 0)) {
+			printf_error(runerrors[ERR_VAREXPORT], name);
+			print_errno();
+			return -1;
+		}
+	}
+	return 0;
 }
 
-ASHE_PRIVATE int32 try_rm_envvars(ArrayCharptr* env)
+ASHE_PRIVATE int32 try_rm_envvars(ArrayCharptr *env)
 {
-    int32 status = 0;
-    memmax len = env->len;
-    for(memmax i = 0; i < len; i++) {
-        char* name = env->data[i];
-        // name is already in format 'key\0value'
-        if(unlikely(unsetenv(name) < 0)) { // can this ever fail ?
-            printf_error(runerrors[ERR_VARRM], name);
-            print_errno();
-            status = -1;
-            continue; // try remove the rest
-        }
-    }
-    return status;
+	int32 status = 0;
+	memmax len = env->len;
+	for (memmax i = 0; i < len; i++) {
+		char *name = env->data[i];
+		// name is already in format 'key\0value'
+		if (unlikely(unsetenv(name) < 0)) { // can this ever fail ?
+			printf_error(runerrors[ERR_VARRM], name);
+			print_errno();
+			status = -1;
+			continue; // try remove the rest
+		}
+	}
+	return status;
 }
 
-
-ASHE_PRIVATE finline ubyte fd_isvalid(int32 fd)
+ASHE_PRIVATE finline int32 filepath_is_fd(const char *filepath)
 {
-    return (fcntl(fd, F_GETFD) != -1 || errno != EBADF);
+	for (memmax i = 0; i < ELEMENTS(devfiles); i++) {
+		if (strcmp(filepath, devfiles[i]) != 0)
+			continue;
+		if (fdisvalid(i))
+			return i;
+		break;
+	}
+	return -1;
 }
 
-ASHE_PRIVATE finline int32 filepath_is_fd(const char* filepath)
+ASHE_PRIVATE finline int32 redirect_stderrout_into(int32 fd)
 {
-    for(memmax i = 0; i < DEVFILES_N; i++) {
-        if(strcmp(filepath, devfiles[i]) != 0) continue;
-        if(fd_isvalid(i)) return i;
-        break;
-    }
-    return -1;
+	if ((dup2(STDOUT_FILENO, STDERR_FILENO) == 0 && dup2(fd, STDOUT_FILENO) == 0)) {
+		print_errno();
+		return -1;
+	}
+	return 0;
 }
 
-ASHE_PRIVATE finline ubyte redirect_stderrout_into(int32 fd)
+ASHE_PRIVATE finline int32 redirect_fd_into(int32 fd, int32 to)
 {
-    if((dup2(STDOUT_FILENO, STDERR_FILENO) == 0 && dup2(fd, STDOUT_FILENO) == 0)) {
-        print_errno();
-        return -1;
-    }
-    return 0;
+	if (dup2(to, fd) < 0) {
+		print_errno();
+		return -1;
+	}
+	return 0;
 }
 
-ASHE_PRIVATE finline ubyte redirect_fd_into(int32 fd, int32 to)
+ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle *fhs, ubyte exec)
 {
-    if(dup2(to, fd) < 0) {
-        print_errno();
-        return -1;
-    }
-    return 0;
+	ssize fd;
+	memmax len = fhs->len;
+	memmax badfd;
+
+	for (memmax i = 0; i < len; i++) {
+		FileHandle *fh = &fhs->data[i];
+		switch (fh->op) {
+		case OP_REDIRECT_ERROUT:
+			fd = filepath_is_fd(fh->filepath);
+			if (fd < 0) {
+				fd = ashe_wopen(fh->filepath, fh->append);
+				if (fd < 0) {
+					print_errno();
+					return -1;
+				}
+			}
+			if (unlikely(!fdisok(fd))) {
+				badfd = fd;
+				goto l_badfd;
+			} else if (redirect_stderrout_into(fd) < 0) {
+				return -1;
+			}
+			break;
+		case OP_REDIRECT_INOUT:
+		case OP_REDIRECT_IN:
+		case OP_REDIRECT_OUT: /* FALLTHRU */
+			fd = filepath_is_fd(fh->filepath);
+			if (fd < 0) {
+				if (fh->op == OP_REDIRECT_IN)
+					fd = ashe_ropen(fh->filepath);
+				else if (fh->op == OP_REDIRECT_OUT)
+					fd = ashe_wopen(fh->filepath, fh->append);
+				else
+					fd = ashe_rwopen(fh->filepath, 0);
+				if (fd < 0) {
+					print_errno();
+					return -1;
+				}
+			}
+			if (!fdisok(fh->fd)) {
+			} else if (redirect_fd_into(fh->fd, fd) < 0) {
+				return -1;
+			}
+			break;
+		case OP_DUP_IN:
+		case OP_DUP_OUT:
+			if (!fdisok(fh->fddup)) {
+				badfd = fh->fddup;
+				goto l_badfd;
+			}
+		case OP_CLOSE: /* FALLTHRU */
+			if (!fdisok(fh->fd)) {
+				badfd = fh->fd;
+				goto l_badfd;
+			}
+			if (!exec)
+				break;
+			if (fh->op == OP_DUP_IN) {
+				if (!fdisopened(fh->fddup, O_RDONLY | O_RDWR)) {
+					printf_error("fd %d is not open for input.");
+					return -1;
+				}
+				goto l_copy_fd;
+			} else if (fh->op == OP_DUP_OUT) {
+				if (!fdisopened(fh->fddup, O_WRONLY | O_RDWR)) {
+					printf_error("fd %d is not open for output.");
+					return -1;
+				}
+l_copy_fd:
+				if (unlikely(dup2(fh->fddup, fh->fd) < 0)) {
+					print_errno();
+					return -1;
+				}
+			} else if (unlikely(close(fh->fd) < 0)) {
+				print_errno();
+				return -1;
+			}
+			break;
+		}
+	}
+	return 0;
+
+l_badfd:
+	printf_error(runerrors[ERR_BADFD], badfd);
+	return -1;
 }
-
-ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle* fhs)
-{
-    ssize fd;
-    memmax len = fhs->len;
-    int32 opened_files[len];
-    int32 filecnt = 0;
-
-    for(memmax i = 0; i < len; i++) {
-        FileHandle* fh = &fhs->data[i];
-        switch(fh->op) {
-            case OP_REDIRECT_ERROUT: {
-                fd = filepath_is_fd(fh->filepath);
-                if(fd < 0) { 
-                    fd = ashe_wopen(fh->filepath, fh->append);
-                    if(fd < 0) {
-                        print_errno();
-                        goto l_error_cleanup;
-                    }
-                    opened_files[filecnt++] = fd;
-                }
-                if(!fd_isvalid(fd)) {
-                    printf_error(runerrors[ERR_BADFD], (memmax)fd);
-                } else if(redirect_stderrout_into(fd)) {
-                    break;
-                }
-                goto l_error_cleanup;
-            }
-            case OP_REDIRECT_INOUT:
-            case OP_REDIRECT_IN:
-            case OP_REDIRECT_OUT: {
-                fd = filepath_is_fd(fh->filepath);
-                if(fd < 0) {
-                    if(fh->op == OP_REDIRECT_IN) {
-                        fd = ashe_ropen(fh->filepath);
-                    } else if(fh->op == OP_REDIRECT_OUT) {
-                        fd = ashe_wopen(fh->filepath, fh->append);
-                    } else {
-                        fd = ashe_rwopen(fh->filepath, 0);
-                    }
-                    if(fd < 0) {
-                        print_errno();
-                        goto l_error_cleanup;
-                    }
-                    opened_files[filecnt++] = fd;
-                }
-                if(fh->fd > INT_MAX || !fd_isvalid(fh->fd)) {
-                    printf_error(runerrors[ERR_BADFD], fh->fd);
-                    goto l_error_cleanup;
-                } else if(!redirect_fd_into(fh->fd, fd)) {
-                    goto l_error_cleanup;
-                }
-                break;
-            }
-            case OP_DUP_IN:
-            case OP_DUP_OUT:
-            case OP_CLOSE: { // these are resolved in 'exec' builtin or are ignored
-                break;
-            }
-        }
-    }
-
-    return 0;
-
-    l_error_cleanup:
-    for(int32 i = 0; i < filecnt; i++) // try all opened files
-        if(unlikely(close(opened_files[i]) < 0)) print_errno();
-
-    return -1;
-}
-
 
 /* This runs a built-in command or puts environment
  * variables into 'environ' or both. */
-ASHE_PRIVATE int32 run_cmd_nofork(Command* cmd)
+ASHE_PRIVATE int32 run_cmd_nofork(Command *cmd, enum tbi type)
 {
-    int32 i, o, e; // control variables
-    int32 status, out, err, in;
-    ArrayCharptr* env = &cmd->env;
-    ArrayCharptr* argv = &cmd->argv;
-    ArrayFileHandle* fhs = &cmd->fhandles;
+	int32 i, o, e; // control variables
+	int32 status, out, err, in, runs;
+	ArrayCharptr *env = &cmd->env;
+	ArrayCharptr *argv = &cmd->argv;
+	ArrayFileHandle *fhs = &cmd->fhandles;
+	in = ASHE_FD_0;
+	out = ASHE_FD_1;
+	err = ASHE_FD_2;
 
-    /* These are reserved fd's hopefully user will respect this
-     * otherwise we might not be able to restore standard file descriptors. */
-    in = ASHE_FD_0; out = ASHE_FD_1; err = ASHE_FD_2;
+	if (unlikely(try_add_envvars(env) == -1))
+		return -2;
+	if (argv->len == 0)
+		return 0;
+l_dup_again:
+	if (unlikely(dup2(STDIN_FILENO, in) < 0 || dup2(STDOUT_FILENO, out) < 0 ||
+		     dup2(STDERR_FILENO, err) < 0)) {
+		if (unlikely(errno == EINTR)) {
+			errno = 0;
+			goto l_dup_again;
+		}
+		printf_error("couldn't backup standard file descriptor.");
+		goto l_close_duplicates;
+	}
 
-    /* Add environment variables to 'environ' */
-    if(unlikely(try_add_envvars(env) == -1))
-        return -2;
+	if (try_resolve_redirections(fhs, type == TBI_EXEC) < 0) {
+		status = -2;
+		goto l_restore_fds;
+	}
 
-    /* If no commands to run just return */
-    if(argv->len == 0) 
-        return 0;
+	status = run_builtin(cmd, type);
 
-    l_dup_again:
-    if(unlikely(dup2(STDIN_FILENO, in) < 0 || dup2(STDOUT_FILENO, out) < 0 || dup2(STDERR_FILENO, err) < 0)) {
-        if(unlikely(errno == EINTR)) {
-            errno = 0;
-            goto l_dup_again;
-        }
-        printf_error("couldn't backup standard file descriptor.");
-        goto l_close_duplicates;
-    }
+	runs = 0;
+l_restore_fds:
+	if (unlikely(runs >= 5))
+		panic("couldn't restore file descriptors");
+	runs++;
+	i = o = e = -1;
+	if (unlikely((i = dup2(in, STDIN_FILENO)) < 0 ||
+		     (o = dup2(out, STDOUT_FILENO)) < 0 ||
+		     (e = dup2(err, STDERR_FILENO)) < 0)) {
+l_try_again:
+		print_errno();
+		errno = 0;
 
-    if(try_resolve_redirections(fhs) < 0) {
-        status = -2;
-        goto l_restore_fds;
-    }
+		if (unlikely(i++ == 0 && dup2(in, STDIN_FILENO) < 0)) {
+			i--;
+			goto l_check_dup_error;
+		}
+		if (unlikely(o++ == 0 && dup2(in, STDOUT_FILENO) < 0)) {
+			o--;
+			goto l_check_dup_error;
+		}
+		if (unlikely(e++ == 0 && dup2(in, STDERR_FILENO) < 0)) {
+			e--;
+			goto l_check_dup_error;
+		}
 
-    status = run_builtin(argv);
+l_check_dup_error:
+		if (unlikely(errno == EINTR)) {
+			goto l_try_again;
+		} else { // gg
+			print_errno();
+			panic("can't restore default file descriptors.");
+		}
+		status = -2;
+	}
 
-    l_restore_fds:
-    i = o = e = -1;
-    if(unlikely((i = dup2(in, STDIN_FILENO)) < 0 || (o = dup2(out, STDOUT_FILENO)) < 0 || (e = dup2(err, STDERR_FILENO)) < 0))
-    {
-        l_try_again:
-        print_errno();
-        errno = 0;
+l_close_duplicates:
+	if (unlikely((i == 0 && close(in) < 0) || (o == 0 && close(out) < 0) ||
+		     (e == 0 && close(err) < 0))) {
+		print_errno();
+		return -2;
+	}
+	if (unlikely(try_rm_envvars(env) < 0))
+		return -2;
 
-        if(unlikely(i++ == 0 && dup2(in, STDIN_FILENO)  < 0)) { i--; goto l_check_dup_error; }
-        if(unlikely(o++ == 0 && dup2(in, STDOUT_FILENO) < 0)) { o--; goto l_check_dup_error; }
-        if(unlikely(e++ == 0 && dup2(in, STDERR_FILENO) < 0)) { e--; goto l_check_dup_error; }
-
-        l_check_dup_error:
-        if(unlikely(errno == EINTR)) { // interrupted from where (another process) ?
-            goto l_try_again;
-        } else { // gg
-            print_errno();
-            panic("can't restore default file descriptors.");
-        }
-        status = -2;
-    }
-
-    l_close_duplicates:
-    if(unlikely((i == 0 && close(in) < 0) || (o == 0 && close(out) < 0) || (e == 0 && close(err) < 0))) {
-        print_errno();
-        return -2;
-    }
-
-    if(unlikely(try_rm_envvars(env) < 0)) 
-        return -2;
-
-    return status;
+	return status;
 }
-
 
 ASHE_PRIVATE void reset_signal_handling(void)
 {
-    struct sigaction sigdfl_ac;
-    sigemptyset(&sigdfl_ac.sa_mask);
-    sigdfl_ac.sa_flags = 0;
-    sigdfl_ac.sa_handler = SIG_DFL;
-    sigaction(SIGINT, &sigdfl_ac, NULL);
-    sigaction(SIGQUIT, &sigdfl_ac, NULL);
-    sigaction(SIGTSTP, &sigdfl_ac, NULL);
-    sigaction(SIGTTIN, &sigdfl_ac, NULL);
-    sigaction(SIGTTOU, &sigdfl_ac, NULL);
-    sigaction(SIGCHLD, &sigdfl_ac, NULL);
+	struct sigaction sigdfl_ac;
+	sigemptyset(&sigdfl_ac.sa_mask);
+	sigdfl_ac.sa_flags = 0;
+	sigdfl_ac.sa_handler = SIG_DFL;
+	sigaction(SIGINT, &sigdfl_ac, NULL);
+	sigaction(SIGQUIT, &sigdfl_ac, NULL);
+	sigaction(SIGTSTP, &sigdfl_ac, NULL);
+	sigaction(SIGTTIN, &sigdfl_ac, NULL);
+	sigaction(SIGTTOU, &sigdfl_ac, NULL);
+	sigaction(SIGCHLD, &sigdfl_ac, NULL);
 }
 
-
-ASHE_PRIVATE finline int32 try_connect_pipe(PipeContext* ctx)
+ASHE_PRIVATE finline int32 try_connect_pipe(PipeContext *ctx)
 {
-    if(unlikely(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0
-                || dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0
-                || (ctx->closefd != -1 && close(ctx->closefd) < 0)))
-    {
-        print_errno();
-        return -1;
-    }
-    return 0;
+	if (unlikely(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
+		     dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0 ||
+		     (ctx->closefd != -1 && close(ctx->closefd) < 0))) {
+		print_errno();
+		return -1;
+	}
+	return 0;
 }
 
-
-ASHE_PRIVATE int32 run_cmd(Command* cmd, PipeContext* ctx, Job* job)
+ASHE_PRIVATE int32 run_cmd(Command *cmd, PipeContext *ctx, Job *job)
 {
-    pid childPID = fork();
+	ArrayCharptr *argva = &cmd->argv;
+	ArrayCharptr *enva = &cmd->env;
+	int32 type = -1;
+	pid childPID = fork();
 
-    if(unlikely(childPID == -1)) {
-        print_errno();
-        return -1;
-    } else if(childPID == 0) {
-        ArrayCharptr* argva = &cmd->argv;
-        ArrayCharptr* enva = &cmd->env;
+	if (unlikely(childPID == -1)) {
+		print_errno();
+		return -1;
+	} else if (childPID == 0) {
+		ashe.sh_flags.isfork = 1;
 
-        ashe.sh_flags.isfork = 1;
+		if (unlikely(argva->len == 0 || try_add_envvars(enva) < 0))
+			goto l_cleanup;
 
-        /* If no command were provided, then _exit */
-        if(unlikely(argva->len == 0))
-            goto l_cleanup;
+		pid pid = getpid();
 
-        /* If we fail adding env vars in fork then just _exit with non-zero
-         * status, only in main shell process this is made as recoverable error. */
-        if(unlikely(try_add_envvars(enva) < 0))
-            goto l_cleanup;
+		if (job->pgid == 0) {
+			job->pgid = pid;
+			if (unlikely(job->foreground &&
+				     tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
+				goto l_error;
+		}
 
-         /* Current process ID */
-        pid pid = getpid();
+		if (unlikely(setpgid(pid, job->pgid) < 0))
+			goto l_error;
 
-        /* If this is the first process in this job set the gpid as pid
-         * and give it the terminal */
-        if(job->pgid == 0) {
-            job->pgid = pid;
-            if(unlikely(job->foreground && tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
-                goto l_error;
-        }
+		reset_signal_handling();
 
-        /* Move this process into the new process group */
-        if(unlikely(setpgid(pid, job->pgid) < 0))
-            goto l_error;
+		type = is_builtin(ARGV(cmd, 0));
 
-        /* This can't fail, all the signals being set to default can be
-         * intercepted and handled. Additionally all signal names are valid. */
-        reset_signal_handling();
+		if (try_connect_pipe(ctx) < 0 ||
+		    try_resolve_redirections(&cmd->fhandles, type == TBI_EXEC) < 0)
+			goto l_cleanup;
 
-        if(try_connect_pipe(ctx) < 0)
-            goto l_cleanup;
+		if (type != -1)
+			_exit(run_builtin(cmd, type));
 
-        if(try_resolve_redirections(&cmd->fhandles) < 0)
-            goto l_cleanup;
+		char **argv = calloc(argva->len + 1, sizeof(char *));
+		memcpy(argv, argva->data, sizeof(char *) * argva->len);
+		argv[argva->len] = NULL;
+		if (execvp(argv[0], argv) < 0) {
+			afree(argv);
+l_error:
+			print_errno();
+l_cleanup:
+			panic(NULL);
+		}
+	}
 
-        /* If builtin then execute */
-        if(is_builtin(ARGV(cmd, 0))) 
-            _exit(run_builtin(argva));
+	if (job->pgid == 0)
+		job->pgid = childPID;
 
-        /* Create argv for 'exec' syscall. */
-        char** argv = calloc(argva->len + 1, sizeof(char*)); // +1 for NULL as last entry
-        memcpy(argv, argva->data, sizeof(char*) * argva->len);
-        argv[argva->len] = NULL;
+	/* This is also done in the fork to prevent race. */
+	if (unlikely(setpgid(childPID, job->pgid) < 0)) {
+		print_errno();
+		return -1;
+	}
 
-        /* Try exec the non-builtin command */
-        if(execvp(argv[0], argv) < 0) {
-            aalloc(argv, 0);
-            l_error:
-            print_errno();
-            l_cleanup:
-            panic(NULL);
-        }
-    }
-
-    /* Set the proccess group ID if this is the first
-     * process in this job. */
-    if(job->pgid == 0) job->pgid = childPID;
-
-    /* Move the process into job's process group.
-     * This is also done in the fork to prevent race. */
-    if(unlikely(setpgid(childPID, job->pgid) < 0)) {
-        print_errno();
-        return -1;
-    }
-
-    return childPID;
+	return childPID;
 }
 
-
-ASHE_PRIVATE finline int32 close_pipe(int32* pipe)
+ASHE_PRIVATE finline int32 close_pipe(int32 *pipe)
 {
-    if(unlikely(close(pipe[PIPE_R]) < 0 || close(pipe[PIPE_W]) < 0)) {
-        print_errno();
-        return -1;
-    }
-    return 0;
+	if (unlikely(close(pipe[PIPE_R]) < 0 || close(pipe[PIPE_W]) < 0)) {
+		print_errno();
+		return -1;
+	}
+	return 0;
 }
 
-
-ASHE_PRIVATE int32 Pipeline_run(Pipeline* pipeline, ubyte bg)
+ASHE_PRIVATE int32 Pipeline_run(Pipeline *pipeline, ubyte bg)
 {
-    ArrayCommand* commands = &pipeline->commands;
-    memmax cmdcnt = commands->len;
-    int32 status = 0;
-    pid pid;
-    Job job;
+	ArrayCommand *commands = &pipeline->commands;
+	memmax cmdcnt = commands->len;
+	int32 status = 0;
+	enum tbi type;
+	pid pid;
+	Job job;
 
-    const char* input = dupstr(ashe_input());
-    Job_init(&job, input, bg);
+	const char *input = dupstr(ashe_input());
+	Job_init(&job, input, bg);
 
-    uint32 pn = ((cmdcnt - 1) * 2); /* size of pipe array */
-    pn = (pn == 0 ? 1 : pn); /* check in case of 0 */
-    int32 pipes[pn]; /* pipe storage */
+	uint32 pn = ((cmdcnt - 1) * 2);
+	pn = (pn == 0 ? 1 : pn);
+	int32 pipes[pn];
 
-    /// Run the entire pipeline
-    for(memmax i = 0; i < cmdcnt; i++) {
-        Command* cmd = ArrayCommand_index(commands, i);
-        PipeContext ctx;
-        Context_init(&ctx);
+	for (memmax i = 0; i < cmdcnt; i++) {
+		Command *cmd = ArrayCommand_index(commands, i);
+		PipeContext ctx;
+		Context_init(&ctx);
 
-        if(cmdcnt > 1) { // only a single command ?
-            if(job.foreground && (cmd->argv.len == 0 || is_builtin(ARGV(cmd, 0)))) {
-                /* In case we don't have a pipeline or a conditional and
-                 * only have a single command that is run in foreground and
-                 * is a builtin command or only contains environment variables,
-                 * then run the command without forking. */
-                Job_free(&job);
-                return run_cmd_nofork(cmd);
-            }
-        } else {
-            configure_pipe_at(pipes, cmdcnt, i, &ctx);
-        }
+		if (cmdcnt > 1) { // only a single command ?
+			if (job.foreground &&
+			    (cmd->argv.len == 0 || (type = is_builtin(ARGV(cmd, 0))))) {
+				Job_free(&job);
+				return run_cmd_nofork(cmd, type);
+			}
+		} else {
+			configure_pipe_at(pipes, cmdcnt, i, &ctx);
+		}
 
-        /* fork and run the command */
-        pid = run_cmd(cmd, &ctx, &job);
+		pid = run_cmd(cmd, &ctx, &job);
 
-        if(unlikely(pid < 0)) {
-            Job_free(&job);
-            panic(NULL);
-        }
+		if (unlikely(pid < 0)) {
+			Job_free(&job);
+			panic(NULL);
+		}
 
-        Process proc;
-        Process_init(&proc, pid);
-        Job_add_process(&job, proc);
+		Process proc;
+		Process_init(&proc, pid);
+		Job_add_process(&job, proc);
 
-        l_close_pipe:
-        errno = 0;
-        if(unlikely(i != 0 && close_pipe(&pipes[(i - 1) * 2]) < 0))
-        {
-            if(unlikely(errno == EINTR)) goto l_close_pipe;
-            Job_free(&job);
-            print_errno();
-            panic(NULL);
-        }
-    }
+l_close_pipe:
+		errno = 0;
+		if (unlikely(i != 0 && close_pipe(&pipes[(i - 1) * 2]) < 0)) {
+			if (unlikely(errno == EINTR))
+				goto l_close_pipe;
+			Job_free(&job);
+			print_errno();
+			panic(NULL);
+		}
+	}
 
-    if(job.foreground) {
-        status = Job_move_to_foreground(&job, 0);
-    } else {
-        JobControl_add_job(&ashe.sh_jobcntl, &job);
-        Job_mark_as_background(&job, 0);
-    }
+	if (job.foreground) {
+		status = Job_move_to_foreground(&job, 0);
+	} else {
+		JobControl_add_job(&ashe.sh_jobcntl, &job);
+		Job_mark_as_background(&job, 0);
+	}
 
-    return status;
+	return status;
 }
 
-
-ASHE_PRIVATE int32 Conditional_run(Conditional* cond)
+ASHE_PRIVATE int32 Conditional_run(Conditional *cond)
 {
-    ArrayPipeline* pipes = &cond->pipelines;
-    int32 status = 0;
-    for(memmax i = 0; i < pipes->len; i++) {
-        Pipeline* pipeline = ArrayPipeline_index(pipes, i);
-        status = Pipeline_run(pipeline, cond->is_background);
-        status += pipeline->connection;
-        if(status == 1 || status == 4) return status;
-    }
-    return status;
+	ArrayPipeline *pipes = &cond->pipelines;
+	int32 status = 0;
+	for (memmax i = 0; i < pipes->len; i++) {
+		Pipeline *pipeline = ArrayPipeline_index(pipes, i);
+		status = Pipeline_run(pipeline, cond->is_background);
+		status += pipeline->connection;
+		if (status == 1 || status == 4)
+			return status;
+	}
+	return status;
 }
 
-
-int32 cmdexec(ArrayConditional* conds) {
-    int32 status = 0;
-    for(memmax i = 0; i < conds->len; i++) {
-        Conditional* cond = ArrayConditional_index(conds, i);
-        status = Conditional_run(cond);
-    }
-    return status;
+ASHE_PUBLIC int32 cmdexec(ArrayConditional *conds)
+{
+	int32 status = 0;
+	for (memmax i = 0; i < conds->len; i++) {
+		Conditional *cond = ArrayConditional_index(conds, i);
+		status = Conditional_run(cond);
+	}
+	return status;
 }

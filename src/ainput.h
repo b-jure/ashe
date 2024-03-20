@@ -7,28 +7,31 @@
 
 #include <termios.h>
 
-
 #define INSIZE 200
 #define MAXNAME 1024 /* Maximum size of username */
-
 
 #define CSI "\033["
 #define ESC(seq) CSI #seq
 
+#define clear_screen() write_or_panic(clrscr mv_cur_home, sizeof(clrscr mv_cur_home))
 
-#define write_or_die(ptr, n)                                                                       \
-    do {                                                                                           \
-        if(write(STDERR_FILENO, ptr, n) == -1) die();                                              \
-        fflush(stderr);                                                                            \
-    } while(0)
+#define write_or_panic(ptr, n)                                  \
+	do {                                                    \
+		if (unlikely(write(STDERR_FILENO, ptr, n) < 0)) \
+			panic(NULL);                            \
+		fflush(stderr);                                 \
+		if (unlikely(ferror(stderr))) {                 \
+			print_errno();                          \
+			panic(NULL);                            \
+		}                                               \
+	} while (0)
 
-#define get_size_or_die(row, col)                                                                  \
-    do {                                                                                           \
-        if(unlikely(                                                                               \
-               get_window_size((row), (col)) == -1 &&                                         \
-               get_window_size_fallback((row), (col)) == -1))                                 \
-            die();                                                                                 \
-    } while(0)
+#define get_size_or_panic(row, col)                                       \
+	do {                                                              \
+		if (unlikely(get_window_size((row), (col)) < 0 &&         \
+			     get_window_size_fallback((row), (col)) < 0)) \
+			panic(NULL);                                      \
+	} while (0)
 
 /*------------- CURSOR ----------------*/
 #define mv_cur_home ESC(H)
@@ -91,53 +94,48 @@
 #define bracketed(text) obrack text cbrack
 /*-------------------------------------*/
 
-
 typedef struct {
-    uint32 cr_col; /* current column */
-    uint32 cr_row; /* current row */
+	uint32 cr_col; /* current column */
+	uint32 cr_row; /* current row */
 } Cursor;
 
-
 typedef struct {
-    char* start; /* start of line */
-    memmax len; /* line length (bytes) */
+	char *start; /* start of line */
+	memmax len; /* line length (bytes) */
 } Line;
 
 ARRAY_NEW(ArrayLine, Line);
 
-
 typedef struct {
-    Buffer in_buffer; /* input buffer */
-    Buffer in_dbuffer; /* draw buffer */
-    ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
-    Cursor in_cursor; /* terminal cursor */
+	Buffer in_buffer; /* input buffer */
+	Buffer in_dbuffer; /* draw buffer */
+	ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
+	Cursor in_cursor; /* terminal cursor */
 } TerminalInput;
 
-void TerminalInput_clear(TerminalInput* tinput);
-void TerminalInput_read(TerminalInput* tinput);
-void TerminalInput_redraw(TerminalInput* tinput);
-void TerminalInput_gotoend(TerminalInput* tinput);
-
-
+void TerminalInput_clear(TerminalInput *tinput);
+void TerminalInput_read(TerminalInput *tinput);
+void TerminalInput_redraw(TerminalInput *tinput);
+void TerminalInput_gotoend(TerminalInput *tinput);
 
 typedef struct {
-    TerminalInput tm_input;
-    struct termios tm_dfltermios; /* default mode */
-    struct termios tm_rawtermios; /* raw mode */
-    uint32 tm_rows; /* terminal rows */
-    uint32 tm_columns; /* terminal columns */
-    uint32 tm_col; /* current terminal column */
-    memmax tm_promptlen; /* prompt length */
-    ubyte tm_reading; /* flag indicating if we are reading input */
+	TerminalInput tm_input;
+	struct termios tm_dfltermios; /* default mode */
+	struct termios tm_rawtermios; /* raw mode */
+	uint32 tm_rows; /* terminal rows */
+	uint32 tm_columns; /* terminal columns */
+	uint32 tm_col; /* current terminal column */
+	memmax tm_promptlen; /* prompt length */
+	ubyte tm_reading; /* flag indicating if we are reading input */
 } Terminal;
 
-void Terminal_init(Terminal* term);
-void Terminal_free(Terminal* term);
+void Terminal_init(Terminal *term);
+void Terminal_free(Terminal *term);
 
 void print_prompt(void);
 
-int32 get_window_size_fallback(uint32* height, uint32* width);
-int32 get_window_size(uint32* height, uint32* width);
-int32 get_cursor_pos(uint32* row, uint32* col);
+int32 get_window_size_fallback(uint32 *height, uint32 *width);
+int32 get_window_size(uint32 *height, uint32 *width);
+int32 get_cursor_pos(uint32 *row, uint32 *col);
 
 #endif

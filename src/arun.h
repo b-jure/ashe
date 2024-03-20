@@ -7,6 +7,6 @@
 typedef struct ArrayConditional ArrayConditional;
 #endif
 
-int32 cmdexec(ArrayConditional* conds);
+int32 cmdexec(ArrayConditional *conds);
 
 #endif
