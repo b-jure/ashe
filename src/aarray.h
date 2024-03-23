@@ -51,7 +51,8 @@ typedef void (*FreeFn)(void *value);
                                                                                         \
 	static finline void _ARRAY_METHOD(name, init_cap, uint32 cap)                   \
 	{                                                                               \
-		self->data = (type *)aalloc(self->data, cap * sizeof(type));            \
+		_CALL_ARRAY_METHOD(name, init);                                         \
+		self->data = (type *)arealloc(self->data, cap * sizeof(type));          \
 		self->cap = cap;                                                        \
 	}                                                                               \
                                                                                         \
@@ -74,8 +75,8 @@ typedef void (*FreeFn)(void *value);
 			panic("[%s:%d] Capacity exceeded in array '%s'! (Limit: %u)\n", \
 			      __FILE__, __LINE__, #name, UINT_MAX >> 1);                \
 		} else {                                                                \
-			self->data = (type *)aalloc(self->data,                         \
-						    self->cap * sizeof(type));          \
+			self->data = (type *)arealloc(                                  \
+				self->data, self->cap * sizeof(type));                  \
 		}                                                                       \
 	}                                                                               \
                                                                                         \
@@ -107,9 +108,20 @@ typedef void (*FreeFn)(void *value);
 		return &self->data[0];                                                  \
 	}                                                                               \
                                                                                         \
+	static finline void _ARRAY_METHOD(name, ensure, unsigned int len)               \
+	{                                                                               \
+		while (self->cap < self->len + len)                                     \
+			_CALL_ARRAY_METHOD(name, grow);                                 \
+	}                                                                               \
+                                                                                        \
 	static finline void _ARRAY_METHOD(name, insert, uint32 index,                   \
 					  type value)                                   \
 	{                                                                               \
+		_CALL_ARRAY_METHOD(name, ensure, 1);                                    \
+		if (index == self->len) {                                               \
+			_CALL_ARRAY_METHOD(name, push, value);                          \
+			return;                                                         \
+		}                                                                       \
 		type *src = self->data + index;                                         \
 		type *dest = src + 1;                                                   \
 		memmove(dest, src, self->len - index);                                  \
@@ -119,7 +131,7 @@ typedef void (*FreeFn)(void *value);
                                                                                         \
 	static finline type _ARRAY_METHOD(name, remove, uint32 index)                   \
 	{                                                                               \
-		if (self->len == 1)                                                     \
+		if (index == self->len)                                                 \
 			return _CALL_ARRAY_METHOD(name, pop);                           \
 		type *src = self->data + index;                                         \
 		type *dest = src - 1;                                                   \
@@ -129,25 +141,19 @@ typedef void (*FreeFn)(void *value);
 		return retval;                                                          \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, ensure, unsigned int len)               \
-	{                                                                               \
-		while (self->cap < self->len + len)                                     \
-			_CALL_ARRAY_METHOD(name, grow);                                 \
-	}                                                                               \
-                                                                                        \
 	static finline void _ARRAY_METHOD(name, free, FreeFn fn)                        \
 	{                                                                               \
 		if (fn)                                                                 \
 			for (uint32 i = 0; i < self->len; i++)                          \
 				fn((void *)&self->data[i]);                             \
 		if (self->data)                                                         \
-			aalloc(self->data, 0);                                          \
+			afree(self->data);                                              \
 	}                                                                               \
                                                                                         \
 	static finline void _ARRAY_METHOD(name, push_str, const char *str,              \
 					  memmax len)                                   \
 	{                                                                               \
-		uint32 required = self->len + ++len;                                    \
+		uint32 required = self->len + len;                                      \
 		if (self->cap < required)                                               \
 			_CALL_ARRAY_METHOD(name, ensure, required);                     \
 		type *dest = self->data + self->len;                                    \

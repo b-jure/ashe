@@ -3,7 +3,7 @@
 
 #if defined(__linux__)
 #include <linux/limits.h>
-#define HOME "HOME"
+#define HOME	  "HOME"
 #define PCS_EXTRA "/.-"
 #else
 #error "Ashe is only compatible with linux platforms."
@@ -12,11 +12,11 @@
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */
 #define ASHE_INFO_PREFIX "[ashe ~ info]: "
-#define ASHE_ERR_PREFIX "[ashe ~ error]: "
+#define ASHE_ERR_PREFIX	 "[ashe ~ error]: "
 
 /* ---- Special environment variables ---- */
-#define ASHE_STATUS_VAR "?"
-#define ASHE_PID "$"
+#define ASHE_VAR_STATUS "?"
+#define ASHE_VAR_PID	"$"
 
 /* ---- Reserved file descriptors ----
  * These are file descriptors ashe uses internally,
@@ -49,7 +49,7 @@ static const char *placeholders[] = {
 
 /* ---- Settings ---- */
 #define ASHE_SETTING_WARN_ON_EXIT 1
-#define ASHE_SETTING_NOCLOBBER 1
+#define ASHE_SETTING_NOCLOBBER	  1
 
 /* ---- Shell exit ---- */
 /* Sleep time in-between shell sending a kill signal

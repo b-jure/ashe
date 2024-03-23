@@ -27,6 +27,7 @@ ASHE_PUBLIC void panic(const char *errmsg, ...)
 	if (errmsg) {
 		va_start(argp, errmsg);
 		vfprintf(stderr, errmsg, argp);
+		fputs("\r\n", stderr);
 		va_end(argp);
 	}
 	if (ashe.sh_flags.isfork) {

@@ -7,110 +7,72 @@
 
 #include <termios.h>
 
-#define INSIZE 200
-#define MAXNAME 1024 /* Maximum size of username */
+/*		VT100 ESCAPE SEQUENCES		 */
 
 #define CSI "\033["
 #define ESC(seq) CSI #seq
 
-#define clear_screen() write_or_panic(clrscr mv_cur_home, sizeof(clrscr mv_cur_home))
+#define clrscr() write_or_panic(clrscr cursor_home, sizeof(clrscr cursor_home))
 
-#define write_or_panic(ptr, n)                                  \
-	do {                                                    \
-		if (unlikely(write(STDERR_FILENO, ptr, n) < 0)) \
-			panic(NULL);                            \
-		fflush(stderr);                                 \
-		if (unlikely(ferror(stderr))) {                 \
-			print_errno();                          \
-			panic(NULL);                            \
-		}                                               \
+#define write_or_panic(ptr, n)                                    \
+	do {                                                      \
+		if (unlikely(write(STDERR_FILENO, ptr, n) < 0)) { \
+			print_errno();                            \
+			panic(NULL);                              \
+		}                                                 \
+		fflush(stderr);                                   \
+		if (unlikely(ferror(stderr))) {                   \
+			print_errno();                            \
+			panic(NULL);                              \
+		}                                                 \
 	} while (0)
 
-#define get_size_or_panic(row, col)                                       \
+#define get_winsize_or_panic(row, col)                                    \
 	do {                                                              \
 		if (unlikely(get_window_size((row), (col)) < 0 &&         \
 			     get_window_size_fallback((row), (col)) < 0)) \
-			panic(NULL);                                      \
+			panic("couldn't get terminal window size.");      \
 	} while (0)
 
-/*------------- CURSOR ----------------*/
-#define mv_cur_home ESC(H)
-#define mv_cur_left(n) ESC(n) "D"
-#define mv_cur_right(n) ESC(n) "C"
-#define mv_cur_lastcol ESC(9999) "C"
-#define mv_cur_up(n) ESC(n) "A"
-#define mv_cur_down(n) ESC(n) "B"
-#define mv_cur_lastrow ESC(9999) "B"
-#define mv_cur_col(col) ESC(col) "G"
-#define sv_cur_pos ESC(s)
-#define ld_cur_pos ESC(u)
-#define mv_cur_pos(row, col) ESC(row ";" col) "H"
-#define request_cur_pos ESC(6n)
-#define hide_cur ESC(?25l)
-#define show_cur ESC(?25h)
-/*-------------------------------------*/
-/*
- *
- */
-/*-------------- ERASE ----------------*/
-#define clrscrd ESC(0J)
-#define clrscru ESC(1J)
-#define clrscr ESC(2J)
-#define clrlneol ESC(0K)
-#define clrlnsol ESC(1K)
-#define clrln ESC(2K)
-/*-------------------------------------*/
-/*
- *
- */
-/*-------------- MODES ----------------*/
-#define bold(text) ESC(1m) text ESC(22m)
-#define italic(text) ESC(3m) text ESC(23m)
-#define blink(text) ESC(5m) text ESC(25m)
-/*-------------------------------------*/
-/*
- *
- */
-/*-------------- COLORS ---------------*/
-#define magenta(text) ESC(35m) text ESC(0m)
-#define yellow(text) ESC(33m) text ESC(0m)
-#define byellow(text) ESC(93m) text ESC(0m)
-#define green(text) ESC(32m) text ESC(0m)
-#define red(text) ESC(31m) text ESC(0m)
-// Bright colors
-#define bred(text) ESC(91m) text ESC(0m)
-#define cyan(text) ESC(36m) text ESC(0m)
-#define blue(text) ESC(34m) text ESC(0m)
-#define bblue(text) ESC(94m) text ESC(0m)
-#define bwhite(text) ESC(97m) text ESC(0m)
-#define byellow(text) ESC(93m) text ESC(0m)
-/*-------------------------------------*/
-/*
- *
- */
-/*-------------- CUSTOM ---------------*/
-#define obrack cyan("[")
-#define cbrack cyan("]")
-#define bracketed(text) obrack text cbrack
-/*-------------------------------------*/
+/* CURSOR */
+#define cursor_home ESC(H)
+#define cursor_left(n) ESC(n) "D"
+#define cursor_right(n) ESC(n) "C"
+#define cursor_up(n) ESC(n) "A"
+#define cursor_down(n) ESC(n) "B"
+#define cursor_save ESC(s)
+#define cursor_load ESC(u)
+#define cursor_col(col) ESC(col) "G"
+#define cursor_move(row, col) ESC(row ";" col) "H"
+#define cursor_position ESC(6n)
+#define cursor_hide ESC(?25l)
+#define cursor_show ESC(?25h)
+/* CLEAR */
+#define clear_down ESC(0J)
+#define clear_up ESC(1J)
+#define clear_all ESC(2J)
+#define clear_line_right ESC(0K)
+#define clear_line_left ESC(1K)
+#define clear_line ESC(2K)
 
 typedef struct {
 	uint32 cr_col; /* current column */
 	uint32 cr_row; /* current row */
-} Cursor;
+} Cursor; /* current Line position */
 
 typedef struct {
 	char *start; /* start of line */
 	memmax len; /* line length (bytes) */
-} Line;
+} Line; /* slice of bytes */
 
 ARRAY_NEW(ArrayLine, Line);
 
 typedef struct {
-	Buffer in_buffer; /* input buffer */
-	Buffer in_dbuffer; /* draw buffer */
+	Buffer in_ibf; /* input buffer */
+	Buffer in_dbf; /* draw buffer */
 	ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
 	Cursor in_cursor; /* terminal cursor */
+	memmax in_ibfidx; /* input buffer index */
 } TerminalInput;
 
 void TerminalInput_clear(TerminalInput *tinput);

@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <unistd.h>
 
-
 /* ------ integer typedefs ------ */
 typedef int8_t byte;
 typedef uint8_t ubyte;
@@ -34,24 +33,23 @@ typedef enum {
 } Connection;
 
 /* Environment variable valid name characters (subset of PCS) */
-#define ENV_VAR_CHARS \
-	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+#define ENV_VAR_CHARS "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
 
 /* Miscellaneous macros */
-#define unused(x) (void)(x);
-#define ispow2(x) (((x) & ((x)-1)) == 0)
+#define unused(x)   (void)(x);
+#define ispow2(x)   (((x) & ((x)-1)) == 0)
 #define UINT_DIGITS 20
 /* -------------------------------- */
 
 /* Function visibility */
 #define ASHE_PRIVATE static
-#define ASHE_PUBLIC extern
+#define ASHE_PUBLIC  extern
 
 /* Compiler intrinsics */
 #if defined(__GNUC__)
-#define likely(expr) __glibc_likely(expr)
+#define likely(expr)   __glibc_likely(expr)
 #define unlikely(expr) __glibc_unlikely(expr)
-#define finline __attribute__((always_inline))
+#define finline	       __attribute__((always_inline))
 #define MAX(a, b)                       \
 	({                              \
 		__typeof__(a) _a = (a); \
@@ -67,7 +65,7 @@ typedef enum {
 #else
 #define likely(expr)
 #define unlikely(expr)
-#define finline inline
+#define finline	  inline
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
 #endif // __GNUC__

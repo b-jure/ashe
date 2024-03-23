@@ -23,7 +23,7 @@ void printf_info(const char *ifmt, ...);
 void vprintf_info_wprefix(const char *ifmt, va_list argp);
 
 ubyte in_dq(char *str, memmax len);
-ubyte is_escaped(char *bt, memmax curpos);
+ubyte is_escaped(char *s, memmax curpos);
 
 /* duplicate string using aalloc allocator (wrapper) */
 char *dupstr(const char *str);

@@ -45,7 +45,7 @@ ASHE_PRIVATE void SIGWINCH_handler(int signum)
 	mask_signal(SIGCHLD, SIG_BLOCK);
 	mask_signal(SIGINT, SIG_BLOCK);
 	ashe.sh_flags.interrupt = 1;
-	get_size_or_panic(&ashe.sh_term.tm_rows, &ashe.sh_term.tm_columns);
+	get_winsize_or_panic(&ashe.sh_term.tm_rows, &ashe.sh_term.tm_columns);
 	mask_signal(SIGCHLD, SIG_UNBLOCK);
 	mask_signal(SIGINT, SIG_UNBLOCK);
 }

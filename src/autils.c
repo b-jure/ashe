@@ -121,14 +121,13 @@ ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 {
 	ubyte dq = 0;
 	while (len--)
-		if (*str++ == '"')
-			dq ^= 1;
+		dq ^= (*str++ == '"');
 	return dq;
 }
 
-ASHE_PUBLIC ubyte is_escaped(char *bt, memmax curpos)
+ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
 {
-	char *at = bt + curpos;
+	char *at = s + curpos;
 	return ((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') ||
 		(curpos == 1 && at[-1] == '\\'));
 }
