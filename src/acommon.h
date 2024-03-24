@@ -33,12 +33,15 @@ typedef enum {
 } Connection;
 
 /* Environment variable valid name characters (subset of PCS) */
-#define ENV_VAR_CHARS "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+#define ENV_VAR_CHARS \
+	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
 
 /* Miscellaneous macros */
-#define unused(x)   (void)(x);
-#define ispow2(x)   (((x) & ((x)-1)) == 0)
-#define UINT_DIGITS 20
+#define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
+#define unused(x)     (void)(x)
+#define ispow2(x)     (((x) & ((x)-1)) == 0)
+#define UINT_DIGITS   20
+#define INT_DIGITS    10
 /* -------------------------------- */
 
 /* Function visibility */
@@ -63,11 +66,11 @@ typedef enum {
 		_a > _b ? _b : _a;      \
 	})
 #else
-#define likely(expr)
-#define unlikely(expr)
-#define finline	  inline
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) > (b) ? (b) : (a))
+#define likely(expr)   (expr)
+#define unlikely(expr) (expr)
+#define finline	       inline
+#define MAX(a, b)      ((a) > (b) ? (a) : (b))
+#define MIN(a, b)      ((a) > (b) ? (b) : (a))
 #endif // __GNUC__
 /* -------------------------------- */
 

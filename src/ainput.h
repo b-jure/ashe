@@ -7,9 +7,12 @@
 
 #include <termios.h>
 
+#define TerminalInput_clear(tinput) \
+	(TerminalInput_free(tinput), TerminalInput_init(tinput))
+
 /*		VT100 ESCAPE SEQUENCES		 */
 
-#define CSI "\033["
+#define CSI	 "\033["
 #define ESC(seq) CSI #seq
 
 #define clrscr() write_or_panic(clrscr cursor_home, sizeof(clrscr cursor_home))
@@ -35,25 +38,25 @@
 	} while (0)
 
 /* CURSOR */
-#define cursor_home ESC(H)
-#define cursor_left(n) ESC(n) "D"
-#define cursor_right(n) ESC(n) "C"
-#define cursor_up(n) ESC(n) "A"
-#define cursor_down(n) ESC(n) "B"
-#define cursor_save ESC(s)
-#define cursor_load ESC(u)
-#define cursor_col(col) ESC(col) "G"
+#define cursor_home	      ESC(H)
+#define cursor_left(n)	      ESC(n) "D"
+#define cursor_right(n)	      ESC(n) "C"
+#define cursor_up(n)	      ESC(n) "A"
+#define cursor_down(n)	      ESC(n) "B"
+#define cursor_save	      ESC(s)
+#define cursor_load	      ESC(u)
+#define cursor_col(col)	      ESC(col) "G"
 #define cursor_move(row, col) ESC(row ";" col) "H"
-#define cursor_position ESC(6n)
+#define cursor_position	      ESC(6n)
 #define cursor_hide ESC(?25l)
 #define cursor_show ESC(?25h)
 /* CLEAR */
-#define clear_down ESC(0J)
-#define clear_up ESC(1J)
-#define clear_all ESC(2J)
+#define clear_down	 ESC(0J)
+#define clear_up	 ESC(1J)
+#define clear_all	 ESC(2J)
 #define clear_line_right ESC(0K)
-#define clear_line_left ESC(1K)
-#define clear_line ESC(2K)
+#define clear_line_left	 ESC(1K)
+#define clear_line	 ESC(2K)
 
 typedef struct {
 	uint32 cr_col; /* current column */
@@ -75,10 +78,12 @@ typedef struct {
 	memmax in_ibfidx; /* input buffer index */
 } TerminalInput;
 
-void TerminalInput_clear(TerminalInput *tinput);
+void TerminalInput_init(TerminalInput *tinput);
 void TerminalInput_read(TerminalInput *tinput);
 void TerminalInput_redraw(TerminalInput *tinput);
 void TerminalInput_gotoend(TerminalInput *tinput);
+void TerminalInput_clrscreen(TerminalInput *tinput);
+void TerminalInput_free(TerminalInput *tinput);
 
 typedef struct {
 	TerminalInput tm_input;
@@ -93,8 +98,6 @@ typedef struct {
 
 void Terminal_init(Terminal *term);
 void Terminal_free(Terminal *term);
-
-void print_prompt(void);
 
 int32 get_window_size_fallback(uint32 *height, uint32 *width);
 int32 get_window_size(uint32 *height, uint32 *width);

@@ -3,6 +3,7 @@
 #include "ainput.h"
 #include "ajobcntl.h"
 #include "ashell.h"
+#include "aprompt.h"
 #include "autils.h"
 
 #include <errno.h>

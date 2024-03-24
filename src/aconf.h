@@ -15,6 +15,10 @@
 #define ASHE_ERR_PREFIX	 "[ashe ~ error]: "
 
 /* ---- Special environment variables ---- */
+/* Note: you really shouldn't change these, if
+ * they are regular alphanumeric values then you
+ * will be able to overwrite them causing all sorts
+ * of troubles for yourself. */
 #define ASHE_VAR_STATUS "?"
 #define ASHE_VAR_PID	"$"
 
@@ -26,26 +30,36 @@
 #define ASHE_FD_2 12
 
 /* ---- Placeholders ---- */
-static const char *placeholders[] = {
-	"%host", // host name
-	"%user", // user name
-	"%jobc", // number of background jobs
-	"%dir", // current directory
-	"%adir", // current directory absolute path
-	"%time", // time in format - HH:MM
-	"%date", // time in format - DD.MM.YY
-	"%uptime", // system uptime in format - H[H]:M[M]
+#define ASHE_PLH_SIGN '%'
+typedef const char *(*ashe_promptfn)(void);
+extern const char *ashe_host(void);
+extern const char *ashe_user(void);
+extern const char *ashe_jobc(void);
+extern const char *ashe_dir(void);
+extern const char *ashe_adir(void);
+extern const char *ashe_time(void);
+extern const char *ashe_date(void);
+extern const char *ashe_uptime(void);
+static ashe_promptfn placeholders[] = {
+	ashe_host, /* 0: hostname */
+	ashe_user, /* 1: username */
+	ashe_jobc, /* 2: background jobs count */
+	ashe_dir, /* 3: current directory (trimmed) */
+	ashe_adir, /* 4: current directory (absolute path) */
+	ashe_time, /* 5: current time (MM:HH) */
+	ashe_date, /* 6: current date (DD:MM:YY) */
+	ashe_uptime, /* 7: system uptime */
 };
 
 /* ---- Welcome message ---- */
-#define ASHE_WELCOME           \
-	"Welcome %host!\n"     \
-	"\tuptime - %uptime\n" \
-	"\ttime   - %time\n"   \
-	"\tdate   - %date\n"
+#define ASHE_WELCOME      \
+	"Welcome %1!\n"   \
+	"\tuptime - %7\n" \
+	"\ttime   - %5\n" \
+	"\tdate   - %6\n"
 
 /* ---- Prompt ---- */
-#define ASHE_PROMPT "(%user)ashe$ "
+#define ASHE_PROMPT "(%1)ashe$ "
 
 /* ---- Settings ---- */
 #define ASHE_SETTING_WARN_ON_EXIT 1

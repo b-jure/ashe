@@ -13,20 +13,21 @@
 #include "ashell.h"
 
 /* options for envcmd function */
-#define ENV_ADD 0 /* add variable name/value */
-#define ENV_SET 1 /* add/overwrite variable name/value */
-#define ENV_REMOVE 2 /* remove variable */
-#define ENV_PRINT 3 /* print variable */
+#define ENV_ADD	      0 /* add variable name/value */
+#define ENV_SET	      1 /* add/overwrite variable name/value */
+#define ENV_REMOVE    2 /* remove variable */
+#define ENV_PRINT     3 /* print variable */
 #define ENV_PRINT_ALL 4 /* print all variables */
 
-#define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
+#define is_help_opt(arg) \
+	(strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
 #define HELPSTR \
 	"\r\nThe -h or --help options display help information for this command\r\n"
 #define print_help_opts(builtin) builtin_printf(builtin, HELPSTR)
 
-#define namef(name) bold(green(#name))
+#define namef(name)	  bold(green(#name))
 #define keywordf(keyword) bold(cyan(#keyword))
-#define validf(valid) bold(blue(valid))
+#define validf(valid)	  bold(blue(valid))
 #define invalidf(invalid) bold(bred(invalid))
 
 #define FLIP_SIGN_BIT(n) ((n) ^ (1 << (sizeof(n) * 8 - 1)))
@@ -75,13 +76,14 @@ ASHE_PRIVATE void ashe_jobs_print_job(Job *job)
 	completed = Job_is_completed(job);
 	if (!completed) {
 		stopped = Job_is_stopped(job);
-		state = (stopped ? red("stopped") : yellow("running"));
+		state = (stopped ? "stopped" : "running");
 	} else
-		state = green("completed");
+		state = "completed";
 	printf("%-*ld %-*d %-*s\n", 10, job->id, 10, job->pgid, 10, state);
 }
 
-ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(ArrayCharptr *argv, int32 *nums, memmax len)
+ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(ArrayCharptr *argv, int32 *nums,
+					    memmax len)
 {
 	char *arg;
 	char *errstr;
@@ -121,10 +123,11 @@ ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(int32 *nums, memmax len)
 
 	for (i = 0; i < len; i++) {
 		if (nums[i] < 0)
-			job = JobControl_get_job_with_id(&ashe.sh_jobcntl,
-							 FLIP_SIGN_BIT(nums[i]));
+			job = JobControl_get_job_with_id(
+				&ashe.sh_jobcntl, FLIP_SIGN_BIT(nums[i]));
 		else
-			job = JobControl_get_job_with_pgid(&ashe.sh_jobcntl, nums[i]);
+			job = JobControl_get_job_with_pgid(&ashe.sh_jobcntl,
+							   nums[i]);
 		if (job)
 			ashe_jobs_print_job(job);
 	}
@@ -207,7 +210,8 @@ ASHE_PRIVATE void ashe_bg_id(int32 id)
 	if (job) {
 		Job_continue(job, 0);
 	} else
-		builtin_printf("bg", "there is no suitable job with id %d.", id);
+		builtin_printf("bg", "there is no suitable job with id %d.",
+			       id);
 }
 
 /* Auxiliary to ashe_bg() */
@@ -218,7 +222,8 @@ ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 	if (job)
 		Job_mark_as_background(job, 1);
 	else
-		builtin_printf("bg", "there is no suitable job with pid %d.", pid);
+		builtin_printf("bg", "there is no suitable job with pid %d.",
+			       pid);
 }
 
 ASHE_PRIVATE void ashe_bg_background_filtered_jobs(int32 *nums, memmax len)
@@ -293,7 +298,8 @@ ASHE_PRIVATE void ashe_fg_id(int32 id)
 	if (job)
 		Job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with id %d.", id);
+		builtin_printf("fg", "there is no suitable job with id %d.",
+			       id);
 }
 
 /* Auxiliary to ashe_fg() */
@@ -304,7 +310,8 @@ ASHE_PRIVATE void ashe_fg_pid(pid_t pid)
 	if (job)
 		Job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with pid %d.", pid);
+		builtin_printf("fg", "there is no suitable job with pid %d.",
+			       pid);
 }
 
 /* Foreground a job */
@@ -370,7 +377,8 @@ ASHE_PRIVATE int32 ashe_exit(ArrayCharptr *argv)
 	switch (argc) {
 	case 1:
 		jobcnt = JobControl_jobs(&ashe.sh_jobcntl);
-		if (!ashe.sh_flags.isfork && jobcnt != 0 && !ashe.sh_flags.exit) {
+		if (!ashe.sh_flags.isfork && jobcnt != 0 &&
+		    !ashe.sh_flags.exit) {
 			ashe.sh_flags.exit = 1;
 			status = print_rows(exit_warn, ELEMENTS(exit_warn));
 		} else {
@@ -384,7 +392,8 @@ ASHE_PRIVATE int32 ashe_exit(ArrayCharptr *argv)
 			break;
 		}
 		status = strtol(argv->data[1], &endptr, 10);
-		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' || status < 0) {
+		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' ||
+		    status < 0) {
 			builtin_printf("exit", "invalid exit status CODE '%s'.",
 				       argv->data[1]);
 			status = -1;
@@ -461,7 +470,8 @@ ASHE_PRIVATE int32 envcmd(ArrayCharptr *argv, int32 option)
 	switch (option) {
 	case ENV_ADD:
 	case ENV_SET:
-		if (setenv(argv->data[1], argv->data[2], option != ENV_ADD) < 0) {
+		if (setenv(argv->data[1], argv->data[2], option != ENV_ADD) <
+		    0) {
 			print_errno();
 			return -1;
 		}
@@ -475,7 +485,8 @@ ASHE_PRIVATE int32 envcmd(ArrayCharptr *argv, int32 option)
 			fflush(stdout);
 			goto l_check_for_errors;
 		}
-		builtin_printf("penv", "variable '%s' doesn't exist.", argv->data[1]);
+		builtin_printf("penv", "variable '%s' doesn't exist.",
+			       argv->data[1]);
 		return -1;
 	case ENV_PRINT_ALL:
 		print_environ();
@@ -628,7 +639,7 @@ ASHE_PRIVATE int32 ashe_clear(ArrayCharptr *argv)
 
 	switch (argc) {
 	case 1:
-		clear_screen();
+		TerminalInput_clrscreen(&ashe.sh_term.tm_input);
 		break;
 	case 2:
 		if (is_help_opt(argv->data[1])) {
@@ -729,10 +740,12 @@ ASHE_PRIVATE int32 ashe_exec(ArrayCharptr *argv)
 	return 0; /* stop compiler from complaining */
 }
 
-ASHE_PRIVATE finline int32 builtin_match(const char *str, uint32 start, uint32 len,
-					 const char *pattern, enum tbi type)
+ASHE_PRIVATE finline int32 builtin_match(const char *str, uint32 start,
+					 uint32 len, const char *pattern,
+					 enum tbi type)
 {
-	if (strlen(str) == start + len && memcmp(str + start, pattern, len) == 0)
+	if (strlen(str) == start + len &&
+	    memcmp(str + start, pattern, len) == 0)
 		return type;
 	return -1;
 }
@@ -747,7 +760,8 @@ ASHE_PUBLIC int32 is_builtin(const char *command)
 	case 'b':
 		switch (command[1]) {
 		case 'u':
-			return builtin_match(command, 2, 5, "iltin", TBI_BUILTIN);
+			return builtin_match(command, 2, 5, "iltin",
+					     TBI_BUILTIN);
 		case 'g':
 			if (command[2] == '\0')
 				return TBI_BG;
@@ -775,9 +789,11 @@ ASHE_PUBLIC int32 is_builtin(const char *command)
 		case 'x':
 			switch (command[2]) {
 			case 'e':
-				return builtin_match(command, 2, 2, "ec", TBI_EXEC);
+				return builtin_match(command, 2, 2, "ec",
+						     TBI_EXEC);
 			case 'i':
-				return builtin_match(command, 2, 2, "it", TBI_EXIT);
+				return builtin_match(command, 2, 2, "it",
+						     TBI_EXIT);
 			default:
 				break;
 			}
