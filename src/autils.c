@@ -26,7 +26,7 @@ ASHE_PUBLIC void print_errno(void)
 {
 	ashe_assert(errno != 0, "invalid errno");
 	const char *errmsg = strerror(errno);
-	printf_error(stderr, errmsg); // unblock_signals() in here
+	printf_error(errmsg); // unblock_signals() in here
 }
 
 ASHE_PUBLIC void vprintf_info_wprefix(const char *ifmt, va_list argp)
@@ -72,7 +72,6 @@ ASHE_PUBLIC memmax len_without_seq(const char *ptr)
 
 ASHE_PUBLIC void expand_vars(Buffer *buffer)
 {
-	memmax len = buffer->len;
 	char *ptr = buffer->data;
 	const char *value = NULL;
 
@@ -137,7 +136,7 @@ ASHE_PUBLIC void unescape(Buffer *buffer)
 	static const int32 escape[UINT8_MAX] = {
 		['a'] = '\a',  ['b'] = '\b', ['f'] = '\f', ['n'] = '\n',
 		['r'] = '\r',  ['t'] = '\t', ['v'] = '\v', ['\\'] = '\\',
-		['\''] = '\'', ['"'] = '\"', ['?'] = '\?', ['e'] = '\e',
+		['\''] = '\'', ['"'] = '\"', ['?'] = '\?', ['e'] = '\033',
 	};
 
 	char *oldp, *newp;
@@ -151,7 +150,8 @@ ASHE_PUBLIC void unescape(Buffer *buffer)
 			c = *(unsigned char *)oldp;
 			if (c == '\0') {
 				break;
-			} else if (c == '0' && oldp[1] == '3' && oldp[2] == '3') {
+			} else if (c == '0' && oldp[1] == '3' &&
+				   oldp[2] == '3') {
 				c = '\033';
 				oldp += 3;
 			} else if (escape[c]) {

@@ -34,7 +34,7 @@
 
 typedef int32 (*builtinfn)(ArrayCharptr *argv);
 
-ASHE_PRIVATE finline int32 print_rows(const char **rows, uint32 len)
+ASHE_PRIVATE inline int32 print_rows(const char **rows, uint32 len)
 {
 	uint32 i;
 
@@ -61,17 +61,17 @@ ASHE_PRIVATE void builtin_printf(const char *bi, const char *fmt, ...)
 	va_end(argp);
 }
 
-ASHE_PRIVATE finline void ashe_jobs_print_header(void)
+ASHE_PRIVATE inline void ashe_jobs_print_header(void)
 {
 	const char *fmt = "\n%-*s%-*s%-*s\n";
-	uint32 padding = 10;
-	printf(fmt, padding, "Job", padding, "Group", padding, "State");
+	uint32 pad = 10;
+	printf(fmt, pad, "Job", pad, "Group", pad, "State");
 }
 
 ASHE_PRIVATE void ashe_jobs_print_job(Job *job)
 {
 	ubyte completed, stopped;
-	uint32 padding = 10;
+	uint32 pad = 10;
 	const char *state = NULL;
 	completed = Job_is_completed(job);
 	if (!completed) {
@@ -79,11 +79,10 @@ ASHE_PRIVATE void ashe_jobs_print_job(Job *job)
 		state = (stopped ? "stopped" : "running");
 	} else
 		state = "completed";
-	printf("%-*ld %-*d %-*s\n", 10, job->id, 10, job->pgid, 10, state);
+	printf("%-*ld %-*d %-*s\n", pad, job->id, pad, job->pgid, pad, state);
 }
 
-ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(ArrayCharptr *argv, int32 *nums,
-					    memmax len)
+ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(ArrayCharptr *argv, int32 *nums)
 {
 	char *arg;
 	char *errstr;
@@ -97,7 +96,6 @@ ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(ArrayCharptr *argv, int32 *nums,
 		if (*arg == '%')
 			id = 1;
 		num = strtol(arg, &errstr, 10);
-
 		if (*errstr != '\0') {
 			oklen = errstr - arg;
 			printf_error(bi, "invalid %s provided, %*s'%s'",
@@ -119,7 +117,6 @@ ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(int32 *nums, memmax len)
 {
 	Job *job;
 	memmax i;
-	int32 n;
 
 	for (i = 0; i < len; i++) {
 		if (nums[i] < 0)
@@ -153,7 +150,6 @@ ASHE_PRIVATE int32 ashe_jobs(ArrayCharptr *argv)
 	int32 nums[argc - 1];
 	memmax i = 0;
 	int32 status = 0;
-	ubyte ishelp = 0;
 
 	switch (argc) {
 	case 1:
@@ -167,12 +163,13 @@ ASHE_PRIVATE int32 ashe_jobs(ArrayCharptr *argv)
 			job = JobControl_get_job_at(jobcntl, i);
 			ashe_jobs_print_job(job);
 		}
+		break;
 	case 2:
 		if (is_help_opt(argv->data[1])) {
 			status = print_rows(usage, ELEMENTS(usage));
 			break;
 		}
-		if (filter_jobs_by_pid_or_id(argv, nums, 1) < 0) {
+		if (filter_jobs_by_pid_or_id(argv, nums) < 0) {
 l_error:
 			status = -1;
 			break;
@@ -228,7 +225,6 @@ ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 
 ASHE_PRIVATE void ashe_bg_background_filtered_jobs(int32 *nums, memmax len)
 {
-	Job *job;
 	memmax i;
 
 	for (i = 0; i < len; i++) {
@@ -263,7 +259,7 @@ ASHE_PRIVATE int32 ashe_bg(ArrayCharptr *argv)
 			status = print_rows(usage, ELEMENTS(usage));
 		} else {
 			int32 nums[argc - 1];
-			if (filter_jobs_by_pid_or_id(argv, nums, argc - 1) < 0)
+			if (filter_jobs_by_pid_or_id(argv, nums) < 0)
 				return -1;
 			ashe_bg_background_filtered_jobs(nums, argc - 1);
 		}
@@ -339,7 +335,7 @@ ASHE_PRIVATE int32 ashe_fg(ArrayCharptr *argv)
 		if (is_help_opt(argv->data[1])) {
 			print_rows(usage, ELEMENTS(usage));
 		} else {
-			if (filter_jobs_by_pid_or_id(argv, &n, 1) < 0)
+			if (filter_jobs_by_pid_or_id(argv, &n) < 0)
 				return -1;
 			if (n < 0)
 				ashe_fg_id(FLIP_SIGN_BIT(n));
@@ -453,7 +449,7 @@ l_error:
 }
 
 /* Auxiliary to envcmd() */
-ASHE_PRIVATE finline void print_environ(void)
+ASHE_PRIVATE inline void print_environ(void)
 {
 	int32 i = 0;
 
@@ -608,16 +604,22 @@ ASHE_PRIVATE int32 ashe_pwd(ArrayCharptr *argv)
 	switch (argc) {
 	case 1:
 		if (unlikely(!getcwd(buff, PATH_MAX)))
-			goto l_errno;
+			goto error;
+		puts(buff);
+		fflush(stdout);
+		if (unlikely(ferror(stdout)))
+			goto error;
+		break;
 	case 2:
 		if (is_help_opt(argv->data[1])) {
 			if (unlikely(print_rows(usage, ELEMENTS(usage)) < 0)) {
-l_errno:
+error:
 				print_errno();
 				status = -1;
 			}
 			break;
 		}
+		/* FALLTHRU */
 	default:
 		status = -1;
 		print_help_opts("pwd");
@@ -649,6 +651,7 @@ ASHE_PRIVATE int32 ashe_clear(ArrayCharptr *argv)
 			}
 			break;
 		}
+		/* FALLTHRU */
 	default:
 		status = -1;
 		print_help_opts("clear");
@@ -694,6 +697,7 @@ ASHE_PRIVATE int32 ashe_builtin(ArrayCharptr *argv)
 			status = print_rows(usage, ELEMENTS(usage));
 			break;
 		}
+		/* FALLTHRU */
 	default:
 		status = -1;
 		print_help_opts("builtin");
@@ -740,9 +744,9 @@ ASHE_PRIVATE int32 ashe_exec(ArrayCharptr *argv)
 	return 0; /* stop compiler from complaining */
 }
 
-ASHE_PRIVATE finline int32 builtin_match(const char *str, uint32 start,
-					 uint32 len, const char *pattern,
-					 enum tbi type)
+ASHE_PRIVATE inline int32 builtin_match(const char *str, uint32 start,
+					uint32 len, const char *pattern,
+					enum tbi type)
 {
 	if (strlen(str) == start + len &&
 	    memcmp(str + start, pattern, len) == 0)
@@ -830,17 +834,9 @@ ASHE_PUBLIC int32 is_builtin(const char *command)
 ASHE_PUBLIC int32 run_builtin(Command *cmd, enum tbi tbi)
 {
 	static const builtinfn table[] = {
-		ashe_builtin,
-		ashe_bg,
-		ashe_cd,
-		ashe_clear,
-		ashe_fg,
-		ashe_jobs,
-		ashe_penv,
-		ashe_pwd,
-		ashe_renv,
-		ashe_exec,
-		NULL /* ashe_exit */,
+		ashe_builtin, ashe_bg,	 ashe_cd,   ashe_clear,
+		ashe_fg,      ashe_jobs, ashe_penv, ashe_pwd,
+		ashe_renv,    ashe_senv, ashe_exec, NULL /* ashe_exit */,
 	};
 
 	ashe_assert(tbi >= TBI_BUILTIN && tbi <= TBI_EXIT, "invalid tbi");

@@ -48,7 +48,7 @@ typedef struct {
 	int32 closefd;
 } PipeContext;
 
-ASHE_PRIVATE finline void Context_init(PipeContext *ctx)
+ASHE_PRIVATE inline void PipeContext_init(PipeContext *ctx)
 {
 	ctx->pipefd[0] = STDIN_FILENO;
 	ctx->pipefd[1] = STDOUT_FILENO;
@@ -119,7 +119,7 @@ ASHE_PRIVATE int32 try_rm_envvars(ArrayCharptr *env)
 	return status;
 }
 
-ASHE_PRIVATE finline int32 filepath_is_fd(const char *filepath)
+ASHE_PRIVATE inline int32 filepath_is_fd(const char *filepath)
 {
 	for (memmax i = 0; i < ELEMENTS(devfiles); i++) {
 		if (strcmp(filepath, devfiles[i]) != 0)
@@ -131,7 +131,7 @@ ASHE_PRIVATE finline int32 filepath_is_fd(const char *filepath)
 	return -1;
 }
 
-ASHE_PRIVATE finline int32 redirect_stderrout_into(int32 fd)
+ASHE_PRIVATE inline int32 redirect_stderrout_into(int32 fd)
 {
 	if ((dup2(STDOUT_FILENO, STDERR_FILENO) == 0 &&
 	     dup2(fd, STDOUT_FILENO) == 0)) {
@@ -141,7 +141,7 @@ ASHE_PRIVATE finline int32 redirect_stderrout_into(int32 fd)
 	return 0;
 }
 
-ASHE_PRIVATE finline int32 redirect_fd_into(int32 fd, int32 to)
+ASHE_PRIVATE inline int32 redirect_fd_into(int32 fd, int32 to)
 {
 	if (dup2(to, fd) < 0) {
 		print_errno();
@@ -203,7 +203,8 @@ ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle *fhs, ubyte exec)
 				badfd = fh->fddup;
 				goto l_badfd;
 			}
-		case OP_CLOSE: /* FALLTHRU */
+			/* FALLTHRU */
+		case OP_CLOSE:
 			if (!fdisok(fh->fd)) {
 				badfd = fh->fd;
 				goto l_badfd;
@@ -340,7 +341,7 @@ ASHE_PRIVATE void reset_signal_handling(void)
 	sigaction(SIGCHLD, &sigdfl_ac, NULL);
 }
 
-ASHE_PRIVATE finline int32 try_connect_pipe(PipeContext *ctx)
+ASHE_PRIVATE inline int32 try_connect_pipe(PipeContext *ctx)
 {
 	if (unlikely(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
 		     dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0 ||
@@ -415,7 +416,7 @@ l_cleanup:
 	return childPID;
 }
 
-ASHE_PRIVATE finline int32 close_pipe(int32 *pipe)
+ASHE_PRIVATE inline int32 close_pipe(int32 *pipe)
 {
 	if (unlikely(close(pipe[PIPE_R]) < 0 || close(pipe[PIPE_W]) < 0)) {
 		print_errno();
@@ -445,7 +446,7 @@ ASHE_PRIVATE int32 Pipeline_run(Pipeline *pipeline, ubyte bg)
 
 	for (memmax i = 0; i < cmdcnt; i++) {
 		cmd = ArrayCommand_index(commands, i);
-		Context_init(&ctx);
+		PipeContext_init(&ctx);
 		if (cmdcnt > 1) {
 			configure_pipe_at(pipes, cmdcnt, i, &ctx);
 		} else if (job.foreground &&
@@ -486,8 +487,8 @@ ASHE_PRIVATE int32 Conditional_run(Conditional *cond)
 	for (memmax i = 0; i < pipes->len; i++) {
 		Pipeline *pipeline = ArrayPipeline_index(pipes, i);
 		status = Pipeline_run(pipeline, cond->is_background);
-		if (status == 0 && (pipeline->connection & CON_OR) ||
-		    status != 0 && (pipeline->connection & CON_AND))
+		if ((status == 0 && (pipeline->connection & CON_OR)) ||
+		    (status != 0 && (pipeline->connection & CON_AND)))
 			return status;
 	}
 	return status;

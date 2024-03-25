@@ -1,3 +1,4 @@
+#define ASHE_USE_PLACEHOLDERS_ARRAY
 #include "atoken.h"
 #include "aprompt.h"
 #include "ajobcntl.h"
@@ -84,7 +85,7 @@ ASHE_PUBLIC const char *ashe_time(void)
 	struct tm *lt;
 	time_t t;
 
-	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) < 0))
+	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) == NULL))
 		goto error;
 	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_min,
 			      lt->tm_hour)))
@@ -101,7 +102,7 @@ ASHE_PUBLIC const char *ashe_date(void)
 	struct tm *lt;
 	time_t t;
 
-	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) < 0))
+	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) == NULL))
 		goto error;
 	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d:%d", lt->tm_mday,
 			      lt->tm_mon, lt->tm_year + 1900) < 0))
@@ -142,7 +143,7 @@ ASHE_PRIVATE void try_expand_placeholder(Buffer *out, const char **ptr)
 	}
 	if (unlikely(n >= ELEMENTS(placeholders)))
 		return;
-	if (likely((res = placeholders[n]()))) {
+	if (likely((res = placeholders[n]()) != NULL)) {
 		Buffer_push_str(out, res, strlen(res));
 		*ptr = p;
 	} else {
@@ -176,7 +177,7 @@ ASHE_PUBLIC void print_userstr(const char *str, memmax len, uint32 bufidx)
 		Buffer_init_cap(&buff, len);
 		ArrayCharptr_insert(&ashe.sh_buffers, bufidx, buff.data);
 	}
-	parsestring(&buff, ASHE_PROMPT);
+	parsestring(&buff, str);
 	ashe.sh_buffers.data[bufidx] = buff.data;
 	if (likely(bufidx == 1))
 		ashe.sh_term.tm_promptlen = buff.len - 1;

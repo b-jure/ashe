@@ -44,12 +44,12 @@ ASHE_PRIVATE void next_token(Lexer *lexer)
 
 /* =========== AST =========== */
 
-ASHE_PRIVATE finline void FileHandle_init(FileHandle *fh)
+ASHE_PRIVATE inline void FileHandle_init(FileHandle *fh)
 {
 	memset(fh, 0, sizeof(FileHandle));
 }
 
-ASHE_PRIVATE finline void Command_init(Command *cmd)
+ASHE_PRIVATE inline void Command_init(Command *cmd)
 {
 	ArrayCharptr_init(&cmd->argv);
 	ArrayCharptr_init(&cmd->env);
@@ -96,13 +96,13 @@ ASHE_PUBLIC void Conditional_free(Conditional *cond)
 ASHE_PRIVATE void pipeline(Lexer *lexer, ArrayPipeline *arpip, Pipeline *pip,
 			   memmax depth);
 
-ASHE_PRIVATE finline void print_input_and_invalid_token(Lexer *lexer, Token *tok)
+ASHE_PRIVATE inline void print_input_and_invalid_token(Lexer *lexer, Token *tok)
 {
 	int32 startlen = tok->start - lexer->start;
 	printf_error("%.*s'%s'", startlen, lexer->start, tok->start);
 }
 
-ASHE_PRIVATE finline void expect(Lexer *lexer, ubyte next, memmax bitmask,
+ASHE_PRIVATE inline void expect(Lexer *lexer, ubyte next, memmax bitmask,
 				 const char *type)
 {
 	if (next)
@@ -135,7 +135,6 @@ ASHE_PRIVATE void redirection(Lexer *lexer, Command *cmd)
 #define NFD_OR(have_n, fd) ((have_n) ? CNM(lexer) : (fd))
 
 	memmax fd = 0;
-	ubyte append = 0;
 	ubyte have_n = lexer->prev.type == TK_NUMBER;
 	FileHandle fh;
 	FileHandle_init(&fh);
@@ -143,6 +142,7 @@ ASHE_PRIVATE void redirection(Lexer *lexer, Command *cmd)
 	switch (lexer->curr.type) {
 	case TK_AND_GREATER_GREATER:
 		fh.append = 1;
+		/* FALLTHRU */
 	case TK_AND_GREATER:
 		ashe_assert(!have_n, "parser fatal error, can't have number before '&>'");
 		fh.op = OP_REDIRECT_ERROUT;
@@ -170,6 +170,7 @@ ASHE_PRIVATE void redirection(Lexer *lexer, Command *cmd)
 		goto l_greater;
 	case TK_GREATER_GREATER:
 		fh.append = 1;
+		/* FALLTHRU */
 	case TK_GREATER:
 l_greater:
 		fh.op = OP_REDIRECT_OUT;
@@ -211,7 +212,6 @@ ASHE_PRIVATE int32 number(Lexer *lexer, Command *cmd)
 ASHE_PRIVATE ubyte get_first_command(Lexer *lexer, Command *cmd)
 {
 	Tokentype type;
-	Token *token;
 
 	for (;;) {
 		next_token(lexer);
@@ -331,7 +331,7 @@ ASHE_PRIVATE void pipeline(Lexer *lexer, ArrayPipeline *arpip, Pipeline *pip,
 	}
 }
 
-ASHE_PRIVATE finline void conditional(Lexer *lexer, Conditional *cond)
+ASHE_PRIVATE inline void conditional(Lexer *lexer, Conditional *cond)
 {
 	Pipeline pip;
 	Pipeline_init(&pip);

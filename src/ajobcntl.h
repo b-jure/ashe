@@ -14,7 +14,7 @@ typedef struct {
 	ubyte completed; /* flag indicating if process is finished executing */
 } Process;
 
-ARRAY_NEW(ArrayProcess, Process);
+ARRAY_NEW(ArrayProcess, Process)
 
 void Process_init(Process *proc, pid pid);
 
@@ -28,7 +28,7 @@ typedef struct {
 	const char *input; /* input from terminal (debug) */
 } Job;
 
-ARRAY_NEW(ArrayJob, Job);
+ARRAY_NEW(ArrayJob, Job)
 
 void Job_init(Job *job, const char *dbginput, ubyte isbg);
 memmax Job_processes(Job *job);

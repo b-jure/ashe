@@ -46,13 +46,13 @@ ASHE_PUBLIC void Job_init(Job *job, const char *input, ubyte bg)
 }
 
 /* Gets process at 'i'. */
-ASHE_PRIVATE finline Process *Job_get_process(Job *job, memmax i)
+ASHE_PRIVATE inline Process *Job_get_process(Job *job, memmax i)
 {
 	return ArrayProcess_index(&job->processes, i);
 }
 
 /* Returns 1 if 'job' contains process with 'pid', 0 otherwise. */
-ASHE_PRIVATE finline ubyte Job_contains_pid(Job *job, pid pid)
+ASHE_PRIVATE inline ubyte Job_contains_pid(Job *job, pid pid)
 {
 	memmax jobcnt = Job_processes(job);
 	while (jobcnt--)
@@ -195,7 +195,7 @@ l_panic:
 /* Set 'job' as running by setting all processes that
  * belong to the 'job' as not stopped.
  * Auxiliary to 'Job_continue()'. */
-ASHE_PRIVATE finline void Job_set_as_running(Job *job)
+ASHE_PRIVATE inline void Job_set_as_running(Job *job)
 {
 	memmax len = Job_processes(job);
 	for (memmax i = 0; i < len; i++)
@@ -232,7 +232,7 @@ ASHE_PUBLIC void Job_free(Job *job)
 /* ==== JOB-CONTROL ==== */
 
 /* Initialize the 'jobcntl'. */
-ASHE_PUBLIC void Joblist_init(JobControl *jobcntl)
+ASHE_PUBLIC void JobControl_init(JobControl *jobcntl)
 {
 	ArrayJob_init(&jobcntl->jobs);
 }
@@ -245,7 +245,7 @@ ASHE_PUBLIC memmax JobControl_jobs(JobControl *jobcntl)
 
 /* Generate new id.
  * Auxiliary to 'JobControl_add_job()'. */
-ASHE_PRIVATE finline memmax Joblist_id(JobControl *jobcntl)
+ASHE_PRIVATE inline memmax Joblist_id(JobControl *jobcntl)
 {
 	static int32 id = 1;
 	if (jobcntl->jobs.len == 0)
@@ -263,7 +263,7 @@ ASHE_PUBLIC void JobControl_add_job(JobControl *jobcntl, Job *job)
 /* Remove 'Job' from 'jobcntl' located at index 'i'.
  * Additionally cleanup the 'Job' memory.
  * Auxiliary to 'JobControl_remove_job()'. */
-ASHE_PRIVATE finline void JobControl_remove(JobControl *jobcntl, uint32 i)
+ASHE_PRIVATE inline void JobControl_remove(JobControl *jobcntl, uint32 i)
 {
 	Job job = ArrayJob_remove(&jobcntl->jobs, i);
 	Job_free(&job);
@@ -421,7 +421,7 @@ ASHE_PUBLIC void JobControl_update_and_notify(JobControl *jobcntl)
 l_redraw:
 			if (ashe.sh_term
 				    .tm_reading) // function called from signal handler ?
-				TerminalInput_gotoend(tinput);
+				TerminalInput_goto_input_end(tinput);
 			printf_info("job (pgid:%d) %s", job->pgid,
 				    (completed ? "completed [+]" :
 						 "stopped [-]"));

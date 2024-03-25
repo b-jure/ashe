@@ -37,7 +37,7 @@ static const char *tokenstr[] = {
 };
 
 /* Return 1 if character 'c' is a char token. */
-ASHE_PRIVATE finline ubyte has_precedence(int32 c)
+ASHE_PRIVATE inline ubyte has_precedence(int32 c)
 {
 	switch (c) {
 	case '>':
@@ -53,7 +53,7 @@ ASHE_PRIVATE finline ubyte has_precedence(int32 c)
 	}
 }
 
-ASHE_PRIVATE finline void Token_init(Token *token)
+ASHE_PRIVATE inline void Token_init(Token *token)
 {
 	memset(token, 0, sizeof(Token));
 }
@@ -66,13 +66,13 @@ ASHE_PUBLIC void Lexer_init(Lexer *lexer, const char *start)
 }
 
 /* Peek 'amount' without advancing. */
-ASHE_PRIVATE finline int32 peek(Lexer *lexer, memmax amount)
+ASHE_PRIVATE inline int32 peek(Lexer *lexer, memmax amount)
 {
 	return *(lexer->current + amount);
 }
 
 /* Advance buffer by a single character unless EOF is reached. */
-ASHE_PRIVATE finline int32 advance(Lexer *lexer)
+ASHE_PRIVATE inline int32 advance(Lexer *lexer)
 {
 	int32 c = *lexer->current;
 	if (c != '\0')
@@ -180,7 +180,7 @@ ASHE_PRIVATE void skipws(Lexer *lexer)
 }
 
 /* Auxiliary to 'Token_tostr()' */
-ASHE_PRIVATE finline const char *num2str(memmax n)
+ASHE_PRIVATE inline const char *num2str(memmax n)
 {
 	static char buffer[UINT_DIGITS + 1];
 	snprintf(buffer, UINT_DIGITS + 1, "%lu", n);
@@ -223,7 +223,7 @@ ASHE_PUBLIC const char *Token_tostr(Token *token)
 	}
 }
 
-ASHE_PRIVATE finline Token Token_new(Tokentype type)
+ASHE_PRIVATE inline Token Token_new(Tokentype type)
 {
 	Token token;
 	token.type = type;

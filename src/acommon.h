@@ -52,15 +52,14 @@ typedef enum {
 #if defined(__GNUC__)
 #define likely(expr)   __glibc_likely(expr)
 #define unlikely(expr) __glibc_unlikely(expr)
-#define finline	       __attribute__((always_inline))
 #define MAX(a, b)                       \
-	({                              \
+	__extension__({                 \
 		__typeof__(a) _a = (a); \
 		__typeof__(b) _b = (b); \
 		_a > _b ? _a : _b;      \
 	})
 #define MIN(a, b)                       \
-	({                              \
+	__extension__({                 \
 		__typeof__(a) _a = (a); \
 		__typeof__(b) _b = (b); \
 		_a > _b ? _b : _a;      \
@@ -68,7 +67,6 @@ typedef enum {
 #else
 #define likely(expr)   (expr)
 #define unlikely(expr) (expr)
-#define finline	       inline
 #define MAX(a, b)      ((a) > (b) ? (a) : (b))
 #define MIN(a, b)      ((a) > (b) ? (b) : (a))
 #endif // __GNUC__

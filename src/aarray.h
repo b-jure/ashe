@@ -14,13 +14,22 @@
 
 /* These are internal only macros. */
 #define _ARRAY_METHOD_NAME(tname, name) tname##_##name
-#define _CALL_ARRAY_METHOD(tname, name, ...) \
-	_ARRAY_METHOD_NAME(tname, name)(self __VA_OPT__(, ) __VA_ARGS__)
-#define _ARRAY_METHOD(tname, name, ...) \
-	_ARRAY_METHOD_NAME(tname, name)(tname * self __VA_OPT__(, ) __VA_ARGS__)
-#define _ARRAY_METHOD_CONST(tname, name, ...) \
-	_ARRAY_METHOD_NAME(tname, name)       \
-	(const tname *self __VA_OPT__(, ) __VA_ARGS__)
+/* call array method */
+#define _CALL_ARRAY_METHOD(tname, name) _ARRAY_METHOD_NAME(tname, name)(self)
+/* call array vararg method */
+#define _CALL_ARRAY_METHOD_VARARG(tname, name, ...) \
+	_ARRAY_METHOD_NAME(tname, name)(self, __VA_ARGS__)
+/* array method declaration */
+#define _ARRAY_METHOD(tname, name) _ARRAY_METHOD_NAME(tname, name)(tname * self)
+/* array method vararg declaration */
+#define _ARRAY_METHOD_VARARG(tname, name, ...) \
+	_ARRAY_METHOD_NAME(tname, name)(tname * self, __VA_ARGS__)
+/* array method declaration with 'self' as const */
+#define _ARRAY_METHOD_CONST(tname, name) \
+	_ARRAY_METHOD_NAME(tname, name)(const tname *self)
+/* array method vararg declaration with 'self' as const */
+#define _ARRAY_METHOD_CONST_VARARG(tname, name, ...) \
+	_ARRAY_METHOD_NAME(tname, name)(const tname *self, __VA_ARGS__)
 
 typedef void (*FreeFn)(void *value);
 
@@ -32,24 +41,24 @@ typedef void (*FreeFn)(void *value);
 		type *data;                                                             \
 	} name;                                                                         \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, init)                                   \
+	static inline void _ARRAY_METHOD(name, init)                                    \
 	{                                                                               \
 		self->cap = 0;                                                          \
 		self->len = 0;                                                          \
 		self->data = NULL;                                                      \
 	}                                                                               \
                                                                                         \
-	static finline uint32 _ARRAY_METHOD(name, len)                                  \
+	static inline uint32 _ARRAY_METHOD(name, len)                                   \
 	{                                                                               \
 		return self->len;                                                       \
 	}                                                                               \
                                                                                         \
-	static finline uint32 _ARRAY_METHOD(name, cap)                                  \
+	static inline uint32 _ARRAY_METHOD(name, cap)                                   \
 	{                                                                               \
 		return self->cap;                                                       \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, init_cap, uint32 cap)                   \
+	static inline void _ARRAY_METHOD_VARARG(name, init_cap, uint32 cap)             \
 	{                                                                               \
 		_CALL_ARRAY_METHOD(name, init);                                         \
 		self->data = (type *)arealloc(self->data, cap * sizeof(type));          \
@@ -80,7 +89,7 @@ typedef void (*FreeFn)(void *value);
 		}                                                                       \
 	}                                                                               \
                                                                                         \
-	static finline uint32 _ARRAY_METHOD(name, push, type value)                     \
+	static inline uint32 _ARRAY_METHOD_VARARG(name, push, type value)               \
 	{                                                                               \
 		if (self->cap <= self->len)                                             \
 			_CALL_ARRAY_METHOD(name, grow);                                 \
@@ -88,38 +97,39 @@ typedef void (*FreeFn)(void *value);
 		return self->len - 1;                                                   \
 	}                                                                               \
                                                                                         \
-	static finline type _ARRAY_METHOD(name, pop)                                    \
+	static inline type _ARRAY_METHOD(name, pop)                                     \
 	{                                                                               \
 		return self->data[--self->len];                                         \
 	}                                                                               \
                                                                                         \
-	static finline type *_ARRAY_METHOD_CONST(name, index, uint32 idx)               \
+	static inline type *_ARRAY_METHOD_CONST_VARARG(name, index,                     \
+						       uint32 idx)                      \
 	{                                                                               \
 		return &self->data[idx];                                                \
 	}                                                                               \
                                                                                         \
-	static finline type *_ARRAY_METHOD_CONST(name, last)                            \
+	static inline type *_ARRAY_METHOD_CONST(name, last)                             \
 	{                                                                               \
 		return &self->data[self->len - 1];                                      \
 	}                                                                               \
                                                                                         \
-	static finline type *_ARRAY_METHOD_CONST(name, first)                           \
+	static inline type *_ARRAY_METHOD_CONST(name, first)                            \
 	{                                                                               \
 		return &self->data[0];                                                  \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, ensure, unsigned int len)               \
+	static inline void _ARRAY_METHOD_VARARG(name, ensure, uint32 len)               \
 	{                                                                               \
 		while (self->cap < self->len + len)                                     \
 			_CALL_ARRAY_METHOD(name, grow);                                 \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, insert, uint32 index,                   \
-					  type value)                                   \
+	static inline void _ARRAY_METHOD_VARARG(name, insert, uint32 index,             \
+						type value)                             \
 	{                                                                               \
-		_CALL_ARRAY_METHOD(name, ensure, 1);                                    \
+		_CALL_ARRAY_METHOD_VARARG(name, ensure, 1);                             \
 		if (index == self->len) {                                               \
-			_CALL_ARRAY_METHOD(name, push, value);                          \
+			_CALL_ARRAY_METHOD_VARARG(name, push, value);                   \
 			return;                                                         \
 		}                                                                       \
 		type *src = self->data + index;                                         \
@@ -129,7 +139,7 @@ typedef void (*FreeFn)(void *value);
 		self->data[index] = value;                                              \
 	}                                                                               \
                                                                                         \
-	static finline type _ARRAY_METHOD(name, remove, uint32 index)                   \
+	static inline type _ARRAY_METHOD_VARARG(name, remove, uint32 index)             \
 	{                                                                               \
 		if (index == self->len)                                                 \
 			return _CALL_ARRAY_METHOD(name, pop);                           \
@@ -141,7 +151,7 @@ typedef void (*FreeFn)(void *value);
 		return retval;                                                          \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, free, FreeFn fn)                        \
+	static inline void _ARRAY_METHOD_VARARG(name, free, FreeFn fn)                  \
 	{                                                                               \
 		if (fn)                                                                 \
 			for (uint32 i = 0; i < self->len; i++)                          \
@@ -150,12 +160,12 @@ typedef void (*FreeFn)(void *value);
 			afree(self->data);                                              \
 	}                                                                               \
                                                                                         \
-	static finline void _ARRAY_METHOD(name, push_str, const char *str,              \
-					  memmax len)                                   \
+	static inline void _ARRAY_METHOD_VARARG(name, push_str,                         \
+						const char *str, memmax len)            \
 	{                                                                               \
 		uint32 required = self->len + len;                                      \
 		if (self->cap < required)                                               \
-			_CALL_ARRAY_METHOD(name, ensure, required);                     \
+			_CALL_ARRAY_METHOD_VARARG(name, ensure, required);              \
 		type *dest = self->data + self->len;                                    \
 		memcpy(dest, str, len);                                                 \
 		self->len += len;                                                       \

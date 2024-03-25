@@ -51,7 +51,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	unused(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_flags.interrupt = 1;
-	TerminalInput_gotoend(&ashe.sh_term.tm_input);
+	TerminalInput_goto_input_end(&ashe.sh_term.tm_input);
 	fprintf(stderr, "\r\n");
 	print_prompt();
 	TerminalInput_clear(&ashe.sh_term.tm_input);
@@ -73,7 +73,7 @@ ASHE_PRIVATE void SIGCHLD_handler(int signum)
 /* Masks signals in 'signals' array. */
 ASHE_PUBLIC void ashe_mask_signals(int32 how)
 {
-	for (int32 i = 0; i < ELEMENTS(signals); i++)
+	for (uint32 i = 0; i < ELEMENTS(signals); i++)
 		mask_signal(signals[i], how);
 }
 
@@ -103,7 +103,7 @@ ASHE_PUBLIC void init_signal_handlers(void)
 
 	sigemptyset(&default_action.sa_mask);
 
-	for (int32 i = 0; i < ELEMENTS(signals); i++) {
+	for (uint32 i = 0; i < ELEMENTS(signals); i++) {
 		handler = handlers[i];
 		if (signals[i] == SIGCHLD)
 			handler = SIG_DFL;

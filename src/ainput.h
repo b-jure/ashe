@@ -68,7 +68,7 @@ typedef struct {
 	memmax len; /* line length (bytes) */
 } Line; /* slice of bytes */
 
-ARRAY_NEW(ArrayLine, Line);
+ARRAY_NEW(ArrayLine, Line)
 
 typedef struct {
 	Buffer in_ibf; /* input buffer */
@@ -81,7 +81,7 @@ typedef struct {
 void TerminalInput_init(TerminalInput *tinput);
 void TerminalInput_read(TerminalInput *tinput);
 void TerminalInput_redraw(TerminalInput *tinput);
-void TerminalInput_gotoend(TerminalInput *tinput);
+void TerminalInput_goto_input_end(TerminalInput *tinput);
 void TerminalInput_clrscreen(TerminalInput *tinput);
 void TerminalInput_free(TerminalInput *tinput);
 

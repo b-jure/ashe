@@ -6,7 +6,7 @@
 
 typedef struct Command Command;
 
-ARRAY_NEW(ArrayCharptr, char *);
+ARRAY_NEW(ArrayCharptr, char *)
 
 enum tbi {
 	TBI_BUILTIN = 0,

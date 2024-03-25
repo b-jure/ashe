@@ -32,6 +32,7 @@
 /* ---- Placeholders ---- */
 #define ASHE_PLH_SIGN '%'
 typedef const char *(*ashe_promptfn)(void);
+#ifdef ASHE_USE_PLACEHOLDERS_ARRAY /* include guard */
 extern const char *ashe_host(void);
 extern const char *ashe_user(void);
 extern const char *ashe_jobc(void);
@@ -50,6 +51,7 @@ static ashe_promptfn placeholders[] = {
 	ashe_date, /* 6: current date (DD:MM:YY) */
 	ashe_uptime, /* 7: system uptime */
 };
+#endif
 
 /* ---- Welcome message ---- */
 #define ASHE_WELCOME      \

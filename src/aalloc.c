@@ -1,9 +1,9 @@
 #include "aalloc.h"
 #include "ajobcntl.h"
 #include "ashell.h"
+#include "autils.h"
 
 #include <stdarg.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -47,7 +47,7 @@ ASHE_PUBLIC void *arealloc(void *ptr, memmax size)
 	}
 	ptr = realloc(ptr, size);
 	if (unlikely(ptr == NULL)) {
-		perror(ENOMEM);
+		print_errno();
 		panic(NULL);
 	}
 	return ptr;

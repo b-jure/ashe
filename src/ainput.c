@@ -62,25 +62,25 @@ enum termkey {
 	DEL_KEY
 };
 
-ASHE_PRIVATE finline void set_terminal_mode(struct termios *tmode)
+ASHE_PRIVATE inline void set_terminal_mode(struct termios *tmode)
 {
 	if (unlikely(tcsetattr(STDIN_FILENO, TCSAFLUSH, tmode) < 0))
 		panic(NULL);
 }
 
-ASHE_PRIVATE finline void turn_on_nltrans(void)
+ASHE_PRIVATE inline void turn_on_nltrans(void)
 {
 	ashe.sh_term.tm_rawtermios.c_oflag |= (OPOST);
 	set_terminal_mode(&ashe.sh_term.tm_rawtermios);
 }
 
-ASHE_PRIVATE finline void turn_off_nltrans(void)
+ASHE_PRIVATE inline void turn_off_nltrans(void)
 {
 	ashe.sh_term.tm_rawtermios.c_oflag &= ~(OPOST);
 	set_terminal_mode(&ashe.sh_term.tm_rawtermios);
 }
 
-ASHE_PRIVATE finline void dbf_push_unum(memmax n)
+ASHE_PRIVATE inline void dbf_push_unum(memmax n)
 {
 	ubyte chars;
 
@@ -92,7 +92,7 @@ ASHE_PRIVATE finline void dbf_push_unum(memmax n)
 	DBF.len += chars;
 }
 
-ASHE_PRIVATE finline void dbf_flush()
+ASHE_PRIVATE inline void dbf_flush()
 {
 	Buffer *drawbuf = &DBF;
 	Buffer_push(drawbuf, '\0');
@@ -133,7 +133,7 @@ ASHE_PUBLIC int32 get_cursor_pos(uint32 *row, uint32 *col)
 			break;
 		buf[i++] = c;
 	}
-	if (nread == -1 || sscanf(buf, "\e[%u;%u", &srow, &scol) != 2) {
+	if (nread == -1 || sscanf(buf, "\033[%u;%u", &srow, &scol) != 2) {
 		print_errno();
 		return -1;
 	}
@@ -164,13 +164,14 @@ ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 }
 
 /* Auxiliary to 'Terminal_init()' */
-ASHE_PRIVATE finline void init_dflterm(struct termios *dflterm)
+ASHE_PRIVATE inline void init_dflterm(struct termios *dflterm)
 {
 	tcgetattr(STDIN_FILENO, dflterm);
 }
 
 ASHE_PUBLIC void TerminalInput_init(TerminalInput *tinput)
 {
+	unused(tinput);
 	Buffer_init_cap(&IBF, 8);
 	Buffer_init_cap(&IBF, 8);
 	ArrayLine_init(&LINES);
@@ -182,9 +183,10 @@ ASHE_PUBLIC void TerminalInput_init(TerminalInput *tinput)
 
 ASHE_PUBLIC void TerminalInput_free(TerminalInput *tinput)
 {
+	unused(tinput);
 	Buffer_free(&IBF, NULL);
 	Buffer_free(&DBF, NULL);
-	ArrayLine_free(&tinput->in_lines, NULL);
+	ArrayLine_free(&LINES, NULL);
 }
 
 ASHE_PUBLIC void Terminal_init(Terminal *term)
@@ -221,6 +223,7 @@ ASHE_PRIVATE void shift_lines_left(memmax start)
 
 ASHE_PRIVATE ubyte TerminalInput_cursor_up(TerminalInput *tinput)
 {
+	unused(tinput);
 	ssize temp, temp2;
 	uint32 len = COL + 1 + ((ROW == 0) * PLEN);
 	uint32 promptrows = PLEN / TCOLMAX;
@@ -308,6 +311,7 @@ flush:
 // clang-format off
 ASHE_PRIVATE ubyte TerminalInput_cursor_down(TerminalInput *tinput)
 {
+	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 linewraps = (LINE.len != 0) * ((LINE.len - 1 + extra) / TCOLMAX);
 	uint32 colwraps = (COL != 0) *  ((COL + extra) / TCOLMAX);
@@ -350,6 +354,7 @@ flush:
 
 ASHE_PRIVATE ubyte TerminalInput_cursor_left(TerminalInput *tinput)
 {
+	unused(tinput);
 	if (COL > 0) {
 		COL--;
 		if (TCOL == 1) {
@@ -376,8 +381,9 @@ flush:
 	return 1;
 }
 
-ASHE_PRIVATE ubyte TerminalInput_cursor_right(TerminalInput *buffer)
+ASHE_PRIVATE ubyte TerminalInput_cursor_right(TerminalInput *tinput)
 {
+	unused(tinput);
 	if (COL < LINE.len - 1) {
 		COL++;
 		if (TCOL < TCOLMAX) {
@@ -459,14 +465,14 @@ ASHE_PRIVATE void TerminalInput_remove(TerminalInput *tinput)
 	dbf_flush();
 }
 
-ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *buffer)
+ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *tinput)
 {
+	unused(tinput);
 	memmax ridx = LINES.len - 1;
 	Line *line = &LINES.data[ridx];
 	ssize temp, up;
 	uint32 col, len;
 	ubyte isfirstrow = 0;
-	char num[UINT_DIGITS];
 
 	/* Move up until we find the current row */
 	for (up = 0; ridx != ROW; line = &LINES.data[--ridx]) {
@@ -497,8 +503,9 @@ ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *buffer)
 	dbf_flush();
 }
 
-ASHE_PRIVATE void TerminalInput_cursor_eol(TerminalInput *buffer)
+ASHE_PRIVATE void TerminalInput_cursor_eol(TerminalInput *tinput)
 {
+	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
 	uint32 len = LINE.len + extra;
@@ -520,8 +527,9 @@ ASHE_PRIVATE void TerminalInput_cursor_eol(TerminalInput *buffer)
 	}
 }
 
-ASHE_PRIVATE void TerminalInput_cursor_home(TerminalInput *buffer)
+ASHE_PRIVATE void TerminalInput_cursor_home(TerminalInput *tinput)
 {
+	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
 

@@ -4,7 +4,7 @@
 #include "aarray.h"
 #include "acommon.h"
 
-ARRAY_NEW(Buffer, char);
+ARRAY_NEW(Buffer, char)
 
 typedef enum {
 	TK_AND_AND = 0, /*+ '&&' */
