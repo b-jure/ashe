@@ -101,7 +101,7 @@ ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
 ASHE_PRIVATE Token Token_string(Lexer *lexer)
 {
 	int32 c;
-	ubyte dq, escape;
+	ubyte dq, esc;
 	Token token;
 	Token_init(&token);
 	Buffer buffer;
@@ -109,15 +109,15 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 
 	token.type = TK_WORD;
 	token.start = lexer->current;
-	dq = escape = 0;
+	dq = esc = 0;
 
 	while ((c = peek(lexer, 0))) {
-		if (!dq && (isspace(c) || (!escape && has_precedence(c))))
+		if (!dq && (isspace(c) || (!esc && has_precedence(c))))
 			break;
-		if (!escape && c == '"')
+		if (!esc && c == '"')
 			dq ^= 1;
-		else if (c == '\\' || escape)
-			escape ^= 1;
+		else if (c == '\\' || esc)
+			esc ^= 1;
 		Buffer_push(&buffer, c);
 		advance(lexer);
 	}
@@ -137,8 +137,8 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 		*ptr = '=';
 	}
 
-	/* Unescapes escaped characters and gets rid of '"' */
-	unescape(&buffer);
+	/* escapes 'escaped' characters and gets rid of '"' */
+	escape(&buffer);
 
 	memmax number = 0;
 	int32 code = all_chars_are_digits(buffer.data, &number);

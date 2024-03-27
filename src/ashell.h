@@ -1,8 +1,8 @@
 #ifndef ASHELL_H
 #define ASHELL_H
 
-#include "acommon.h"
 #include "aparser.h"
+#include "acommon.h"
 #include "ainput.h"
 #include "ajobcntl.h"
 
@@ -28,6 +28,7 @@ typedef struct {
 	ubyte exit : 1; /* set if last command was 'exit' */
 	ubyte interrupt : 1; /* set if we got interrupted */
 	ubyte isfork : 1; /* set if this is forked shell process */
+	ubyte interactive : 1; /* set if shell is running interactively */
 } Flags;
 
 /* Note: 

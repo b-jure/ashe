@@ -7,6 +7,18 @@
 
 #include <termios.h>
 
+#define TI	ashe.sh_term.tm_input
+#define IBF	TI.in_ibf
+#define DBF	TI.in_dbf
+#define LINES	TI.in_lines
+#define IBFIDX	TI.in_ibfidx
+#define ROW	TI.in_cursor.cr_row
+#define COL	TI.in_cursor.cr_col
+#define LINE	LINES.data[ROW]
+#define TCOL	ashe.sh_term.tm_col
+#define TCOLMAX ashe.sh_term.tm_columns
+#define PLEN	ashe.sh_term.tm_promptlen
+
 #define TerminalInput_clear(tinput) \
 	(TerminalInput_free(tinput), TerminalInput_init(tinput))
 
@@ -30,11 +42,10 @@
 		}                                                 \
 	} while (0)
 
-#define get_winsize_or_panic(row, col)                                    \
-	do {                                                              \
-		if (unlikely(get_window_size((row), (col)) < 0 &&         \
-			     get_window_size_fallback((row), (col)) < 0)) \
-			panic("couldn't get terminal window size.");      \
+#define get_winsize_or_panic(row, col)                               \
+	do {                                                         \
+		if (unlikely(get_window_size((row), (col)) < 0))     \
+			panic("couldn't get terminal window size."); \
 	} while (0)
 
 /* CURSOR */
@@ -99,7 +110,6 @@ typedef struct {
 void Terminal_init(Terminal *term);
 void Terminal_free(Terminal *term);
 
-int32 get_window_size_fallback(uint32 *height, uint32 *width);
 int32 get_window_size(uint32 *height, uint32 *width);
 int32 get_cursor_pos(uint32 *row, uint32 *col);
 

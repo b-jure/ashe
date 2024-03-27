@@ -6,9 +6,9 @@
 
 #include <stdarg.h>
 
-#define fdinbounds(fd) ((fd) >= 0 && (fd) <= INT_MAX)
-#define fdisvalid(fd) (fcntl(fd, F_GETFD) != -1 || errno != EBADFD)
-#define fdisok(fd) (fdinbounds(fd) && fdisvalid(fd))
+#define fdinbounds(fd)		((fd) >= 0 && (fd) <= INT_MAX)
+#define fdisvalid(fd)		(fcntl(fd, F_GETFD) != -1 || errno != EBADFD)
+#define fdisok(fd)		(fdinbounds(fd) && fdisvalid(fd))
 #define fdisopened(fd, bitmask) ((bitmask) & fcntl(fd, F_GETFL))
 
 /* print error */
@@ -27,7 +27,8 @@ char *dupstr(const char *str);
 
 memmax len_without_seq(const char *prompt);
 
-void unescape(Buffer *str);
-void expand_vars(Buffer *str);
+void unescape(Buffer *buffer, uint32 from, uint32 to);
+void escape(Buffer *buffer);
+void expand_vars(Buffer *buffer);
 
 #endif

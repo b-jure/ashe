@@ -3,6 +3,9 @@
 #include "ashell.h"
 #include "aalloc.h"
 #include "aprompt.h"
+#ifdef ASHE_DBG
+#include "adbg.h"
+#endif
 
 #include <stdio.h>
 #include <signal.h>
@@ -25,10 +28,26 @@ static int32 init_vars(void)
 
 void Shell_init(Shell *sh)
 {
-	pid_t sh_pgid;
-	ubyte shell_is_interactive = isatty(STDIN_FILENO);
+	pid_t sh_pgid = getpgrp();
 
-	if (shell_is_interactive) {
+#ifdef ASHE_DBG
+	atexit(remove_logfiles);
+#endif
+#ifdef ASHE_DBG_CURSOR
+	logfile_create("debug_cursor.dbg.txt", ALOG_CURSOR);
+#endif
+#ifdef ASHE_DBG_LINES
+	logfile_create("debug_lines.dbg.txt", ALOG_LINES);
+#endif
+	JobControl_init(&sh->sh_jobcntl);
+	ArrayCharptr_init(&sh->sh_buffers);
+	memset(&sh->sh_settings, 0, sizeof(Settings));
+	memset(&sh->sh_flags, 0, sizeof(Flags));
+	init_vars();
+try_again:
+	sh->sh_flags.interactive = isatty(STDIN_FILENO);
+	if (sh->sh_flags.interactive) {
+		Terminal_init(&sh->sh_term);
 		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp()))
 			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
 				goto error;
@@ -36,11 +55,12 @@ void Shell_init(Shell *sh)
 			goto error;
 		if (unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0))
 			goto error;
-		init_vars();
 		init_signal_handlers();
-		JobControl_init(&sh->sh_jobcntl);
-		Terminal_init(&sh->sh_term);
 		print_welcome();
+	} else {
+		if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
+			goto error;
+		goto try_again;
 	}
 	return;
 error:

@@ -127,11 +127,11 @@ typedef void (*FreeFn)(void *value);
 	static inline void _ARRAY_METHOD_VARARG(name, insert, uint32 index,             \
 						type value)                             \
 	{                                                                               \
-		_CALL_ARRAY_METHOD_VARARG(name, ensure, 1);                             \
 		if (index == self->len) {                                               \
 			_CALL_ARRAY_METHOD_VARARG(name, push, value);                   \
 			return;                                                         \
 		}                                                                       \
+		_CALL_ARRAY_METHOD_VARARG(name, ensure, 1);                             \
 		type *src = self->data + index;                                         \
 		type *dest = src + 1;                                                   \
 		memmove(dest, src, self->len - index);                                  \

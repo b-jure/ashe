@@ -152,7 +152,6 @@ ASHE_PRIVATE int32 Job_wait(Job *job)
 		pid = waitpid(-job->pgid, &status, WUNTRACED);
 	} while (Job_update_process_status(job, pid, status) &&
 		 !(stopped = Job_is_stopped(job)) && !Job_is_completed(job));
-
 	if (stopped)
 		return -1;
 	else
@@ -173,8 +172,8 @@ ASHE_PUBLIC int32 Job_move_to_foreground(Job *job, ubyte cont)
 	if (unlikely(kill(-job->pgid, SIGCONT) < 0))
 		goto l_panic;
 	int32 status = Job_wait(job);
-	/* If job was originally ran in the foreground without being stopped prior
-        * and now it is stopped, then add it to 'JobControl'. */
+	/* If job was originally ran in the foreground without being stopped
+	 * prior and now it is stopped, then add it to 'JobControl'. */
 	if (!cont && status == -1)
 		JobControl_add_job(&ashe.sh_jobcntl, job);
 	if (unlikely(tcsetpgrp(STDIN_FILENO, getpgrp()) < 0))
@@ -184,12 +183,11 @@ ASHE_PUBLIC int32 Job_move_to_foreground(Job *job, ubyte cont)
 	if (unlikely(tcsetattr(STDIN_FILENO, TCSADRAIN,
 			       &ashe.sh_term.tm_dfltermios) < 0))
 		goto l_panic;
-
 	return status;
 l_panic:
 	print_errno();
 	panic(NULL);
-	return 0; // so the compiler doesn't complain
+	return 0; /* UNREACHED */
 }
 
 /* Set 'job' as running by setting all processes that

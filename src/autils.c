@@ -3,6 +3,7 @@
 #include "autils.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -24,7 +25,7 @@ ASHE_PUBLIC void printf_error(const char *errfmt, ...)
 
 ASHE_PUBLIC void print_errno(void)
 {
-	ashe_assert(errno != 0, "invalid errno");
+	// ashe_assert(errno != 0, "invalid errno");
 	const char *errmsg = strerror(errno);
 	printf_error(errmsg); // unblock_signals() in here
 }
@@ -127,27 +128,54 @@ ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
 {
 	char *at = s + curpos;
-	return ((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') ||
-		(curpos == 1 && at[-1] == '\\'));
+	return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') ||
+		(curpos == 1 && *(at - 1) == '\\'));
 }
 
-ASHE_PUBLIC void unescape(Buffer *buffer)
+ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
+{
+	static const int32 unescape[UINT8_MAX] = {
+		['\a'] = 'a', ['\b'] = 'b', ['\f'] = 'f',
+		['\n'] = 'n', ['\r'] = 'r', ['\t'] = 't',
+		['\v'] = 'v', ['\"'] = '"', ['\?'] = '?'
+	};
+	uint32 i;
+	ubyte c;
+
+	for (i = from; i < to; i++) {
+		c = *Buffer_index(buffer, i);
+		if (c == '\0')
+			break;
+		if (c == '\033') {
+			*Buffer_index(buffer, i++) = '\\';
+			Buffer_insert(buffer, i++, '0');
+			Buffer_insert(buffer, i++, '3');
+			Buffer_insert(buffer, i, '3');
+			to += 3;
+		} else if (unescape[c]) {
+			*Buffer_index(buffer, i++) = '\\';
+			Buffer_insert(buffer, i, unescape[c]);
+			to++;
+		}
+	}
+}
+
+ASHE_PUBLIC void escape(Buffer *buffer)
 {
 	static const int32 escape[UINT8_MAX] = {
 		['a'] = '\a',  ['b'] = '\b', ['f'] = '\f', ['n'] = '\n',
 		['r'] = '\r',  ['t'] = '\t', ['v'] = '\v', ['\\'] = '\\',
 		['\''] = '\'', ['"'] = '\"', ['?'] = '\?', ['e'] = '\033',
 	};
-
-	char *oldp, *newp;
-	oldp = newp = buffer->data;
+	char *oldp = buffer->data;
+	char *newp = oldp;
 
 	while (*oldp) {
-		int32 c = *(unsigned char *)oldp++;
+		int32 c = *(ubyte *)oldp++;
 		if (c == '"')
 			continue;
 		if (c == '\\') {
-			c = *(unsigned char *)oldp;
+			c = *(ubyte *)oldp;
 			if (c == '\0') {
 				break;
 			} else if (c == '0' && oldp[1] == '3' &&

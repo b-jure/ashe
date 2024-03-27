@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #define DEV_DIR "/dev/"
 ASHE_PRIVATE const char *devfiles[] = {
@@ -177,7 +178,7 @@ ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle *fhs, ubyte exec)
 			break;
 		case OP_REDIRECT_INOUT:
 		case OP_REDIRECT_IN:
-		case OP_REDIRECT_OUT: /* FALLTHRU */
+		case OP_REDIRECT_OUT:
 			fd = filepath_is_fd(fh->filepath);
 			if (fd < 0) {
 				if (fh->op == OP_REDIRECT_IN)
@@ -247,84 +248,44 @@ l_badfd:
  * variables into 'environ' or both. */
 ASHE_PRIVATE int32 run_cmd_nofork(Command *cmd, enum tbi type)
 {
-	int32 i, o, e; // control variables
-	int32 status, out, err, in, runs;
 	ArrayCharptr *env = &cmd->env;
 	ArrayCharptr *argv = &cmd->argv;
 	ArrayFileHandle *fhs = &cmd->fhandles;
-	in = ASHE_FD_0;
-	out = ASHE_FD_1;
-	err = ASHE_FD_2;
+	int32 status = 0;
+	int32 in = ASHE_FD_0;
+	int32 out = ASHE_FD_1;
+	int32 err = ASHE_FD_2;
 
 	if (unlikely(try_add_envvars(env) == -1))
 		return -2;
 	if (argv->len == 0)
 		return 0;
-l_dup_again:
 	if (unlikely(dup2(STDIN_FILENO, in) < 0 ||
 		     dup2(STDOUT_FILENO, out) < 0 ||
 		     dup2(STDERR_FILENO, err) < 0)) {
-		if (unlikely(errno == EINTR)) {
-			errno = 0;
-			goto l_dup_again;
-		}
-		printf_error("couldn't backup standard file descriptor.");
-		goto l_close_duplicates;
+		goto error;
 	}
-
-	if (try_resolve_redirections(fhs, type == TBI_EXEC) < 0) {
+	if (try_resolve_redirections(fhs, type == TBI_EXEC) < 0)
 		status = -2;
-		goto l_restore_fds;
-	}
-
-	status = run_builtin(cmd, type);
-
-	runs = 0;
-l_restore_fds:
-	if (unlikely(runs >= 5))
-		panic("couldn't restore file descriptors");
-	runs++;
-	i = o = e = -1;
-	if (unlikely((i = dup2(in, STDIN_FILENO)) < 0 ||
-		     (o = dup2(out, STDOUT_FILENO)) < 0 ||
-		     (e = dup2(err, STDERR_FILENO)) < 0)) {
-l_try_again:
+	else
+		status = run_builtin(cmd, type);
+	if (unlikely((dup2(in, STDIN_FILENO)) < 0 ||
+		     (dup2(out, STDOUT_FILENO)) < 0 ||
+		     (dup2(err, STDERR_FILENO)) < 0)) {
 		print_errno();
-		errno = 0;
-
-		if (unlikely(i++ == 0 && dup2(in, STDIN_FILENO) < 0)) {
-			i--;
-			goto l_check_dup_error;
-		}
-		if (unlikely(o++ == 0 && dup2(in, STDOUT_FILENO) < 0)) {
-			o--;
-			goto l_check_dup_error;
-		}
-		if (unlikely(e++ == 0 && dup2(in, STDERR_FILENO) < 0)) {
-			e--;
-			goto l_check_dup_error;
-		}
-
-l_check_dup_error:
-		if (unlikely(errno == EINTR)) {
-			goto l_try_again;
-		} else { // gg
-			print_errno();
-			panic("can't restore default file descriptors.");
-		}
-		status = -2;
+		panic("can't restore default file descriptors.");
 	}
-
-l_close_duplicates:
-	if (unlikely((i == 0 && close(in) < 0) || (o == 0 && close(out) < 0) ||
-		     (e == 0 && close(err) < 0))) {
+	if (unlikely(close(in) < 0 || close(out) < 0 || close(err) < 0)) {
 		print_errno();
 		return -2;
 	}
 	if (unlikely(try_rm_envvars(env) < 0))
 		return -2;
-
 	return status;
+error:
+	print_errno();
+	panic(NULL);
+	return 0; /* UNREACHED */
 }
 
 ASHE_PRIVATE void reset_signal_handling(void)
@@ -356,64 +317,54 @@ ASHE_PRIVATE int32 run_cmd(Command *cmd, PipeContext *ctx, Job *job)
 {
 	ArrayCharptr *argva = &cmd->argv;
 	ArrayCharptr *enva = &cmd->env;
+	char **argv;
 	int32 type = -1;
-	pid childPID = fork();
+	pid PID = fork();
 
-	if (unlikely(childPID == -1)) {
+	if (unlikely(PID == -1)) {
 		print_errno();
 		return -1;
-	} else if (childPID == 0) {
-		ashe.sh_flags.isfork = 1;
-
-		if (unlikely(argva->len == 0 || try_add_envvars(enva) < 0))
-			goto l_cleanup;
-
-		pid pid = getpid();
-
-		if (job->pgid == 0) {
-			job->pgid = pid;
-			if (unlikely(job->foreground &&
-				     tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
-				goto l_error;
-		}
-
-		if (unlikely(setpgid(pid, job->pgid) < 0))
-			goto l_error;
-
-		reset_signal_handling();
-
-		type = is_builtin(ARGV(cmd, 0));
-
-		if (try_connect_pipe(ctx) < 0 ||
-		    try_resolve_redirections(&cmd->fhandles, type == TBI_EXEC) <
-			    0)
-			goto l_cleanup;
-
-		if (type != -1)
-			_exit(run_builtin(cmd, type));
-
-		char **argv = calloc(argva->len + 1, sizeof(char *));
-		memcpy(argv, argva->data, sizeof(char *) * argva->len);
-		argv[argva->len] = NULL;
-		if (execvp(argv[0], argv) < 0) {
-			afree(argv);
-l_error:
+	} else if (PID != 0) {
+		if (job->pgid == 0)
+			job->pgid = PID;
+		/* This is also done in the fork to prevent race. */
+		if (unlikely(setpgid(PID, job->pgid) < 0)) {
 			print_errno();
-l_cleanup:
-			panic(NULL);
+			return -1;
 		}
+		return PID;
 	}
-
-	if (job->pgid == 0)
-		job->pgid = childPID;
-
-	/* This is also done in the fork to prevent race. */
-	if (unlikely(setpgid(childPID, job->pgid) < 0)) {
+	/* forked process */
+	ashe.sh_flags.isfork = 1;
+	if (unlikely(argva->len == 0 || try_add_envvars(enva) < 0))
+		goto l_cleanup;
+	PID = getpid();
+	if (job->pgid == 0) {
+		job->pgid = PID;
+		if (unlikely(job->foreground &&
+			     tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
+			goto l_error;
+	}
+	if (unlikely(setpgid(PID, job->pgid) < 0))
+		goto l_error;
+	reset_signal_handling();
+	type = is_builtin(ARGV(cmd, 0));
+	if (try_connect_pipe(ctx) < 0 ||
+	    try_resolve_redirections(&cmd->fhandles, type == TBI_EXEC) < 0)
+		goto l_cleanup;
+	if (type != -1)
+		_exit(run_builtin(cmd, type));
+	argv = calloc(argva->len + 1, sizeof(char *));
+	memcpy(argv, argva->data, sizeof(char *) * argva->len);
+	argv[argva->len] = NULL;
+	if (execvp(argv[0], argv) < 0) {
+		afree(argv);
+l_error:
 		print_errno();
-		return -1;
+l_cleanup:
+		panic(NULL);
 	}
-
-	return childPID;
+	return 0; /* UNREACHED */
 }
 
 ASHE_PRIVATE inline int32 close_pipe(int32 *pipe)

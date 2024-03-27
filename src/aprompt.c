@@ -87,8 +87,8 @@ ASHE_PUBLIC const char *ashe_time(void)
 
 	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) == NULL))
 		goto error;
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_min,
-			      lt->tm_hour)))
+	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_hour,
+			      lt->tm_min) < 0))
 		goto error;
 
 	return ashe_plhbuf;
@@ -104,8 +104,9 @@ ASHE_PUBLIC const char *ashe_date(void)
 
 	if (unlikely(time(&t) < 0 || (lt = localtime(&t)) == NULL))
 		goto error;
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d:%d", lt->tm_mday,
-			      lt->tm_mon, lt->tm_year + 1900) < 0))
+	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%d-%02d-%02d",
+			      lt->tm_year + 1900, lt->tm_mon + 1,
+			      lt->tm_mday) < 0))
 		goto error;
 
 	return ashe_plhbuf;
@@ -119,8 +120,8 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 	struct sysinfo si;
 
 	if (unlikely(sysinfo(&si) < 0 ||
-		     snprintf(ashe_plhbuf, UINT_DIGITS, "%ldm:%ldh",
-			      (si.uptime / 60) % 60, (si.uptime / 3600)) < 0)) {
+		     snprintf(ashe_plhbuf, UINT_DIGITS, "%ldh %ldm",
+			      (si.uptime / 3600), (si.uptime / 60) % 60) < 0)) {
 		print_errno();
 		return NULL;
 	}
@@ -129,25 +130,25 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 
 ASHE_PRIVATE void try_expand_placeholder(Buffer *out, const char **ptr)
 {
-	const char *p = *++ptr;
+	const char *p = *ptr;
 	const char *res;
 	memmax n = 0;
 	uint32 i;
 	int32 c;
 
-	if (!isdigit(*p))
-		return;
-	for (i = 0; i < UINT_DIGITS && isdigit((c = *p)); i++) {
+	if (!isdigit(*++p))
+		goto push_plh_sign;
+	for (i = 0; i < UINT_DIGITS && isdigit((c = *p)); i++, p++)
 		n = n * 10 + (c - '0');
-		p++;
-	}
 	if (unlikely(n >= ELEMENTS(placeholders)))
-		return;
+		goto push_plh_sign;
 	if (likely((res = placeholders[n]()) != NULL)) {
 		Buffer_push_str(out, res, strlen(res));
 		*ptr = p;
 	} else {
+push_plh_sign:
 		Buffer_push(out, '%');
+		*ptr += 1;
 	}
 }
 
@@ -169,19 +170,22 @@ ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
 	Buffer_push(out, '\0');
 }
 
+// TODO: Refactor this
 ASHE_PUBLIC void print_userstr(const char *str, memmax len, uint32 bufidx)
 {
-	static Buffer buff;
+	static Buffer buff[2];
+	Buffer *buffer = &buff[bufidx];
 
-	if (unlikely(ashe.sh_buffers.len < 1)) { /* executes only once */
-		Buffer_init_cap(&buff, len);
-		ArrayCharptr_insert(&ashe.sh_buffers, bufidx, buff.data);
+	if (unlikely(ashe.sh_buffers.len == 0)) { /* executes only once */
+		Buffer_init_cap(&buff[0], sizeof(ASHE_WELCOME));
+		Buffer_init_cap(&buff[1], sizeof(ASHE_PROMPT));
+		ArrayCharptr_insert(&ashe.sh_buffers, bufidx, buffer->data);
 	}
-	parsestring(&buff, str);
-	ashe.sh_buffers.data[bufidx] = buff.data;
+	parsestring(buffer, str);
+	ashe.sh_buffers.data[bufidx] = buffer->data;
 	if (likely(bufidx == 1))
-		ashe.sh_term.tm_promptlen = buff.len - 1;
-	fputs(buff.data, stderr);
+		ashe.sh_term.tm_promptlen = buffer->len - 1;
+	fputs(buffer->data, stderr);
 	fflush(stderr);
 	if (unlikely(ferror(stderr))) {
 		print_errno();
