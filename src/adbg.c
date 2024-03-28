@@ -2,6 +2,7 @@
 #include "ainput.h"
 #include "autils.h"
 #include "adbg.h"
+#include "aprompt.h"
 #include "ashell.h" /* avoid recursive include in 'ainput.h' */
 
 #include <stdio.h>
@@ -44,16 +45,21 @@ ASHE_PUBLIC void debug_cursor(void)
 	errno = 0;
 	if ((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL)
 		goto error;
+
 	temp = snprintf(buffer, sizeof(buffer),
 			"[ROW:%u][COL:%u][LINE_LEN:%lu][IBFIDX:%lu]\r\n", ROW,
 			COL, LINE.len, IBFIDX);
+
 	if (temp < 0 || temp > BUFSIZ)
 		goto error;
+
 	len += temp;
+
 	if (fwrite(buffer, sizeof(byte), len, fp) != len)
 		goto error;
 	if (fclose(fp) == EOF)
 		goto error;
+
 	return;
 error:
 	fclose(fp);
@@ -61,36 +67,53 @@ error:
 	panic("panic in debug_cursor");
 }
 
-// clang-format off
 /* Debug each row and its line (contents) */
 ASHE_PUBLIC void debug_lines(void)
 {
 	static char temp[128];
-	Buffer buffer;
-	memmax len = 0;
+	Buffer buffer, prompt;
+	ssize len = 0;
 	uint32 i = 0;
 	uint32 idx;
 	FILE *fp;
 
 	errno = 0;
 	Buffer_init(&buffer);
+	Buffer_init(&prompt);
+
 	if ((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL)
 		goto error;
+
+	Buffer_init_cap(&prompt, sizeof(ASHE_PROMPT));
+	parsestring(&prompt, ASHE_PROMPT);
+
+	if ((len = snprintf(temp, sizeof(temp), "[PLEN:%lu] -> \"",
+			    ashe.sh_term.tm_promptlen)) < 0 ||
+	    (memmax)len > sizeof(temp))
+		goto error;
+	Buffer_push_str(&buffer, temp, len);
+	Buffer_push_str(&buffer, prompt.data, prompt.len - 1);
+	Buffer_push_str(&buffer, "\"\r\n", sizeof("\"\r\n") - 1);
+	Buffer_free(&prompt, NULL);
+
 	for (i = 0; i < LINES.len; i++) {
 		if ((len = snprintf(temp, sizeof(temp), "[LINE:%u][LEN:%lu] \"",
-				i, LINES.data[i].len)) < 0 ||
-				len > sizeof(temp)) 
+				    i, LINES.data[i].len)) < 0 ||
+		    (memmax)len > sizeof(temp))
 			goto error;
 		Buffer_push_str(&buffer, temp, len);
 		idx = buffer.len;
-		Buffer_push_str(&buffer, LINES.data[i].start, LINES.data[i].len);
+		Buffer_push_str(&buffer, LINES.data[i].start,
+				LINES.data[i].len);
 		unescape(&buffer, idx, buffer.len);
 		Buffer_push_str(&buffer, "\"\r\n", sizeof("\"\r\n") - 1);
 	}
+
 	if (fwrite(buffer.data, sizeof(byte), buffer.len, fp) < buffer.len)
 		goto error;
 	if (fclose(fp) == EOF)
 		goto fclose_error;
+
 	Buffer_free(&buffer, NULL);
 	return;
 error:
@@ -100,7 +123,6 @@ fclose_error:
 	print_errno();
 	panic("panic in debug_lines()");
 }
-// clang-format on
 
 ASHE_PUBLIC void remove_logfiles(void)
 {
@@ -120,6 +142,7 @@ ASHE_PUBLIC void remove_logfiles(void)
 	}
 	if (errno != 0)
 		goto error;
+
 	closedir(root);
 	return;
 error:

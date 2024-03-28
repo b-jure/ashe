@@ -133,8 +133,7 @@ typedef void (*FreeFn)(void *value);
 		}                                                                       \
 		_CALL_ARRAY_METHOD_VARARG(name, ensure, 1);                             \
 		type *src = self->data + index;                                         \
-		type *dest = src + 1;                                                   \
-		memmove(dest, src, self->len - index);                                  \
+		memmove(src + 1, src, self->len - index);                               \
 		self->len++;                                                            \
 		self->data[index] = value;                                              \
 	}                                                                               \
@@ -143,10 +142,9 @@ typedef void (*FreeFn)(void *value);
 	{                                                                               \
 		if (index == self->len)                                                 \
 			return _CALL_ARRAY_METHOD(name, pop);                           \
-		type *src = self->data + index;                                         \
-		type *dest = src - 1;                                                   \
-		type retval = *src;                                                     \
-		memcpy(dest, src, self->len - index);                                   \
+		type *dest = self->data + index;                                        \
+		type retval = *dest;                                                    \
+		memmove(dest, dest + 1, self->len - index - 1);                         \
 		self->len--;                                                            \
 		return retval;                                                          \
 	}                                                                               \
@@ -163,7 +161,10 @@ typedef void (*FreeFn)(void *value);
 	static inline void _ARRAY_METHOD_VARARG(name, push_str,                         \
 						const char *str, memmax len)            \
 	{                                                                               \
-		uint32 required = self->len + len;                                      \
+		uint32 required;                                                        \
+		if (len == 0)                                                           \
+			return;                                                         \
+		required = self->len + len;                                             \
 		if (self->cap < required)                                               \
 			_CALL_ARRAY_METHOD_VARARG(name, ensure, required);              \
 		type *dest = self->data + self->len;                                    \

@@ -87,6 +87,7 @@ typedef struct {
 	ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
 	Cursor in_cursor; /* terminal cursor */
 	memmax in_ibfidx; /* input buffer index */
+	ubyte in_dq; /* TODO: Implement */
 } TerminalInput;
 
 void TerminalInput_init(TerminalInput *tinput);

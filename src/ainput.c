@@ -62,7 +62,7 @@ ASHE_PRIVATE inline void set_terminal_mode(struct termios *tmode)
 
 ASHE_PRIVATE inline void turn_on_nltrans(void)
 {
-	ashe.sh_term.tm_rawtermios.c_oflag |= (OPOST);
+	ashe.sh_term.tm_rawtermios.c_oflag |= OPOST;
 	set_terminal_mode(&ashe.sh_term.tm_rawtermios);
 }
 
@@ -348,6 +348,7 @@ flush:
 ASHE_PRIVATE ubyte TerminalInput_cursor_left(TerminalInput *tinput)
 {
 	unused(tinput);
+
 	if (COL > 0) {
 		COL--;
 		if (TCOL == 1) {
@@ -375,7 +376,9 @@ lineuptocol:
 ASHE_PRIVATE ubyte TerminalInput_cursor_right(TerminalInput *tinput)
 {
 	unused(tinput);
-	if (COL < LINE.len) {
+	ubyte isnot_lastrow = (LINES.len != 0 && ROW != LINES.len - 1);
+
+	if (COL < LINE.len - isnot_lastrow) {
 		COL++;
 		if (TCOL < TCOLMAX) {
 			TCOL++;
@@ -399,27 +402,35 @@ linedownstart:
 ASHE_PRIVATE void TerminalInput_insert(TerminalInput *tinput, int32 c)
 {
 	memmax i;
+	uint32 idx;
+	ubyte relink;
 	Line *prev = NULL;
 	Line *curr = NULL;
 
 	if (IBF.len >= ARG_MAX - 1)
 		return;
+	idx = IBFIDX;
+	relink = (IBF.len >= IBF.cap);
 	Buffer_insert(&IBF, IBFIDX, c);
 	LINE.len++;
-	prev = &LINES.data[0];
-	prev->start = IBF.data;
-	for (i = 1; i < LINES.len; i++) { /* in case of realloc update ptrs */
-		curr = ArrayLine_index(&LINES, i);
-		curr->start = prev->start + prev->len;
-		prev = curr;
+	if (relink) {
+		prev = &LINES.data[0];
+		prev->start = IBF.data;
+		for (i = 1; i < LINES.len; i++) {
+			curr = ArrayLine_index(&LINES, i);
+			curr->start = prev->start + prev->len;
+			prev = curr;
+		}
 	}
 	shift_lines_right(ROW + 1);
-	dbf_pushlit(cursor_hide clear_line_right clear_down);
-	if (TCOL >= TCOLMAX || c == '\n')
-		dbf_pushlit("\r\n");
+	dbf_pushlit(clear_line_right clear_down);
+	if (TCOL >= TCOLMAX || c == '\n') {
+		dbf_pushc('\n');
+		idx++;
+	}
 	dbf_pushlit(cursor_save);
-	dbf_push_len(&IBF.data[IBFIDX], IBF.len - IBFIDX);
-	dbf_pushlit(cursor_load cursor_show);
+	dbf_push_len(&IBF.data[idx], IBF.len - idx);
+	dbf_pushlit(cursor_load);
 	dbf_flush();
 	if (c != '\n') /* otherwise we are in 'TerminalInput_cr()' */
 		TerminalInput_cursor_right(tinput);
@@ -432,7 +443,7 @@ ASHE_PRIVATE ubyte TerminalInput_cr(TerminalInput *tinput)
 	if (is_escaped(IBF.data, IBFIDX) || in_dq(IBF.data, IBFIDX)) {
 		TerminalInput_insert(tinput, '\n');
 		newline.start = LINE.start + COL + 1;
-		newline.len = LINE.len - COL - 1;
+		newline.len = LINE.len - (COL + 1);
 		LINE.len = COL + 1;
 		ROW++;
 		IBFIDX++;
@@ -451,18 +462,18 @@ ASHE_PRIVATE void TerminalInput_remove(TerminalInput *tinput)
 
 	if (IBFIDX <= 0)
 		return;
-	coalesce = COL == 0;
-	Buffer_remove(&IBF, IBFIDX);
+	Buffer_remove(&IBF, IBFIDX - 1);
 	shift_lines_left(ROW + 1);
-	LINE.len--;
+	LINE.len -= !(coalesce = (COL == 0));
 	l = &LINE; /* cache current line */
-	TerminalInput_cursor_left(tinput); /* updates ROW,COL,IBFIDX and TCOL */
+	TerminalInput_cursor_left(tinput);
 	if (coalesce) {
+		LINE.len--; /* newline */
 		LINE.len += l->len;
 		ArrayLine_remove(&LINES, ROW + 1);
 	}
 	dbf_pushlit(cursor_hide clear_line_right clear_down cursor_save);
-	dbf_push_len(LINE.start + COL, IBF.len - IBFIDX);
+	dbf_push_len(IBF.data + IBFIDX, IBF.len - IBFIDX);
 	dbf_pushlit(cursor_load cursor_show);
 	dbf_flush();
 }
@@ -665,7 +676,7 @@ ASHE_PRIVATE ubyte TerminalInput_process_key(TerminalInput *tinput)
 			break;
 		// case CTRL_KEY('h'): // TODO: Uncomment after testing
 		case CTRL_KEY('x'):
-			exit(255); // TODO: Remove this after testing
+			_exit(255); // TODO: Remove this after testing
 		case CTRL_KEY('j'):
 		case CTRL_KEY('k'):
 		case CTRL_KEY('i'):

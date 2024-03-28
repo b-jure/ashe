@@ -153,7 +153,7 @@ push_plh_sign:
 }
 
 /* Parses 'str' by expanding all placeholders. */
-ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
+ASHE_PUBLIC void parsestring(Buffer *out, const char *str)
 {
 	int32 c;
 
@@ -173,6 +173,7 @@ ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
 // TODO: Refactor this
 ASHE_PUBLIC void print_userstr(const char *str, memmax len, uint32 bufidx)
 {
+	unused(len);
 	static Buffer buff[2];
 	Buffer *buffer = &buff[bufidx];
 

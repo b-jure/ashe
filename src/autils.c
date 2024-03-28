@@ -132,12 +132,12 @@ ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
 		(curpos == 1 && *(at - 1) == '\\'));
 }
 
+/* Unescape tabs, newlines, etc.. for prettier output in debug functions. */
 ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
 {
 	static const int32 unescape[UINT8_MAX] = {
-		['\a'] = 'a', ['\b'] = 'b', ['\f'] = 'f',
-		['\n'] = 'n', ['\r'] = 'r', ['\t'] = 't',
-		['\v'] = 'v', ['\"'] = '"', ['\?'] = '?'
+		['\a'] = 'a', ['\b'] = 'b', ['\f'] = 'f', ['\n'] = 'n',
+		['\r'] = 'r', ['\t'] = 't', ['\v'] = 'v'
 	};
 	uint32 i;
 	ubyte c;
