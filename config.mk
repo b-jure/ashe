@@ -1,19 +1,25 @@
 # ashe version
 VERSION = 1.0.0
 
+# Install prefix
 PREFIX = /usr/local
+MANPREFIX = ${PREFIX}/man
 
-# Uncomment and use these flags to create a debug build You do require google's
-# AddressSanitizer though AddressSanitizer
+# AddresSanitizer
 ASANLIB = /usr/lib
-ASANFLAGS = -ggdb -fsanitize=address -fsanitize=undefined
-ASANLDFLAGS = -fsanitize=address -fsanitize=undefined
+ASANFLAGS = -fsanitize=address -fsanitize=undefined
 
-LIBS = -L${ASANLIB} ${ASANLDFLAGS}
+# Shared libraries
+LIBS = -L${ASANLIB}
 
-CPPFLAGS = -D_POSIX_SOURCE_200809L -D_POSIX_C_SOURCE -D_DEFAULT_SOURCE \
-	   -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_ASSERT
-CFLAGS = -std=c99 -Wpedantic -Wall -Wextra ${CPPFLAGS} ${ASANFLAGS}
-LDFLAGS = ${LIBS}
+# Debug definitions (builtin)
+DBGDEFS = -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_ASSERT
+
+# Debug flags
+DBGFLAGS = -g
+
+CPPFLAGS = -D_POSIX_SOURCE_200809L -D_POSIX_C_SOURCE -D_DEFAULT_SOURCE ${DBGDEFS}
+CFLAGS = -std=c99 -Wpedantic -Wall -Wextra ${DBGFLAGS} ${ASANFLAGS} ${CPPFLAGS}
+LDFLAGS = ${LIBS} ${ASANFLAGS}
 
 CC = cc

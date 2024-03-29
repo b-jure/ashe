@@ -34,8 +34,6 @@
 		dbf_pushc('G');   \
 	} while (0)
 
-#define WRAPS(len) ((len) >= TCOLMAX)
-
 #define WHILE_READING(ti) while (TerminalInput_process_key(ti))
 
 /* Draw buffer */
@@ -307,8 +305,9 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_down(TerminalInput *tinput)
 	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 linewraps = (LINE.len != 0) * ((LINE.len - 1 + extra) / TCOLMAX);
-	uint32 colwraps = (COL != 0) *  ((COL + extra) / TCOLMAX);
+	uint32 colwraps = (COL != 0) * ((COL + extra) / TCOLMAX);
 	ssize wrapdepth = linewraps - colwraps;
+	ubyte lastrow, temp; /* for edge cases */
 
 	if (wrapdepth > 0) {
 		if (wrapdepth > 1 || COL + TCOLMAX <= LINE.len - 1) {
@@ -322,17 +321,20 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_down(TerminalInput *tinput)
 			goto downtocol;
 		}
 	} else if (ROW < LINES.len - 1) {
-		IBFIDX += LINE.len - COL - 1;
+		IBFIDX += LINE.len - COL; /* start of new line */
 		ROW++;
-		if (WRAPS(LINE.len) || LINE.len >= modlen(COL + 1 + extra, TCOLMAX)) {
-			IBFIDX += TCOL;
+		if (LINE.len >= TCOLMAX || LINE.len >= modlen(COL + 1 + extra, TCOLMAX)) {
+			IBFIDX += TCOL - 1;
 			COL = TCOL - 1;
 down:
 			dbf_pushlit(cursor_down(1));
 			goto flush;
 		} else {
-			IBFIDX += LINE.len;
-			TCOL = LINE.len;
+			lastrow = (ROW == LINES.len - 1);
+			temp = (LINE.len != 0 && !lastrow);
+			IBFIDX += LINE.len - temp;
+			COL = LINE.len - temp;
+			TCOL = LINE.len + lastrow;
 downtocol:
 			dbf_pushlit(cursor_down(1));
 			dbf_push_movecol(TCOL);
