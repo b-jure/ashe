@@ -266,8 +266,8 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_up(TerminalInput *tinput)
 			}
 		} else {
 			if (COL + 1 >= modlen(LINE.len, TCOLMAX)) {
-				IBFIDX -= COL;
-				COL = LINE.len;
+				IBFIDX -= COL + 1;
+				COL = LINE.len - (LINE.len != 0);
 				TCOL = modlen(LINE.len, TCOLMAX);
 				goto cursuptocol_draw;
 			} else {

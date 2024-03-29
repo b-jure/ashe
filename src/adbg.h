@@ -7,7 +7,7 @@
 
 void debug_cursor(void);
 void debug_lines(void);
-void remove_logfiles(void); /* atexit() in 'ashell.c' */
+void remove_logfiles(void); /* unused by default */
 void logfile_create(const char *logfile, int32 which);
 
 #define ALOG_CURSOR 0

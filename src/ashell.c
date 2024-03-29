@@ -30,9 +30,6 @@ void Shell_init(Shell *sh)
 {
 	pid_t sh_pgid = getpgrp();
 
-#ifdef ASHE_DBG
-	atexit(remove_logfiles);
-#endif
 #ifdef ASHE_DBG_CURSOR
 	logfile_create("debug_cursor.dbg.txt", ALOG_CURSOR);
 #endif

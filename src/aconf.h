@@ -12,16 +12,23 @@
 #endif
 
 /* ---- Asserts ---- */
-#if defined(ASHE_ASSERT)
+#ifdef ASHE_ASSERT
 #undef NDBG
 #include <assert.h>
 #ifndef ashe_assert
 #define ashe_assert(expr) assert(expr)
-#endif // ashe_assert
+#endif
 #ifndef ashe_assertf
 #define ashe_assertf(expr, msg) assert((expr) && (msg))
-#endif // ashe_assertf
-#endif // ASHE_ASSERT
+#endif
+#else
+#ifndef ashe_assert
+#define ashe_assert(expr) (void)(0)
+#endif
+#ifndef ashe_assertf
+#define ashe_assertf(expr, msg) (void)(0)
+#endif
+#endif /* ASHE_ASSERT */
 
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */
