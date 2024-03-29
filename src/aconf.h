@@ -1,6 +1,8 @@
 #ifndef ACONF_H
 #define ACONF_H
 
+/* Do not touch, unless you know what you are doing,
+ * or are contributor... */
 #if defined(__linux__)
 #include <linux/limits.h>
 #define HOME	  "HOME"
@@ -8,6 +10,18 @@
 #else
 #error "Ashe is only compatible with linux platforms."
 #endif
+
+/* ---- Asserts ---- */
+#if defined(ASHE_ASSERT)
+#undef NDBG
+#include <assert.h>
+#ifndef ashe_assert
+#define ashe_assert(expr) assert(expr)
+#endif // ashe_assert
+#ifndef ashe_assertf
+#define ashe_assertf(expr, msg) assert((expr) && (msg))
+#endif // ashe_assertf
+#endif // ASHE_ASSERT
 
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */

@@ -144,7 +144,7 @@ ASHE_PRIVATE void redirection(Lexer *lexer, Command *cmd)
 		fh.append = 1;
 		/* FALLTHRU */
 	case TK_AND_GREATER:
-		ashe_assert(!have_n, "parser fatal error, can't have number before '&>'");
+		ashe_assertf(!have_n, "parser fatal error, can't have number before '&>'");
 		fh.op = OP_REDIRECT_ERROUT;
 		// fd is irrelevant, won't get checked at runtime
 		goto l_redirect_fin;
@@ -188,7 +188,7 @@ l_dup_fin:
 		duplicate_or_close(lexer, &fh);
 		break;
 	default:
-		ashe_assert(0, "unreachable");
+		ashe_assertf(0, "unreachable");
 	}
 
 	ArrayFileHandle_push(&cmd->fhandles, fh);

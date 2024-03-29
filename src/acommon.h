@@ -72,12 +72,4 @@ typedef enum {
 #endif // __GNUC__
 /* -------------------------------- */
 
-/* ---- Assertions ---- */
-#ifndef ashe_assert
-#undef NDBG
-#include <assert.h>
-#define ashe_assert(expr, msg) assert((expr) && (msg))
-#endif
-/* -------------------------------- */
-
 #endif

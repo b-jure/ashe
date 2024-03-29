@@ -121,7 +121,7 @@ ASHE_PRIVATE ubyte Job_update_process_status(Job *job, pid pid, int32 status)
 					if (WIFSIGNALED(status)) {
 						proc->status = WTERMSIG(status);
 					} else {
-						ashe_assert(
+						ashe_assertf(
 							WIFEXITED(status),
 							"process somehow didn't _exit/_Exit/exit");
 						proc->status =
@@ -131,7 +131,7 @@ ASHE_PRIVATE ubyte Job_update_process_status(Job *job, pid pid, int32 status)
 				return 1;
 			}
 		}
-		ashe_assert(
+		ashe_assertf(
 			0,
 			"foreground job was trying to update invalid process!");
 	} else if (ECHILD != errno)
@@ -363,7 +363,7 @@ ASHE_PRIVATE ubyte JobControl_update_process(JobControl *jobcntl, pid pid,
 			}
 		}
 		/* UNREACHED */
-		ashe_assert(
+		ashe_assertf(
 			0,
 			"unrechable: can't update process that is not inside the 'JobControl'");
 	} else if (pid != 0 && errno != ECHILD) {

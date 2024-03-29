@@ -43,21 +43,21 @@ ASHE_PUBLIC void debug_cursor(void)
 	ssize temp = 0;
 
 	errno = 0;
-	if ((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL)
+	if (unlikely((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
 		goto error;
 
 	temp = snprintf(buffer, sizeof(buffer),
 			"[ROW:%u][COL:%u][LINE_LEN:%lu][IBFIDX:%lu]\r\n", ROW,
 			COL, LINE.len, IBFIDX);
 
-	if (temp < 0 || temp > BUFSIZ)
+	if (unlikely(temp < 0 || temp > BUFSIZ))
 		goto error;
 
 	len += temp;
 
-	if (fwrite(buffer, sizeof(byte), len, fp) != len)
+	if (unlikely(fwrite(buffer, sizeof(byte), len, fp) != len))
 		goto error;
-	if (fclose(fp) == EOF)
+	if (unlikely(fclose(fp) == EOF))
 		goto error;
 
 	return;
@@ -80,38 +80,53 @@ ASHE_PUBLIC void debug_lines(void)
 	errno = 0;
 	Buffer_init(&buffer);
 	Buffer_init(&prompt);
+	Buffer_init_cap(&prompt, sizeof(ASHE_PROMPT));
 
-	if ((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL)
+	if (unlikely((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
 		goto error;
 
-	Buffer_init_cap(&prompt, sizeof(ASHE_PROMPT));
+	/* Log prompt */
 	parsestring(&prompt, ASHE_PROMPT);
-
-	if ((len = snprintf(temp, sizeof(temp), "[PLEN:%lu] -> \"",
-			    ashe.sh_term.tm_promptlen)) < 0 ||
-	    (memmax)len > sizeof(temp))
+	if (unlikely((len = snprintf(temp, sizeof(temp), "[PLEN:%lu] -> [",
+				     PLEN)) < 0 ||
+		     (memmax)len > sizeof(temp)))
 		goto error;
 	Buffer_push_str(&buffer, temp, len);
 	Buffer_push_str(&buffer, prompt.data, prompt.len - 1);
-	Buffer_push_str(&buffer, "\"\r\n", sizeof("\"\r\n") - 1);
+	Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
 	Buffer_free(&prompt, NULL);
 
+	/* Log buffer */
+	if (unlikely((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
+				     IBF.len)) < 0 ||
+		     (memmax)len > sizeof(temp)))
+		goto error;
+	Buffer_push_str(&buffer, temp, len);
+	idx = buffer.len;
+	Buffer_push_str(&buffer, IBF.data, IBF.len);
+	unescape(&buffer, idx, buffer.len);
+	Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
+
+	/* Log lines */
 	for (i = 0; i < LINES.len; i++) {
-		if ((len = snprintf(temp, sizeof(temp), "[LINE:%u][LEN:%lu] \"",
-				    i, LINES.data[i].len)) < 0 ||
-		    (memmax)len > sizeof(temp))
+		if (unlikely((len = snprintf(temp, sizeof(temp),
+					     "[LINE:%4u][LEN:%4lu] -> [", i,
+					     LINES.data[i].len)) < 0 ||
+			     (memmax)len > sizeof(temp)))
 			goto error;
 		Buffer_push_str(&buffer, temp, len);
 		idx = buffer.len;
 		Buffer_push_str(&buffer, LINES.data[i].start,
 				LINES.data[i].len);
 		unescape(&buffer, idx, buffer.len);
-		Buffer_push_str(&buffer, "\"\r\n", sizeof("\"\r\n") - 1);
+		Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
 	}
 
-	if (fwrite(buffer.data, sizeof(byte), buffer.len, fp) < buffer.len)
+	/* Write log file */
+	if (unlikely(fwrite(buffer.data, sizeof(byte), buffer.len, fp) <
+		     buffer.len))
 		goto error;
-	if (fclose(fp) == EOF)
+	if (unlikely(fclose(fp) == EOF))
 		goto fclose_error;
 
 	Buffer_free(&buffer, NULL);
@@ -154,8 +169,8 @@ error:
 ASHE_PUBLIC void logfile_create(const char *logfile, int32 which)
 {
 	logfiles[which] = logfile;
-	if (fopen(logfile, "w") == NULL) {
+	if (unlikely(fopen(logfile, "w") == NULL)) {
 		print_errno();
-		panic("panic in logfile_create(\"%s\")", logfile);
+		panic("panic in logfile_create(\"%s\", %d)", logfile, which);
 	}
 }

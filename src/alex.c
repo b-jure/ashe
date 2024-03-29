@@ -218,7 +218,7 @@ ASHE_PUBLIC const char *Token_tostr(Token *token)
 	case TK_NUMBER:
 		return num2str(token->u.number);
 	default:
-		ashe_assert(0, "unreachable");
+		ashe_assertf(0, "unreachable");
 		return NULL;
 	}
 }

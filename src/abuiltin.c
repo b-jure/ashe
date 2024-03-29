@@ -493,7 +493,7 @@ l_check_for_errors:
 		}
 		break;
 	default: /* UNREACHED */
-		ashe_assert(0, "unreachable");
+		ashe_assertf(0, "unreachable");
 	}
 	return 0;
 }
@@ -740,7 +740,7 @@ ASHE_PRIVATE int32 ashe_exec(ArrayCharptr *argv)
 		return -1;
 	}
 
-	ashe_assert(0, "unreachable");
+	ashe_assertf(0, "unreachable");
 	return 0; /* stop compiler from complaining */
 }
 
@@ -839,7 +839,7 @@ ASHE_PUBLIC int32 run_builtin(Command *cmd, enum tbi tbi)
 		ashe_renv,    ashe_senv, ashe_exec, NULL /* ashe_exit */,
 	};
 
-	ashe_assert(tbi >= TBI_BUILTIN && tbi <= TBI_EXIT, "invalid tbi");
+	ashe_assertf(tbi >= TBI_BUILTIN && tbi <= TBI_EXIT, "invalid tbi");
 	if (unlikely(tbi == TBI_EXIT))
 		return ashe_exit(&cmd->argv);
 	ashe.sh_flags.exit = 0;

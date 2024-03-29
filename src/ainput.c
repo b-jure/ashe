@@ -198,20 +198,20 @@ ASHE_PUBLIC void Terminal_free(Terminal *term)
 	TerminalInput_free(&term->tm_input);
 }
 
-ASHE_PRIVATE void shift_lines_right(memmax start)
+ASHE_PRIVATE inline void shift_lines_right(memmax start)
 {
 	memmax i;
-	ArrayLine *lns = &LINES;
-	for (i = start; i < lns->len; i++)
-		lns->data[i].start++;
+
+	for (i = start; i < LINES.len; i++)
+		LINES.data[i].start++;
 }
 
-ASHE_PRIVATE void shift_lines_left(memmax start)
+ASHE_PRIVATE inline void shift_lines_left(memmax start)
 {
 	memmax i;
-	ArrayLine *lns = &LINES;
-	for (i = start; i < lns->len; i++)
-		lns->data[i].start--;
+
+	for (i = start; i < LINES.len; i++)
+		LINES.data[i].start--;
 }
 
 ASHE_PRIVATE ubyte TerminalInput_cursor_up(TerminalInput *tinput)
@@ -468,8 +468,11 @@ ASHE_PRIVATE void TerminalInput_remove(TerminalInput *tinput)
 	l = &LINE; /* cache current line */
 	TerminalInput_cursor_left(tinput);
 	if (coalesce) {
-		LINE.len--; /* newline */
+		LINE.len--; /* '\n' */
 		LINE.len += l->len;
+		ashe_assert(l == &LINES.data[ROW + 1]);
+		ashe_assert(l->start == LINES.data[ROW + 1].start);
+		ashe_assert(l->len == LINES.data[ROW + 1].len);
 		ArrayLine_remove(&LINES, ROW + 1);
 	}
 	dbf_pushlit(cursor_hide clear_line_right clear_down cursor_save);
@@ -503,7 +506,7 @@ ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *tinput)
 	len = LINE.len + (isfirstrow * PLEN);
 	/* Find the correct terminal row in the current line */
 	up += ((len - 1) / TCOLMAX) - (col / TCOLMAX);
-	ashe_assert(DBF.len == 0, "draw buffer not empty");
+	ashe_assertf(DBF.len == 0, "draw buffer not empty");
 	dbf_pushlit(cursor_hide);
 	dbf_push_len(IBF.data, IBF.len);
 	if (up > 0) {
