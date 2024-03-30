@@ -37,7 +37,7 @@ const char *logfiles[] = {
 /* Debug cursor position */
 ASHE_PUBLIC void debug_cursor(void)
 {
-	static char buffer[2048];
+	static char buffer[1028];
 	FILE *fp = NULL;
 	memmax len = 0;
 	ssize temp = 0;
@@ -46,9 +46,10 @@ ASHE_PUBLIC void debug_cursor(void)
 	if (unlikely((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
 		goto error;
 
-	temp = snprintf(buffer, sizeof(buffer),
-			"[ROW:%u][COL:%u][LINE_LEN:%lu][IBFIDX:%lu]\r\n", ROW,
-			COL, LINE.len, IBFIDX);
+	temp = snprintf(
+		buffer, sizeof(buffer),
+		"[TCOLMAX:%u][TCOL:%u][ROW:%u][LINE_LEN:%lu][COL:%u][IBFIDX:%lu]\r\n",
+		TCOLMAX, TCOL, ROW, LINE.len, COL, IBFIDX);
 
 	if (unlikely(temp < 0 || temp > BUFSIZ))
 		goto error;
