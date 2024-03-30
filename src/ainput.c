@@ -478,45 +478,48 @@ ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *tinput)
 	dbf_flush();
 }
 
-ASHE_PRIVATE void TerminalInput_cursor_eol(TerminalInput *tinput)
+ASHE_PRIVATE void TerminalInput_cursor_lineend(TerminalInput *tinput)
 {
 	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
 	uint32 len = LINE.len + extra;
 	uint32 temp;
+	ubyte lastrow = (ROW == LINES.len - 1);
 
 	if (LINE.len > 0 && ((temp = modlen(col + 1, TCOLMAX)) != TCOLMAX ||
-			     COL != LINE.len - 1)) {
+			     COL != LINE.len - !lastrow)) {
 		if (col / TCOLMAX < (len - 1) / TCOLMAX) {
 			TCOL = TCOLMAX;
 			COL += TCOLMAX - temp;
 			IBFIDX += TCOLMAX - temp;
 		} else {
-			TCOL = len % TCOLMAX;
-			IBFIDX -= COL + 1;
-			COL = LINE.len - 1;
+			TCOL = (len % TCOLMAX) + lastrow;
+			IBFIDX += LINE.len - COL - !lastrow;
+			COL = LINE.len - !lastrow;
 		}
 		dbf_push_movecol(TCOL);
 		dbf_flush();
 	}
 }
 
-ASHE_PRIVATE void TerminalInput_cursor_home(TerminalInput *tinput)
+ASHE_PRIVATE void TerminalInput_cursor_linestart(TerminalInput *tinput)
 {
 	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
+	ssize temp;
 
-	if (COL != 0 && col % TCOLMAX != 1) {
+	if (COL != 0 && (temp = modlen(col + 1, TCOLMAX)) != 1) {
 		if (col < TCOLMAX) {
 			IBFIDX -= COL;
 			COL = 0;
 			TCOL = extra + 1;
 		} else {
-			COL -= modlen(col, TCOLMAX) - 1;
+			IBFIDX -= temp - 1;
+			COL -= temp - 1;
 			col = COL + extra;
-			TCOL = modlen(col, TCOLMAX) + 1;
+			TCOL = modlen(col + 1, TCOLMAX);
 		}
 		dbf_push_movecol(TCOL);
 		dbf_flush();
@@ -616,10 +619,10 @@ ASHE_PRIVATE ubyte TerminalInput_process_key(TerminalInput *tinput)
 			TerminalInput_remove(tinput);
 			break;
 		case END_KEY:
-			TerminalInput_cursor_eol(tinput);
+			TerminalInput_cursor_lineend(tinput);
 			break;
 		case HOME_KEY:
-			TerminalInput_cursor_home(tinput);
+			TerminalInput_cursor_linestart(tinput);
 			break;
 		case CTRL_KEY('h'): // TODO: change back to 'l' after testing
 			TerminalInput_clrscreen(tinput);
@@ -662,7 +665,7 @@ ASHE_PUBLIC void TerminalInput_goto_input_end(TerminalInput *tinput)
 {
 	while (TerminalInput_cursor_down(tinput))
 		;
-	TerminalInput_cursor_eol(tinput);
+	TerminalInput_cursor_lineend(tinput);
 }
 
 /* Read input from STDIN_FILENO. */
