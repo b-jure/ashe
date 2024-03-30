@@ -202,84 +202,59 @@ ASHE_PUBLIC void Terminal_free(Terminal *term)
 ASHE_PRIVATE ubyte TerminalInput_cursor_up(TerminalInput *tinput)
 {
 	unused(tinput);
-	ssize temp, temp2;
-	uint32 len = COL + 1 + ((ROW == 0) * PLEN);
-	uint32 promptrows = PLEN / TCOLMAX;
-	uint32 linerows = len / TCOLMAX;
+	uint32 extra = ((ROW == 0) * PLEN);
+	uint32 len = COL + 1 + extra;
+	uint32 pwraps = (PLEN != 0) * ((PLEN - 1) / TCOLMAX);
+	uint32 lwraps = (len - 1) / TCOLMAX;
+	uint32 temp;
 
-	if (ROW == 0 && (linerows - promptrows == 0 ||
-			 (linerows - promptrows < 2 && len % TCOLMAX == 0)))
+	temp = lwraps - pwraps;
+	if (ROW == 0 && (temp == 0 || (temp < 2 && len % TCOLMAX == 0)))
 		return 0;
 	if (ROW == 0) {
-		if (linerows - promptrows == 1 &&
-		    (temp = PLEN % TCOLMAX) >= len % TCOLMAX) {
+		if (temp == 1 &&
+		    (temp = modlen(PLEN, TCOLMAX)) >= modlen(len, TCOLMAX)) {
+start:
 			COL = 0;
 			IBFIDX = 0;
 			TCOL = temp + 1;
-			goto cursuptocol_draw;
+			goto uptocol_draw;
 		} else {
-			goto cursup;
+			goto up;
 		}
-	} else if (linerows == 0) {
+	} else if (lwraps == 0) {
+		IBFIDX -= COL + 1; /* end of the line above */
 		ROW--;
-		if (ROW == 0) {
-			len = LINE.len + PLEN;
-			linerows = len / TCOLMAX;
-			if ((temp = linerows - promptrows) > 1) {
-				goto cursup;
-			} else if ((temp == 1 &&
-				    (temp = modlen(len, TCOLMAX)) != 0) ||
-				   PLEN % TCOLMAX == 0) {
-				if (temp <= COL + 1) {
-					IBFIDX -= COL + 1;
-					COL = LINE.len - 1;
-					TCOL = temp;
-					goto cursuptocol_draw;
-				} else {
-					goto inbetween;
-				}
-			} else if (COL + 1 >= (temp = (modlen(len, TCOLMAX)))) {
-				IBFIDX -= COL;
-				COL = LINE.len;
-				TCOL = temp;
-				goto cursuptocol_draw;
-			} else if ((temp = modlen(PLEN, TCOLMAX)) >= COL + 1) {
-				IBFIDX = 0;
-				COL = 0;
-				TCOL = temp + 1;
-			} else {
-				goto inbetween;
-			}
+		extra = (ROW == 0) * PLEN;
+		len = LINE.len + extra;
+		lwraps = (len - 1) / TCOLMAX;
+		if ((temp = modlen(len, TCOLMAX)) <= COL + 1) {
+			COL = LINE.len - 1;
+			TCOL = temp;
+			goto uptocol_draw;
 		} else {
-			if (COL + 1 >= modlen(LINE.len, TCOLMAX)) {
-				IBFIDX -= COL + 1;
-				COL = LINE.len - (LINE.len != 0);
-				TCOL = modlen(LINE.len, TCOLMAX);
-				goto cursuptocol_draw;
-			} else {
-inbetween:
-				IBFIDX -= COL + 1;
-				temp = modlen(LINE.len, TCOLMAX);
-				temp2 = modlen(COL + 1, TCOLMAX);
-				COL = LINE.len - 1 - labs(temp - temp2);
-				IBFIDX -= LINE.len - COL - 1;
-				TCOL = modlen(COL + 1, TCOLMAX);
-				goto cursuptocol_draw;
+			temp = modlen(COL + 1, TCOLMAX);
+			if (ROW == 0 && lwraps - pwraps == 0 &&
+			    modlen(PLEN, TCOLMAX) >= temp) {
+				temp = modlen(PLEN + 1, TCOLMAX);
+				goto start;
 			}
+			temp = modlen(len, TCOLMAX) - temp;
+			COL = LINE.len - temp - 1;
+			IBFIDX -= temp;
+			goto up_draw;
 		}
-	} else { /* linerows > 0 */
-cursup:
+	} else { /* lwraps > 0 */
+up:
 		COL -= TCOLMAX;
 		IBFIDX -= TCOLMAX;
-		goto cursup_draw;
+up_draw:
+		dbf_pushlit(cursor_up(1));
+		goto flush;
 	}
-
-cursuptocol_draw:
+uptocol_draw:
 	dbf_pushlit(cursor_up(1));
 	dbf_push_movecol(TCOL);
-	goto flush;
-cursup_draw:
-	dbf_pushlit(cursor_up(1));
 flush:
 	dbf_flush();
 	return 1;
