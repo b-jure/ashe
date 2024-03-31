@@ -4,9 +4,8 @@
 #include "acommon.h"
 #include "atoken.h"
 
-void parsestring(Buffer *out, const char *str);
-void print_userstr(const char *str, memmax len, uint32 bufidx);
-#define print_welcome() print_userstr(ASHE_WELCOME, sizeof(ASHE_WELCOME), 0)
-#define print_prompt()	print_userstr(ASHE_PROMPT, sizeof(ASHE_PROMPT), 1)
+void userstr_print(const char *str, memmax len);
+void welcome_print(void);
+void prompt_print(void);
 
 #endif

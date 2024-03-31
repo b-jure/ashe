@@ -362,7 +362,7 @@ ASHE_PRIVATE int32 ashe_exit(ArrayCharptr *argv)
 	};
 	static const char *exit_warn[] = {
 		"There are background jobs that are still running or are stopped!",
-		"Running exit again will result in termination of child processes.",
+		"Running exit again will result in termination of these jobs.",
 	};
 
 	memmax jobcnt;

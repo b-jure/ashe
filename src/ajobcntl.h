@@ -71,7 +71,7 @@ Job *JobControl_get_job_with_pid(JobControl *jobcntl, pid pid);
 Job *JobControl_get_job_with_pgid(JobControl *jobcntl, pid pgid);
 Job *JobControl_get_foreground_job(JobControl *jobcntl);
 
-void JobControl_free_and_harvest(JobControl *jobcntl);
+void JobControl_harvest(JobControl *jobcntl);
 void JobControl_free(JobControl *jobcntl);
 
 #endif

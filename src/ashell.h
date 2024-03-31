@@ -31,14 +31,13 @@ typedef struct {
 	ubyte interactive : 1; /* set if shell is running interactively */
 } Flags;
 
-/* Note: 
- * sh_buffers index 0 (first value) -> welcome message cstring
- * sh_buffers index >=1 (other values) -> cstring tokens */
 typedef struct {
 	JobControl sh_jobcntl;
 	Terminal sh_term;
 	Lexer sh_lexer;
 	ArrayCharptr sh_buffers;
+	Buffer sh_prompt;
+	Buffer sh_welcome;
 	ArrayConditional sh_conds;
 	AsheJmpBuf sh_buf;
 	Settings sh_settings;
@@ -47,6 +46,7 @@ typedef struct {
 
 extern Shell ashe; /* global */
 
-void Shell_init(Shell *shell);
+void Shell_init(Shell *sh);
+void Shell_free(Shell *sh);
 
 #endif

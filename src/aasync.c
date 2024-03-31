@@ -53,7 +53,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ashe.sh_flags.interrupt = 1;
 	ashe_cursor_end();
 	fprintf(stderr, "\r\n");
-	print_prompt();
+	prompt_print();
 	TerminalInput_clear(&ashe.sh_term.tm_input);
 	ashe_mask_signals(SIG_UNBLOCK);
 }

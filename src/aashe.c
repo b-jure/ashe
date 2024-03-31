@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 	Shell_init(&ashe);
 
 	REPL({
-		print_prompt();
+		prompt_print();
 		enable_async_jobcntl_updates();
 		JobControl_update_and_notify(jobcntl);
 		TerminalInput_clear(tinput);

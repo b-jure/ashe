@@ -563,7 +563,7 @@ ASHE_PUBLIC void ashe_redraw(void)
 ASHE_PUBLIC void ashe_clear_screen(void)
 {
 	dbf_draw_lit(csi_cursor_home csi_clear_all);
-	print_prompt();
+	prompt_print();
 	ashe_redraw();
 }
 

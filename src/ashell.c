@@ -2,6 +2,7 @@
 #include "aasync.h"
 #include "ashell.h"
 #include "aalloc.h"
+#include "aalloc.h"
 #include "aprompt.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
@@ -26,7 +27,11 @@ static int32 init_vars(void)
 	return 0;
 }
 
-void Shell_init(Shell *sh)
+/*
+ * TODO: in future allow shell to not be interactive but
+ * only with certian arguments (such as '-c'). 
+ */
+ASHE_PUBLIC void Shell_init(Shell *sh)
 {
 	pid_t sh_pgid = getpgrp();
 
@@ -38,10 +43,12 @@ void Shell_init(Shell *sh)
 #endif
 	JobControl_init(&sh->sh_jobcntl);
 	ArrayCharptr_init(&sh->sh_buffers);
+	Buffer_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));
+	Buffer_init_cap(&sh->sh_welcome, sizeof(ASHE_WELCOME));
 	memset(&sh->sh_settings, 0, sizeof(Settings));
 	memset(&sh->sh_flags, 0, sizeof(Flags));
 	init_vars();
-try_again:
+get_terminal:
 	sh->sh_flags.interactive = isatty(STDIN_FILENO);
 	if (sh->sh_flags.interactive) {
 		Terminal_init(&sh->sh_term);
@@ -53,14 +60,30 @@ try_again:
 		if (unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0))
 			goto error;
 		init_signal_handlers();
-		print_welcome();
+		welcome_print();
 	} else {
 		if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
 			goto error;
-		goto try_again;
+		goto get_terminal;
 	}
 	return;
 error:
 	print_errno();
 	panic(NULL);
+}
+
+/* wrapped afree */
+void wafree(void *ptr)
+{
+	afree(ptr);
+}
+
+ASHE_PUBLIC void Shell_free(Shell *sh)
+{
+	JobControl_free(&sh->sh_jobcntl);
+	Terminal_free(&sh->sh_term);
+	ArrayCharptr_free(&sh->sh_buffers, wafree);
+	Buffer_free(&sh->sh_prompt, NULL);
+	Buffer_free(&sh->sh_welcome, NULL);
+	ArrayConditional_free(&sh->sh_conds, (FreeFn)Conditional_free);
 }

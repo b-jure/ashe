@@ -52,7 +52,7 @@ error:
 ASHE_PUBLIC void debug_lines(void)
 {
 	static char temp[128];
-	Buffer buffer, prompt;
+	Buffer buffer;
 	ssize len = 0;
 	uint32 i = 0;
 	uint32 idx;
@@ -60,22 +60,18 @@ ASHE_PUBLIC void debug_lines(void)
 
 	errno = 0;
 	Buffer_init(&buffer);
-	Buffer_init(&prompt);
-	Buffer_init_cap(&prompt, sizeof(ASHE_PROMPT));
 
 	if (unlikely((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
 		goto error;
 
 	/* Log prompt */
-	parsestring(&prompt, ASHE_PROMPT);
 	if (unlikely((len = snprintf(temp, sizeof(temp), "[PLEN:%lu] -> [",
 				     PLEN)) < 0 ||
 		     (memmax)len > sizeof(temp)))
 		goto error;
 	Buffer_push_str(&buffer, temp, len);
-	Buffer_push_str(&buffer, prompt.data, prompt.len - 1);
+	Buffer_push_str(&buffer, ashe.sh_prompt.data, ashe.sh_prompt.len - 1);
 	Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
-	Buffer_free(&prompt, NULL);
 
 	/* Log buffer */
 	if (unlikely((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",

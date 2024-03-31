@@ -423,7 +423,7 @@ l_redraw:
 			printf_info("job (pgid:%d) %s", job->pgid,
 				    (completed ? "completed [+]" :
 						 "stopped [-]"));
-			print_prompt();
+			prompt_print();
 			if (term->tm_reading) {
 				tinput->in_cursor.cr_col = col;
 				tinput->in_cursor.cr_row = row;
@@ -595,12 +595,10 @@ ASHE_PRIVATE void Job_kill_and_harvest(Job *job)
 			zombies, job->pgid);
 }
 
-/* Same as 'JobControl_free()' except this additionally sends 'SIGKILL'
- * signal to all processes inside of 'jobcntl and harvests them all. */
-ASHE_PUBLIC void JobControl_free_and_harvest(JobControl *jobcntl)
+/* Sends 'SIGKILL' signal to all processes inside of 'jobcntl and harvests them all. */
+ASHE_PUBLIC void JobControl_harvest(JobControl *jobcntl)
 {
 	memmax len = jobcntl->jobs.len;
 	while (len--)
 		Job_kill_and_harvest(JobControl_get_job_at(jobcntl, len));
-	JobControl_free(jobcntl);
 }

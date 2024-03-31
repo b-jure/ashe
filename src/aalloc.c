@@ -9,16 +9,13 @@
 
 ASHE_PUBLIC void cleanup_all(void)
 {
-	JobControl_free_and_harvest(&ashe.sh_jobcntl);
-	ArrayCharptr_free(&ashe.sh_buffers, NULL);
-	ArrayConditional_free(&ashe.sh_conds, (FreeFn)Conditional_free);
+	JobControl_harvest(&ashe.sh_jobcntl);
+	Shell_free(&ashe);
 }
 
 ASHE_PUBLIC void cleanup_fork(void)
 {
-	JobControl_free(&ashe.sh_jobcntl);
-	ArrayCharptr_free(&ashe.sh_buffers, NULL);
-	ArrayConditional_free(&ashe.sh_conds, (FreeFn)Conditional_free);
+	Shell_free(&ashe);
 }
 
 ASHE_PUBLIC void panic(const char *errmsg, ...)

@@ -153,7 +153,7 @@ push_plh_sign:
 }
 
 /* Parses 'str' by expanding all placeholders. */
-ASHE_PUBLIC void parsestring(Buffer *out, const char *str)
+ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
 {
 	int32 c;
 
@@ -171,27 +171,37 @@ ASHE_PUBLIC void parsestring(Buffer *out, const char *str)
 	Buffer_push(out, '\0');
 }
 
-// TODO: Refactor this
-ASHE_PUBLIC void print_userstr(const char *str, memmax len, uint32 bufidx)
+ASHE_PRIVATE inline void print_parsed_string(const char *str)
 {
-	unused(len);
-	static Buffer buff[2];
-	Buffer *buffer = &buff[bufidx];
-
-	if (unlikely(ashe.sh_buffers.len == 0)) { /* executes only once */
-		Buffer_init_cap(&buff[0], sizeof(ASHE_WELCOME));
-		Buffer_init_cap(&buff[1], sizeof(ASHE_PROMPT));
-		ArrayCharptr_insert(&ashe.sh_buffers, bufidx, buffer->data);
-	}
-	buffer->len = 0;
-	parsestring(buffer, str);
-	ashe.sh_buffers.data[bufidx] = buffer->data;
-	if (likely(bufidx == 1))
-		ashe.sh_term.tm_promptlen = buffer->len - 1;
-	fputs(buffer->data, stderr);
+	fputs(str, stderr);
 	fflush(stderr);
 	if (unlikely(ferror(stderr))) {
 		print_errno();
 		panic(NULL);
 	}
+}
+
+ASHE_PUBLIC void userstr_print(const char *str, memmax len)
+{
+	Buffer buffer;
+
+	Buffer_init_cap(&buffer, len);
+	parsestring(&buffer, str);
+	print_parsed_string(buffer.data);
+	Buffer_free(&buffer, NULL);
+}
+
+ASHE_PUBLIC void welcome_print(void)
+{
+	ashe.sh_welcome.len = 0;
+	parsestring(&ashe.sh_welcome, ASHE_WELCOME);
+	print_parsed_string(ashe.sh_welcome.data);
+}
+
+ASHE_PUBLIC void prompt_print(void)
+{
+	ashe.sh_prompt.len = 0;
+	parsestring(&ashe.sh_prompt, ASHE_PROMPT);
+	ashe.sh_term.tm_promptlen = ashe.sh_prompt.len - 1;
+	print_parsed_string(ashe.sh_prompt.data);
 }
