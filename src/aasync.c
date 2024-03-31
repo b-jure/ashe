@@ -51,7 +51,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	unused(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_flags.interrupt = 1;
-	TerminalInput_goto_input_end(&ashe.sh_term.tm_input);
+	ashe_cursor_end();
 	fprintf(stderr, "\r\n");
 	print_prompt();
 	TerminalInput_clear(&ashe.sh_term.tm_input);

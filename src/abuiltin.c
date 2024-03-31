@@ -641,7 +641,7 @@ ASHE_PRIVATE int32 ashe_clear(ArrayCharptr *argv)
 
 	switch (argc) {
 	case 1:
-		TerminalInput_clrscreen(&ashe.sh_term.tm_input);
+		ashe_clear_screen();
 		break;
 	case 2:
 		if (is_help_opt(argv->data[1])) {

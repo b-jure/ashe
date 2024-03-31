@@ -18,6 +18,30 @@
 #include "adbg.h"
 #endif
 
+/* control sequence introducer */
+#define CSI	 "\033["
+#define ESC(seq) CSI #seq
+/* cursor */
+#define csi_cursor_home		  ESC(H)
+#define csi_cursor_left(n)	  ESC(n) "D"
+#define csi_cursor_right(n)	  ESC(n) "C"
+#define csi_cursor_up(n)	  ESC(n) "A"
+#define csi_cursor_down(n)	  ESC(n) "B"
+#define csi_cursor_save		  ESC(s)
+#define csi_cursor_load		  ESC(u)
+#define csi_cursor_col(col)	  ESC(col) "G"
+#define csi_cursor_move(row, col) ESC(row ";" col) "H"
+#define csi_cursor_position	  ESC(6n)
+#define csi_cursor_hide ESC(?25l)
+#define csi_cursor_show ESC(?25h)
+/* clear */
+#define csi_clear_down	     ESC(0J)
+#define csi_clear_up	     ESC(1J)
+#define csi_clear_all	     ESC(2J)
+#define csi_clear_line_right ESC(0K)
+#define csi_clear_line_left  ESC(1K)
+#define csi_clear_line	     ESC(2K)
+
 /* key code defs */
 #define CTRL_KEY(k)    ((k) & 0x1f)
 #define ESCAPE	       27
@@ -25,8 +49,8 @@
 #define IMPLEMENTED(c) (c != ESCAPE)
 
 /* miscellaneous defs */
-#define modlen(x, y)	  ((((x)-1) % (y)) + 1)
-#define WHILE_READING(ti) while (TerminalInput_process_key(ti))
+#define modlen(x, y)  ((((x)-1) % (y)) + 1)
+#define WHILE_READING while (process_key())
 
 /* draw buffer */
 #define dbf_draw_lit(strlit) write_or_panic(strlit, sizeof(strlit) - 1)
@@ -39,6 +63,12 @@
 		dbf_pushlit(CSI); \
 		dbf_push_unum(n); \
 		dbf_pushc('G');   \
+	} while (0)
+#define dbf_push_moveup(n)        \
+	do {                      \
+		dbf_pushlit(CSI); \
+		dbf_push_unum(n); \
+		dbf_pushc('A');   \
 	} while (0)
 
 /* defines to insure these are inlined */
@@ -80,6 +110,19 @@ enum termkey {
 	DEL_KEY
 };
 
+ASHE_PRIVATE inline void write_or_panic(const char *ptr, memmax n)
+{
+	if (unlikely(write(STDERR_FILENO, ptr, n) < 0)) {
+		print_errno();
+		panic(NULL);
+	}
+	fflush(stderr);
+	if (unlikely(ferror(stderr))) {
+		print_errno();
+		panic(NULL);
+	}
+}
+
 ASHE_PRIVATE inline void dbf_push_unum(memmax n)
 {
 	char temp[UINT_DIGITS];
@@ -105,9 +148,10 @@ ASHE_PRIVATE int32 get_window_size_fallback(uint32 *height, uint32 *width)
 {
 	int32 res;
 
-	dbf_draw_lit(cursor_save cursor_right(99999) cursor_down(99999));
+	dbf_draw_lit(csi_cursor_save csi_cursor_right(99999)
+			     csi_cursor_down(99999));
 	res = get_cursor_pos(height, width);
-	dbf_draw_lit(cursor_load);
+	dbf_draw_lit(csi_cursor_load);
 	return res;
 }
 
@@ -134,7 +178,7 @@ ASHE_PUBLIC int32 get_cursor_pos(uint32 *row, uint32 *col)
 	uint32 srow, scol;
 	char buf[INT_DIGITS * 2 + sizeof(CSI ";")]; /* ESC [ Pn ; Pn R */
 
-	dbf_draw_lit(cursor_position);
+	dbf_draw_lit(csi_cursor_position);
 	while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
 		if (c == 'R')
 			break;
@@ -199,9 +243,8 @@ ASHE_PUBLIC void Terminal_free(Terminal *term)
 	TerminalInput_free(&term->tm_input);
 }
 
-ASHE_PRIVATE ubyte TerminalInput_cursor_up(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_up(void)
 {
-	unused(tinput);
 	uint32 extra = ((ROW == 0) * PLEN);
 	uint32 len = COL + 1 + extra;
 	uint32 pwraps = (PLEN != 0) * ((PLEN - 1) / TCOLMAX);
@@ -249,11 +292,11 @@ up:
 		COL -= TCOLMAX;
 		IBFIDX -= TCOLMAX;
 up_draw:
-		dbf_pushlit(cursor_up(1));
+		dbf_pushlit(csi_cursor_up(1));
 		goto flush;
 	}
 uptocol_draw:
-	dbf_pushlit(cursor_up(1));
+	dbf_pushlit(csi_cursor_up(1));
 	dbf_push_movecol(TCOL);
 flush:
 	dbf_flush();
@@ -261,9 +304,8 @@ flush:
 }
 
 // clang-format off
-ASHE_PRIVATE ubyte TerminalInput_cursor_down(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_down(void)
 {
-	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 linewraps = (LINE.len != 0) * ((LINE.len - 1 + extra) / TCOLMAX);
 	uint32 colwraps = (COL != 0) * ((COL + extra) / TCOLMAX);
@@ -289,7 +331,7 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_down(TerminalInput *tinput)
 			IBFIDX += TCOL - 1;
 			COL = TCOL - 1;
 down:
-			dbf_pushlit(cursor_down(1));
+			dbf_pushlit(csi_cursor_down(1));
 			goto flush;
 		} else {
 			temp = (ROW != LINES.len - 1);
@@ -297,7 +339,7 @@ down:
 			COL = LINE.len - temp;
 			TCOL = LINE.len + !temp;
 downtocol:
-			dbf_pushlit(cursor_down(1));
+			dbf_pushlit(csi_cursor_down(1));
 			dbf_push_movecol(TCOL);
 flush:
 			dbf_flush();
@@ -308,10 +350,8 @@ flush:
 }
 // clang-format on
 
-ASHE_PRIVATE ubyte TerminalInput_cursor_left(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_left(void)
 {
-	unused(tinput);
-
 	if (COL > 0) {
 		COL--;
 		if (TCOL == 1) {
@@ -319,14 +359,14 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_left(TerminalInput *tinput)
 			goto lineuptocol;
 		} else {
 			TCOL--;
-			dbf_draw_lit(cursor_left(1));
+			dbf_draw_lit(csi_cursor_left(1));
 		}
 	} else if (ROW > 0) {
 		ROW--;
 		COL = LINE.len - 1;
 		TCOL = modlen(LINE.len + ((ROW == 0) * PLEN), TCOLMAX);
 lineuptocol:
-		dbf_pushlit(cursor_up(1));
+		dbf_pushlit(csi_cursor_up(1));
 		dbf_push_movecol(TCOL);
 		dbf_flush();
 	} else {
@@ -336,14 +376,13 @@ lineuptocol:
 	return 1;
 }
 
-ASHE_PRIVATE ubyte TerminalInput_cursor_right(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_right(void)
 {
-	unused(tinput);
 	if (COL < LINE.len - (LINES.len != 0 && ROW != LINES.len - 1)) {
 		COL++;
 		if (TCOL < TCOLMAX) {
 			TCOL++;
-			dbf_draw_lit(cursor_right(1));
+			dbf_draw_lit(csi_cursor_right(1));
 		} else {
 			goto firstcoldown;
 		}
@@ -352,7 +391,7 @@ ASHE_PRIVATE ubyte TerminalInput_cursor_right(TerminalInput *tinput)
 		COL = 0;
 firstcoldown:
 		TCOL = 1;
-		dbf_draw_lit(cursor_down(1) cursor_col(1));
+		dbf_draw_lit(csi_cursor_down(1) csi_cursor_col(1));
 	} else {
 		return 0;
 	}
@@ -360,7 +399,7 @@ firstcoldown:
 	return 1;
 }
 
-ASHE_PRIVATE void TerminalInput_insert(TerminalInput *tinput, int32 c)
+ASHE_PUBLIC ubyte ashe_insert(int32 c)
 {
 	memmax i;
 	uint32 idx;
@@ -369,7 +408,7 @@ ASHE_PRIVATE void TerminalInput_insert(TerminalInput *tinput, int32 c)
 	Line *curr = NULL;
 
 	if (IBF.len >= ARG_MAX - 1)
-		return;
+		return 0;
 	idx = IBFIDX;
 	relink = (IBF.len >= IBF.cap);
 	Buffer_insert(&IBF, IBFIDX, c);
@@ -382,25 +421,26 @@ ASHE_PRIVATE void TerminalInput_insert(TerminalInput *tinput, int32 c)
 		prev = curr;
 	}
 	shift_lines_right(ROW + 1);
-	dbf_pushlit(clear_line_right clear_down);
+	dbf_pushlit(csi_clear_line_right csi_clear_down);
 	if (c == '\n' && TCOL < TCOLMAX) {
 		dbf_pushc('\n');
 		idx++;
 	}
-	dbf_pushlit(cursor_save);
+	dbf_pushlit(csi_cursor_save);
 	dbf_push_len(&IBF.data[idx], IBF.len - idx);
-	dbf_pushlit(cursor_load);
+	dbf_pushlit(csi_cursor_load);
 	dbf_flush();
 	if (c != '\n') /* otherwise we are in 'TerminalInput_cr()' */
-		TerminalInput_cursor_right(tinput);
+		ashe_cursor_right();
+	return 1;
 }
 
-ASHE_PRIVATE ubyte TerminalInput_cr(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cr(void)
 {
 	Line newline = { 0 };
 
 	if (is_escaped(IBF.data, IBFIDX) || in_dq(IBF.data, IBFIDX)) {
-		TerminalInput_insert(tinput, '\n');
+		ashe_insert('\n');
 		newline.start = LINE.start + COL + 1;
 		newline.len = LINE.len - (COL + 1);
 		LINE.len = COL + 1;
@@ -414,18 +454,18 @@ ASHE_PRIVATE ubyte TerminalInput_cr(TerminalInput *tinput)
 	return 0;
 }
 
-ASHE_PRIVATE void TerminalInput_remove(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_remove(void)
 {
 	Line *l;
 	ubyte coalesce;
 
 	if (IBFIDX <= 0)
-		return;
+		return 0;
 	Buffer_remove(&IBF, IBFIDX - 1);
 	shift_lines_left(ROW + 1);
 	LINE.len -= !(coalesce = (COL == 0));
 	l = &LINE; /* cache current line */
-	TerminalInput_cursor_left(tinput);
+	ashe_cursor_left();
 	if (coalesce) {
 		LINE.len--; /* '\n' */
 		LINE.len += l->len;
@@ -434,53 +474,16 @@ ASHE_PRIVATE void TerminalInput_remove(TerminalInput *tinput)
 		ashe_assert(l->len == LINES.data[ROW + 1].len);
 		ArrayLine_remove(&LINES, ROW + 1);
 	}
-	dbf_pushlit(cursor_hide clear_line_right clear_down cursor_save);
+	dbf_pushlit(csi_cursor_hide csi_clear_line_right csi_clear_down
+			    csi_cursor_save);
 	dbf_push_len(IBF.data + IBFIDX, IBF.len - IBFIDX);
-	dbf_pushlit(cursor_load cursor_show);
+	dbf_pushlit(csi_cursor_load csi_cursor_show);
 	dbf_flush();
+	return 1;
 }
 
-ASHE_PUBLIC void TerminalInput_redraw(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_lineend(void)
 {
-	unused(tinput);
-	memmax ridx = LINES.len - 1;
-	Line *line = &LINES.data[ridx];
-	ssize temp, up;
-	uint32 col, len;
-	ubyte isfirstrow = 0;
-
-	/* Move up until we find the current row */
-	for (up = 0; ridx != ROW; line = &LINES.data[--ridx]) {
-		up++;
-		temp = line->len - 1;
-		/* Make sure we compensate for multiple
-		 * terminal rows in a single Line */
-		while (temp >= (ssize)TCOLMAX) {
-			up++;
-			temp -= TCOLMAX;
-		}
-	}
-	isfirstrow = (ROW == 0);
-	col = COL + (isfirstrow * PLEN);
-	len = LINE.len + (isfirstrow * PLEN);
-	/* Find the correct terminal row in the current line */
-	up += ((len - 1) / TCOLMAX) - (col / TCOLMAX);
-	ashe_assertf(DBF.len == 0, "draw buffer not empty");
-	dbf_pushlit(cursor_hide);
-	dbf_push_len(IBF.data, IBF.len);
-	if (up > 0) {
-		dbf_pushlit(CSI);
-		dbf_push_unum(up);
-		dbf_pushc('A');
-	}
-	dbf_push_movecol(TCOL);
-	dbf_pushlit(cursor_show);
-	dbf_flush();
-}
-
-ASHE_PRIVATE void TerminalInput_cursor_lineend(TerminalInput *tinput)
-{
-	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
 	uint32 len = LINE.len + extra;
@@ -500,12 +503,13 @@ ASHE_PRIVATE void TerminalInput_cursor_lineend(TerminalInput *tinput)
 		}
 		dbf_push_movecol(TCOL);
 		dbf_flush();
+		return 1;
 	}
+	return 0;
 }
 
-ASHE_PRIVATE void TerminalInput_cursor_linestart(TerminalInput *tinput)
+ASHE_PUBLIC ubyte ashe_cursor_linestart(void)
 {
-	unused(tinput);
 	uint32 extra = (ROW == 0) * PLEN;
 	uint32 col = COL + extra;
 	ssize temp;
@@ -523,14 +527,52 @@ ASHE_PRIVATE void TerminalInput_cursor_linestart(TerminalInput *tinput)
 		}
 		dbf_push_movecol(TCOL);
 		dbf_flush();
+		return 1;
 	}
+	return 0;
 }
 
-ASHE_PUBLIC void TerminalInput_clrscreen(TerminalInput *tinput)
+ASHE_PUBLIC void ashe_redraw(void)
 {
-	dbf_draw_lit(cursor_hide cursor_home clear_all);
+	memmax lidx = LINES.len - 1;
+	Line *line = &LINES.data[lidx];
+	ssize temp;
+	uint32 extra = (ROW == 0) * PLEN;
+	uint32 col, len, up;
+
+	/* find the current Line */
+	for (up = 0; lidx != ROW; line = &LINES.data[--lidx]) {
+		temp = line->len;
+		while (temp > 0) { /* unwrap it */
+			up++;
+			temp -= TCOLMAX;
+		}
+	}
+	col = COL + extra;
+	len = LINE.len + extra;
+	up += ((len - 1) / TCOLMAX) - (col / TCOLMAX);
+	dbf_pushlit(csi_cursor_hide);
+	dbf_push_len(IBF.data, IBF.len);
+	if (up > 0)
+		dbf_push_moveup(up);
+	dbf_push_movecol(TCOL);
+	dbf_pushlit(csi_cursor_show);
+	dbf_flush();
+}
+
+ASHE_PUBLIC void ashe_clear_screen(void)
+{
+	dbf_draw_lit(csi_cursor_home csi_clear_all);
 	print_prompt();
-	TerminalInput_redraw(tinput);
+	ashe_redraw();
+}
+
+/* Move cursor to the end of the input */
+ASHE_PUBLIC void ashe_cursor_end(void)
+{
+	while (ashe_cursor_down())
+		;
+	ashe_cursor_lineend();
 }
 
 ASHE_PRIVATE enum termkey read_key(void)
@@ -604,40 +646,40 @@ ASHE_PRIVATE enum termkey read_key(void)
 	}
 }
 
-ASHE_PRIVATE ubyte TerminalInput_process_key(TerminalInput *tinput)
+ASHE_PRIVATE ubyte process_key(void)
 {
 	int32 c;
 
 	if (IMPLEMENTED((c = read_key()))) {
 		switch (c) {
 		case CR:
-			if (!TerminalInput_cr(tinput))
+			if (!ashe_cr())
 				return 0;
 			break;
 		case DEL_KEY:
 		case BACKSPACE:
-			TerminalInput_remove(tinput);
+			ashe_remove();
 			break;
 		case END_KEY:
-			TerminalInput_cursor_lineend(tinput);
+			ashe_cursor_lineend();
 			break;
 		case HOME_KEY:
-			TerminalInput_cursor_linestart(tinput);
+			ashe_cursor_linestart();
 			break;
 		case CTRL_KEY('h'): // TODO: change back to 'l' after testing
-			TerminalInput_clrscreen(tinput);
+			ashe_clear_screen();
 			break;
 		case L_ARW:
-			TerminalInput_cursor_left(tinput);
+			ashe_cursor_left();
 			break;
 		case R_ARW:
-			TerminalInput_cursor_right(tinput);
+			ashe_cursor_right();
 			break;
 		case U_ARW:
-			TerminalInput_cursor_up(tinput);
+			ashe_cursor_up();
 			break;
 		case D_ARW:
-			TerminalInput_cursor_down(tinput);
+			ashe_cursor_down();
 			break;
 		// case CTRL_KEY('h'): // TODO: Uncomment after testing
 		case CTRL_KEY('x'):
@@ -647,7 +689,7 @@ ASHE_PRIVATE ubyte TerminalInput_process_key(TerminalInput *tinput)
 		case CTRL_KEY('i'):
 			break;
 		default:
-			TerminalInput_insert(tinput, c);
+			ashe_insert(c);
 			break;
 		}
 	}
@@ -660,16 +702,8 @@ ASHE_PRIVATE ubyte TerminalInput_process_key(TerminalInput *tinput)
 	return 1;
 }
 
-/* Move cursor to the end of the input */
-ASHE_PUBLIC void TerminalInput_goto_input_end(TerminalInput *tinput)
-{
-	while (TerminalInput_cursor_down(tinput))
-		;
-	TerminalInput_cursor_lineend(tinput);
-}
-
 /* Read input from STDIN_FILENO. */
-ASHE_PUBLIC void TerminalInput_read(TerminalInput *tinput)
+ASHE_PUBLIC void TerminalInput_read(void)
 {
 	Terminal *term = &ashe.sh_term;
 	term->tm_reading = 1;
@@ -682,9 +716,9 @@ ASHE_PUBLIC void TerminalInput_read(TerminalInput *tinput)
 #ifdef ASHE_DBG_LINES
 	debug_lines();
 #endif
-	WHILE_READING(tinput);
+	WHILE_READING;
 	Buffer_push(&IBF, '\0');
-	TerminalInput_goto_input_end(tinput);
+	ashe_cursor_end();
 	fprintf(stderr, "\r\n");
 	fflush(stderr);
 	term->tm_reading = 0;

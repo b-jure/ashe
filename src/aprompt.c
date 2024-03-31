@@ -165,7 +165,8 @@ ASHE_PUBLIC void parsestring(Buffer *out, const char *str)
 			try_expand_placeholder(out, &str);
 		}
 	}
-	out->len = (ASHE_PROMPT_LEN_MAX * (out->len >= ASHE_PROMPT_LEN_MAX)) +
+	out->len = ((ASHE_PROMPT_LEN_MAX - 1) *
+		    (out->len >= ASHE_PROMPT_LEN_MAX)) +
 		   (out->len * (out->len < ASHE_PROMPT_LEN_MAX));
 	Buffer_push(out, '\0');
 }
@@ -182,6 +183,7 @@ ASHE_PUBLIC void print_userstr(const char *str, memmax len, uint32 bufidx)
 		Buffer_init_cap(&buff[1], sizeof(ASHE_PROMPT));
 		ArrayCharptr_insert(&ashe.sh_buffers, bufidx, buffer->data);
 	}
+	buffer->len = 0;
 	parsestring(buffer, str);
 	ashe.sh_buffers.data[bufidx] = buffer->data;
 	if (likely(bufidx == 1))

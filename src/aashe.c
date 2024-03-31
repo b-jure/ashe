@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 		enable_async_jobcntl_updates();
 		JobControl_update_and_notify(jobcntl);
 		TerminalInput_clear(tinput);
-		TerminalInput_read(tinput);
+		TerminalInput_read();
 		JobControl_update_and_notify(jobcntl);
 		disable_async_jobcntl_updates();
 		ArrayConditional_free(&ashe.sh_conds, (FreeFn)Conditional_free);

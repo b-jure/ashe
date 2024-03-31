@@ -14,26 +14,6 @@ const char *logfiles[] = {
 	NULL,
 };
 
-/* 
- * TIP:
- * If you are using neovim/vim one nice thing to have is open
- * two terminals in a split view (either using tmux, window 
- * manager, vim, etc..) one will contain your 'logfile.txt'
- * file while the other will be ashe executable.
- * Now add this to your init.lua file (neovim):
- * ```
- * vim.o.updatetime = 1000 -- 1 second
- * vim.api.nvim_create_autocmd({"CursorHold", "BufRead"}, {
- * 	pattern = {"*dbginfo.txt"}, -- only for debug output files
- * 	command = "checktime | call feedkeys('G')",
- * })
- * ```
- * This will update your '.txt' files each second if
- * they get updated without you needing to hover or make
- * action inside the vim buffer, this way you can type freely
- * in ashe while testing without navigating to the debug file.
- */
-
 /* Debug cursor position */
 ASHE_PUBLIC void debug_cursor(void)
 {

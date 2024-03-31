@@ -419,7 +419,7 @@ ASHE_PUBLIC void JobControl_update_and_notify(JobControl *jobcntl)
 l_redraw:
 			if (ashe.sh_term
 				    .tm_reading) // function called from signal handler ?
-				TerminalInput_goto_input_end(tinput);
+				ashe_cursor_end();
 			printf_info("job (pgid:%d) %s", job->pgid,
 				    (completed ? "completed [+]" :
 						 "stopped [-]"));
@@ -435,7 +435,7 @@ l_redraw:
 					term->tm_col =
 						tcol +
 						(term->tm_promptlen - plen);
-				TerminalInput_redraw(tinput);
+				ashe_redraw();
 			}
 			if (completed)
 				continue;
