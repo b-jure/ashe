@@ -18,6 +18,7 @@ static const char *tokenstr[] = {
 	"|&",
 	"<&",
 	">&",
+	">|",
 	">>",
 	"&>",
 	"&>>",
@@ -30,7 +31,7 @@ static const char *tokenstr[] = {
 	")",
 	"|",
 	"&",
-	"",
+	"EOL",
 	NULL /* WORD */,
 	NULL /* KVPAIR */,
 	NULL /* NUMBER */
@@ -75,7 +76,8 @@ ASHE_PRIVATE inline int32 peek(Lexer *lexer, memmax amount)
 ASHE_PRIVATE inline int32 advance(Lexer *lexer)
 {
 	int32 c = *lexer->current;
-	if (c != '\0')
+
+	if (likely(c != '\0'))
 		lexer->current++;
 	return c;
 }
@@ -84,6 +86,7 @@ ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
 {
 	int32 c;
 	memmax number, prev;
+
 	number = prev = 0;
 	while (isdigit((c = *str++))) {
 		number = number * 10 + (c - '0');
@@ -100,13 +103,14 @@ ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
 /* Gets a string, expands environmental variables and unescapes it. */
 ASHE_PRIVATE Token Token_string(Lexer *lexer)
 {
-	int32 c;
+	int32 c, code;
 	ubyte dq, esc;
-	Token token;
-	Token_init(&token);
+	Token token = { 0 };
 	Buffer buffer;
-	Buffer_init(&buffer);
+	char *ptr;
+	memmax n, klen;
 
+	Buffer_init(&buffer);
 	token.type = TK_WORD;
 	token.start = lexer->current;
 	dq = esc = 0;
@@ -114,46 +118,42 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 	while ((c = peek(lexer, 0))) {
 		if (!dq && (isspace(c) || (!esc && has_precedence(c))))
 			break;
-		if (!esc && c == '"')
-			dq ^= 1;
-		else if (c == '\\' || esc)
-			esc ^= 1;
+		dq ^= (!esc && c == '"');
+		esc ^= (c == '\\' || esc);
 		Buffer_push(&buffer, c);
 		advance(lexer);
 	}
-
 	Buffer_push(&buffer, '\0');
 	token.len = lexer->current - token.start;
 
-	/* expand '$' variables */
-	expand_vars(&buffer);
+	printf("Raw string: '%s'\r\n", buffer.data);
+	expand_vars(&buffer); /* '$' vars */
 
-	char *ptr = buffer.data;
+	ptr = buffer.data;
 	if (*ptr != '=' && (ptr = strstr(ptr, "=")) != NULL) {
 		*ptr = '\0';
-		memmax klen = strlen(buffer.data);
+		klen = strlen(buffer.data);
 		if (strspn(buffer.data, ENV_VAR_CHARS) == klen)
 			token.type = TK_KVPAIR;
 		*ptr = '=';
 	}
 
-	/* escapes 'escaped' characters and gets rid of '"' */
 	escape(&buffer);
 
-	memmax number = 0;
-	int32 code = all_chars_are_digits(buffer.data, &number);
-	if (code != -1 && code != -2) { /* No overflow and valid integer ? */
-		token.u.number = number;
-		token.type = TK_NUMBER;
-	}
-
-	/* Check after expanding, so that we don't compare in parser */
-	if (buffer.len == 2 && *buffer.data == '-') {
+	if (buffer.len == 2 && buffer.data[0] == '-') {
 		Buffer_free(&buffer, NULL);
 		token.type = TK_MINUS;
-	} else
+	} else {
+		n = 0;
+		code = all_chars_are_digits(buffer.data, &n);
+		if (code != -1 && code != -2) {
+			token.u.number = n;
+			token.type = TK_NUMBER;
+		} else {
+			token.u.string = buffer;
+		}
 		ArrayCharptr_push(&ashe.sh_buffers, buffer.data);
-
+	}
 	return token;
 }
 
@@ -183,14 +183,17 @@ ASHE_PRIVATE void skipws(Lexer *lexer)
 ASHE_PRIVATE inline const char *num2str(memmax n)
 {
 	static char buffer[UINT_DIGITS + 1];
+
 	snprintf(buffer, UINT_DIGITS + 1, "%lu", n);
 	return buffer;
 }
 
-/* Note: TOKEN_NUMBER stores its own string in a static
- * buffer, invoking this function second time will overwrite
+/* Use this only for DEBUG, because this changes the
+ * buffer contents!
+ * Note: TOKEN_NUMBER stores its own string in a static
+ * buffer, invoking this function second time could overwrite
  * the static buffer. */
-ASHE_PUBLIC const char *Token_tostr(Token *token)
+ASHE_PUBLIC const char *Token_debug(Token *token)
 {
 	switch (token->type) {
 	case TK_AND_AND:
@@ -213,11 +216,14 @@ ASHE_PUBLIC const char *Token_tostr(Token *token)
 	case TK_EOL:
 		return tokenstr[token->type];
 	case TK_WORD:
-	case TK_KVPAIR:
+	case TK_KVPAIR: {
+		unescape(&token->u.string, 0, token->u.string.len);
 		return token->u.string.data;
+	}
 	case TK_NUMBER:
 		return num2str(token->u.number);
 	default:
+		/* UNREACHED */
 		ashe_assertf(0, "unreachable");
 		return NULL;
 	}
@@ -236,12 +242,14 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 	Tokentype type;
 
 	skipws(lexer);
-	if ((c = advance(lexer)) == '\0')
+	if ((c = peek(lexer, 0)) == '\0') {
+		advance(lexer);
 		return Token_new(TK_EOL);
+	}
 
 	switch (c) {
 	case '<': {
-		switch (peek(lexer, 0)) {
+		switch (peek(lexer, 1)) {
 		case '&':
 			advance(lexer);
 			type = TK_LESS_AND;
@@ -257,7 +265,7 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		break;
 	}
 	case '>': {
-		switch (peek(lexer, 0)) {
+		switch (peek(lexer, 1)) {
 		case '>':
 			advance(lexer);
 			type = TK_GREATER_GREATER;
@@ -274,7 +282,7 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		break;
 	}
 	case '|': {
-		switch (peek(lexer, 0)) {
+		switch (peek(lexer, 1)) {
 		case '|':
 			advance(lexer);
 			type = TK_PIPE_PIPE;
@@ -290,17 +298,18 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		break;
 	}
 	case '&': {
-		switch (peek(lexer, 0)) {
+		switch (peek(lexer, 1)) {
 		case '&':
 			advance(lexer);
 			type = TK_AND_AND;
 			break;
 		case '>':
-			advance(lexer);
-			if (peek(lexer, 0) == '>') {
+			if (peek(lexer, 2) == '>') {
+				advance(lexer);
 				advance(lexer);
 				type = TK_AND_GREATER_GREATER;
 			} else {
+				advance(lexer);
 				type = TK_AND_GREATER;
 			}
 			break;
@@ -311,7 +320,7 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		break;
 	}
 	case '-':
-		if (!isspace(peek(lexer, 0)))
+		if (!isspace(peek(lexer, 1)))
 			return Token_string(lexer);
 		type = TK_MINUS;
 		break;
@@ -328,5 +337,6 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		return Token_string(lexer);
 	}
 
+	advance(lexer);
 	return Token_new(type);
 }

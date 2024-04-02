@@ -6,8 +6,9 @@
 typedef void (*CleanupFn)(void);
 
 void *arealloc(void *ptr, memmax size);
-#define afree(ptr) arealloc(ptr, 0)
 #define amalloc(size) arealloc(NULL, size)
+void *acalloc(memmax elem, memmax size);
+void afree(void *ptr);
 
 void panic(const char *errmsg, ...);
 void cleanup_all(void);

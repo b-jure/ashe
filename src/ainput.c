@@ -49,8 +49,7 @@
 #define IMPLEMENTED(c) (c != ESCAPE)
 
 /* miscellaneous defs */
-#define modlen(x, y)  ((((x)-1) % (y)) + 1)
-#define WHILE_READING while (process_key())
+#define modlen(x, y) ((((x)-1) % (y)) + 1)
 
 /* draw buffer */
 #define dbf_draw_lit(strlit) write_or_panic(strlit, sizeof(strlit) - 1)
@@ -113,12 +112,12 @@ enum termkey {
 ASHE_PRIVATE inline void write_or_panic(const char *ptr, memmax n)
 {
 	if (unlikely(write(STDERR_FILENO, ptr, n) < 0)) {
-		print_errno();
+		ashe_perrno();
 		panic(NULL);
 	}
 	fflush(stderr);
 	if (unlikely(ferror(stderr))) {
-		print_errno();
+		ashe_perrno();
 		panic(NULL);
 	}
 }
@@ -129,7 +128,7 @@ ASHE_PRIVATE inline void dbf_push_unum(memmax n)
 	int32 chars;
 
 	if (unlikely((chars = snprintf(temp, UINT_DIGITS, "%zu", n)) < 0)) {
-		print_errno();
+		ashe_perrno();
 		panic(NULL);
 	}
 	Buffer_push_str(&DBF, temp, chars);
@@ -185,7 +184,7 @@ ASHE_PUBLIC int32 get_cursor_pos(uint32 *row, uint32 *col)
 		buf[i++] = c;
 	}
 	if (nread == -1 || sscanf(buf, "\033[%u;%u", &srow, &scol) != 2) {
-		print_errno();
+		ashe_perrno();
 		return -1;
 	}
 	if (row)
@@ -207,11 +206,10 @@ ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 	rawterm->c_cc[VTIME] = 0;
 }
 
-ASHE_PUBLIC void TerminalInput_init(TerminalInput *tinput)
+ASHE_PUBLIC void TerminalInput_init(void)
 {
-	unused(tinput);
 	Buffer_init_cap(&IBF, 8);
-	Buffer_init_cap(&IBF, 8);
+	Buffer_init_cap(&DBF, 8);
 	ArrayLine_init(&LINES);
 	ArrayLine_push(&LINES, (Line){ .len = 0, .start = IBF.data });
 	IBFIDX = 0;
@@ -219,28 +217,22 @@ ASHE_PUBLIC void TerminalInput_init(TerminalInput *tinput)
 	ROW = 0;
 }
 
-ASHE_PUBLIC void TerminalInput_free(TerminalInput *tinput)
+ASHE_PUBLIC void TerminalInput_free(void)
 {
-	unused(tinput);
 	Buffer_free(&IBF, NULL);
 	Buffer_free(&DBF, NULL);
 	ArrayLine_free(&LINES, NULL);
 }
 
-ASHE_PUBLIC void Terminal_init(Terminal *term)
+ASHE_PUBLIC void Terminal_init(void)
 {
-	TerminalInput_init(&term->tm_input);
-	init_rawterm(&term->tm_rawtermios);
-	init_dflterm(&term->tm_dfltermios);
-	get_winsize_or_panic(&term->tm_rows, &term->tm_columns);
+	TerminalInput_init();
+	init_rawterm(&TM.tm_rawtermios);
+	init_dflterm(&TM.tm_dfltermios);
+	get_winsize_or_panic(&TM.tm_rows, &TM.tm_columns);
 	/* tm_col - gets set when reading and drawing */
 	/* tm_promptlen - gets set in 'print_prompt()' */
-	term->tm_reading = 0;
-}
-
-ASHE_PUBLIC void Terminal_free(Terminal *term)
-{
-	TerminalInput_free(&term->tm_input);
+	TM.tm_reading = 0;
 }
 
 ASHE_PUBLIC ubyte ashe_cursor_up(void)
@@ -551,6 +543,7 @@ ASHE_PUBLIC void ashe_redraw(void)
 	col = COL + extra;
 	len = LINE.len + extra;
 	up += ((len - 1) / TCOLMAX) - (col / TCOLMAX);
+	TCOL = modlen(col + 1, TCOLMAX);
 	dbf_pushlit(csi_cursor_hide);
 	dbf_push_len(IBF.data, IBF.len);
 	if (up > 0)
@@ -558,6 +551,11 @@ ASHE_PUBLIC void ashe_redraw(void)
 	dbf_push_movecol(TCOL);
 	dbf_pushlit(csi_cursor_show);
 	dbf_flush();
+}
+
+ASHE_PUBLIC void ashe_clear_screen_raw(void)
+{
+	dbf_draw_lit(csi_cursor_home csi_clear_all);
 }
 
 ASHE_PUBLIC void ashe_clear_screen(void)
@@ -583,9 +581,11 @@ ASHE_PRIVATE enum termkey read_key(void)
 
 	ashe_mask_signals(SIG_UNBLOCK);
 	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-		if (nread == -1 && (errno != EINTR && !ashe.sh_flags.interrupt))
+		if (unlikely(nread == -1 && (errno != EINTR && !ashe.sh_int))) {
+			ashe_mask_signals(SIG_BLOCK);
 			panic("failed reading terminal input.");
-		ashe.sh_flags.interrupt = 0;
+		}
+		ashe.sh_int = 0;
 	}
 	ashe_mask_signals(SIG_BLOCK);
 
@@ -689,7 +689,8 @@ ASHE_PRIVATE ubyte process_key(void)
 		case CTRL_KEY('i'):
 			break;
 		default:
-			ashe_insert(c);
+			if (isgraph(c) || isspace(c))
+				ashe_insert(c);
 			break;
 		}
 	}
@@ -705,10 +706,12 @@ ASHE_PRIVATE ubyte process_key(void)
 /* Read input from STDIN_FILENO. */
 ASHE_PUBLIC void TerminalInput_read(void)
 {
-	Terminal *term = &ashe.sh_term;
-	term->tm_reading = 1;
-	set_terminal_mode(&term->tm_rawtermios);
-	get_winsize_or_panic(&term->tm_rows, &term->tm_columns);
+	ashe_assert(IBF.data != NULL);
+	ashe_assert(DBF.data != NULL);
+	ashe_mask_signals(SIG_BLOCK);
+	TM.tm_reading = 1;
+	set_terminal_mode(&TM.tm_rawtermios);
+	get_winsize_or_panic(&TM.tm_rows, &TM.tm_columns);
 	get_cursor_pos(NULL, &TCOL);
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
@@ -716,12 +719,12 @@ ASHE_PUBLIC void TerminalInput_read(void)
 #ifdef ASHE_DBG_LINES
 	debug_lines();
 #endif
-	WHILE_READING;
+	while (process_key())
+		;
 	Buffer_push(&IBF, '\0');
 	ashe_cursor_end();
 	fprintf(stderr, "\r\n");
 	fflush(stderr);
-	term->tm_reading = 0;
-	set_terminal_mode(&term->tm_dfltermios);
-	ashe_mask_signals(SIG_UNBLOCK);
+	TM.tm_reading = 0;
+	set_terminal_mode(&TM.tm_dfltermios);
 }

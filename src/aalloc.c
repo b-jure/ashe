@@ -1,4 +1,5 @@
 #include "aalloc.h"
+#include "aconf.h"
 #include "ajobcntl.h"
 #include "ashell.h"
 #include "autils.h"
@@ -18,14 +19,21 @@ ASHE_PUBLIC void cleanup_fork(void)
 	Shell_free(&ashe);
 }
 
+ASHE_PRIVATE void vprintf_panic(const char *errmsg, va_list argp)
+{
+	ashe_print(ASHE_PANIC_PREFIX, stderr); /* memleak 'va_list' on panic */
+	ashe_vprintf(stderr, errmsg, argp);
+	va_end(argp);
+	ashe_print("\r\n", stderr);
+}
+
 ASHE_PUBLIC void panic(const char *errmsg, ...)
 {
 	va_list argp;
+
 	if (errmsg) {
 		va_start(argp, errmsg);
-		vfprintf(stderr, errmsg, argp);
-		fputs("\r\n", stderr);
-		va_end(argp);
+		vprintf_panic(errmsg, argp);
 	}
 	if (ashe.sh_flags.isfork) {
 		cleanup_fork();
@@ -44,8 +52,23 @@ ASHE_PUBLIC void *arealloc(void *ptr, memmax size)
 	}
 	ptr = realloc(ptr, size);
 	if (unlikely(ptr == NULL)) {
-		print_errno();
+		ashe_perrno();
 		panic(NULL);
 	}
 	return ptr;
+}
+
+ASHE_PUBLIC void *acalloc(memmax elem, memmax size)
+{
+	void *ptr;
+
+	ptr = amalloc(elem * size);
+	memset(ptr, 0, elem * size);
+	return ptr;
+}
+
+/* wrapper */
+ASHE_PUBLIC void afree(void *ptr)
+{
+	arealloc(ptr, 0);
 }

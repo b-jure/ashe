@@ -6,6 +6,7 @@
 #include "ainput.h"
 #include "ajobcntl.h"
 
+#include <signal.h>
 #include <setjmp.h>
 
 typedef struct {
@@ -25,10 +26,9 @@ typedef struct {
 } Settings; /* shell settings */
 
 typedef struct {
-	ubyte exit : 1; /* set if last command was 'exit' */
-	ubyte interrupt : 1; /* set if we got interrupted */
-	ubyte isfork : 1; /* set if this is forked shell process */
-	ubyte interactive : 1; /* set if shell is running interactively */
+	volatile ubyte exit : 1; /* set if last command was 'exit' */
+	volatile ubyte isfork : 1; /* set if this is forked shell process */
+	volatile ubyte interactive : 1; /* set if shell is interactive */
 } Flags;
 
 typedef struct {
@@ -41,12 +41,14 @@ typedef struct {
 	ArrayConditional sh_conds;
 	AsheJmpBuf sh_buf;
 	Settings sh_settings;
+	volatile sig_atomic_t sh_int; /* set if we got interrupted */
 	Flags sh_flags;
 } Shell;
 
 extern Shell ashe; /* global */
 
 void Shell_init(Shell *sh);
+void wafree_charp(void *ptr);
 void Shell_free(Shell *sh);
 
 #endif

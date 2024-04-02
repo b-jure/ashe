@@ -8,33 +8,9 @@
 #include <stdint.h>
 #include <unistd.h>
 
-/* ------ integer typedefs ------ */
-typedef int8_t byte;
-typedef uint8_t ubyte;
-typedef int16_t int16;
-typedef uint16_t uint16;
-typedef int32_t int32;
-typedef uint32_t uint32;
-typedef int64_t int64;
-typedef uint64_t uint64;
-
-typedef size_t memmax;
-typedef ssize_t ssize;
-
-typedef pid_t pid;
-typedef void (*sighandler)(int);
-/* -------------------------------- */
-
-/* Connection type for jobs and pipelines */
-typedef enum {
-	CON_AND = 2,
-	CON_OR = 4,
-	CON_NONE = 8,
-} Connection;
-
 /* Environment variable valid name characters (subset of PCS) */
 #define ENV_VAR_CHARS \
-	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM" PCS_EXTRA
 
 /* Miscellaneous macros */
 #define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -43,10 +19,6 @@ typedef enum {
 #define UINT_DIGITS   20
 #define INT_DIGITS    10
 /* -------------------------------- */
-
-/* Function visibility */
-#define ASHE_PRIVATE static
-#define ASHE_PUBLIC  extern
 
 /* Compiler intrinsics */
 #if defined(__GNUC__)
@@ -71,5 +43,37 @@ typedef enum {
 #define MIN(a, b)      ((a) > (b) ? (b) : (a))
 #endif // __GNUC__
 /* -------------------------------- */
+
+#define ASHE_PRIVATE static
+#define ASHE_PUBLIC  extern
+
+#define ASHE_VAR_STATUS	  "?"
+#define ASHE_VAR_PID	  "$"
+#define ASHE_VAR_STATUS_C '?'
+#define ASHE_VAR_PID_C	  '$'
+
+/* ------ integer typedefs ------ */
+typedef int8_t byte;
+typedef uint8_t ubyte;
+typedef int16_t int16;
+typedef uint16_t uint16;
+typedef int32_t int32;
+typedef uint32_t uint32;
+typedef int64_t int64;
+typedef uint64_t uint64;
+
+typedef size_t memmax;
+typedef ssize_t ssize;
+
+typedef pid_t pid;
+typedef void (*sighandler)(int);
+/* -------------------------------- */
+
+/* Connection type for jobs and pipelines */
+typedef enum {
+	CON_AND = 2,
+	CON_OR = 4,
+	CON_NONE = 8,
+} Connection;
 
 #endif

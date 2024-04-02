@@ -22,6 +22,6 @@ typedef struct {
 
 void Lexer_init(Lexer *lexer, const char *start);
 Token Lexer_next(Lexer *lexer);
-const char *Token_tostr(Token *token);
+const char *Token_debug(Token *token);
 
 #endif

@@ -7,6 +7,7 @@
 
 #include <termios.h>
 
+#define TM      ashe.sh_term
 #define TI	ashe.sh_term.tm_input
 #define IBF	TI.in_ibf
 #define DBF	TI.in_dbf
@@ -19,8 +20,7 @@
 #define TCOLMAX ashe.sh_term.tm_columns
 #define PLEN	ashe.sh_term.tm_promptlen
 
-#define TerminalInput_clear(tinput) \
-	(TerminalInput_free(tinput), TerminalInput_init(tinput))
+#define TerminalInput_clear() (TerminalInput_free(), TerminalInput_init())
 
 #define get_winsize_or_panic(row, col)                               \
 	do {                                                         \
@@ -46,12 +46,11 @@ typedef struct {
 	ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
 	Cursor in_cursor; /* terminal cursor */
 	memmax in_ibfidx; /* input buffer index */
-	ubyte in_dq; /* TODO: Implement */
 } TerminalInput;
 
-void TerminalInput_init(TerminalInput *tinput);
+void TerminalInput_init(void);
 void TerminalInput_read(void);
-void TerminalInput_free(TerminalInput *tinput);
+void TerminalInput_free(void);
 
 typedef struct {
 	TerminalInput tm_input;
@@ -64,8 +63,8 @@ typedef struct {
 	ubyte tm_reading; /* flag indicating if we are reading input */
 } Terminal;
 
-void Terminal_init(Terminal *term);
-void Terminal_free(Terminal *term);
+void Terminal_init(void);
+#define Terminal_free() TerminalInput_free()
 
 /* public only for signal handlers (SIGCHLD and SIGIWNCH) */
 int32 get_window_size(uint32 *height, uint32 *width);
@@ -77,6 +76,7 @@ ubyte ashe_remove(void);
 ubyte ashe_cr(void);
 void ashe_redraw(void);
 void ashe_clear_screen(void);
+void ashe_clear_screen_raw(void);
 ubyte ashe_cursor_left(void);
 ubyte ashe_cursor_right(void);
 ubyte ashe_cursor_down(void);

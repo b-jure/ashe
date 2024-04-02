@@ -32,16 +32,9 @@
 
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */
-#define ASHE_INFO_PREFIX "[ashe ~ info]: "
-#define ASHE_ERR_PREFIX	 "[ashe ~ error]: "
-
-/* ---- Special environment variables ---- */
-/* Note: you really shouldn't change these, if
- * they are regular alphanumeric values then you
- * will be able to overwrite them causing all sorts
- * of troubles for yourself. */
-#define ASHE_VAR_STATUS "?"
-#define ASHE_VAR_PID	"$"
+#define ASHE_PANIC_PREFIX "[ashe ~ panic]: "
+#define ASHE_INFO_PREFIX  "[ashe ~ info]: "
+#define ASHE_ERR_PREFIX	  "[ashe ~ error]: "
 
 /* ---- Reserved file descriptors ----
  * These are file descriptors ashe uses internally,

@@ -14,7 +14,7 @@
 /* global shell */
 Shell ashe = { 0 };
 
-static int32 init_vars(void)
+static int32 init_ashe_vars(void)
 {
 	char buffer[INT_DIGITS + 1];
 
@@ -43,15 +43,16 @@ ASHE_PUBLIC void Shell_init(Shell *sh)
 #endif
 	JobControl_init(&sh->sh_jobcntl);
 	ArrayCharptr_init(&sh->sh_buffers);
+	ArrayConditional_init(&sh->sh_conds);
 	Buffer_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));
 	Buffer_init_cap(&sh->sh_welcome, sizeof(ASHE_WELCOME));
 	memset(&sh->sh_settings, 0, sizeof(Settings));
 	memset(&sh->sh_flags, 0, sizeof(Flags));
-	init_vars();
+	init_ashe_vars();
 get_terminal:
 	sh->sh_flags.interactive = isatty(STDIN_FILENO);
 	if (sh->sh_flags.interactive) {
-		Terminal_init(&sh->sh_term);
+		Terminal_init();
 		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp()))
 			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
 				goto error;
@@ -68,21 +69,20 @@ get_terminal:
 	}
 	return;
 error:
-	print_errno();
+	ashe_perrno();
 	panic(NULL);
 }
 
-/* wrapped afree */
-void wafree(void *ptr)
+ASHE_PUBLIC void wafree_charp(void *ptr)
 {
-	afree(ptr);
+	afree(*(char **)ptr);
 }
 
 ASHE_PUBLIC void Shell_free(Shell *sh)
 {
 	JobControl_free(&sh->sh_jobcntl);
-	Terminal_free(&sh->sh_term);
-	ArrayCharptr_free(&sh->sh_buffers, wafree);
+	Terminal_free();
+	ArrayCharptr_free(&sh->sh_buffers, wafree_charp);
 	Buffer_free(&sh->sh_prompt, NULL);
 	Buffer_free(&sh->sh_welcome, NULL);
 	ArrayConditional_free(&sh->sh_conds, (FreeFn)Conditional_free);

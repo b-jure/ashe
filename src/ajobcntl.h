@@ -10,8 +10,8 @@
 typedef struct {
 	pid pid; /* process ID */
 	int32 status; /* exit status */
-	ubyte stopped; /* flag indicating if process is stopped */
-	ubyte completed; /* flag indicating if process is finished executing */
+	ubyte stopped : 1; /* flag indicating if process is stopped */
+	ubyte completed : 1; /* flag indicating if process is finished executing */
 } Process;
 
 ARRAY_NEW(ArrayProcess, Process)
@@ -23,9 +23,9 @@ typedef struct {
 	ArrayProcess processes; /* processes belonging to the job */
 	memmax id; /* job id, ordered (1,2,3...) */
 	pid pgid; /* process group ID */
-	ubyte notified; /* @? */
-	ubyte foreground; /* set if job is running in foreground */
 	const char *input; /* input from terminal (debug) */
+	ubyte notified : 1; /* set if job state changed and it notified the shell */
+	ubyte foreground : 1; /* set if job is running in foreground */
 } Job;
 
 ARRAY_NEW(ArrayJob, Job)
@@ -36,7 +36,7 @@ void Job_add_process(Job *job, Process process);
 ubyte Job_is_stopped(Job *job);
 ubyte Job_is_completed(Job *job);
 void Job_mark_as_background(Job *job, ubyte cont);
-int32 Job_move_to_foreground(Job *job, ubyte cont);
+int32 Job_move_to_foreground(Job *job, ubyte cont, ubyte *stop);
 void Job_continue(Job *job, ubyte isfg);
 void Job_free(Job *job);
 
@@ -51,7 +51,7 @@ void JobControl_init(JobControl *jobcntl);
 memmax JobControl_jobs(JobControl *jobcntl);
 Job *JobControl_get_job_at(JobControl *jobcntl, uint32 i);
 void JobControl_add_job(JobControl *jobcntl, Job *job);
-ubyte JobControl_remove_job(JobControl *jobcntl, Job *job);
+ubyte JobControl_remove_job(JobControl *jobcntl, Job *job, Job *out);
 void JobControl_update_and_notify(JobControl *jobcntl);
 
 Job *JobControl_get_job_with_id(JobControl *jobcntl, memmax id);

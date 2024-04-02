@@ -44,7 +44,7 @@ ASHE_PUBLIC void debug_cursor(void)
 	return;
 error:
 	fclose(fp);
-	print_errno();
+	ashe_perrno();
 	panic("panic in debug_cursor");
 }
 
@@ -112,7 +112,7 @@ error:
 	fclose(fp);
 fclose_error:
 	Buffer_free(&buffer, NULL);
-	print_errno();
+	ashe_perrno();
 	panic("panic in debug_lines()");
 }
 
@@ -129,7 +129,7 @@ ASHE_PUBLIC void remove_logfiles(void)
 		     strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0) &&
 		    entry->d_type == DT_REG) {
 			if (unlink(entry->d_name) < 0)
-				print_errno(); /* still try unlink other logfiles */
+				ashe_perrno(); /* still try unlink other logfiles */
 		}
 	}
 	if (errno != 0)
@@ -139,7 +139,7 @@ ASHE_PUBLIC void remove_logfiles(void)
 	return;
 error:
 	closedir(root);
-	print_errno();
+	ashe_perrno();
 	panic("panic in remove_logfiles()");
 }
 
@@ -147,7 +147,7 @@ ASHE_PUBLIC void logfile_create(const char *logfile, int32 which)
 {
 	logfiles[which] = logfile;
 	if (unlikely(fopen(logfile, "w") == NULL)) {
-		print_errno();
+		ashe_perrno();
 		panic("panic in logfile_create(\"%s\", %d)", logfile, which);
 	}
 }

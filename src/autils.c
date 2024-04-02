@@ -6,49 +6,92 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 
-ASHE_PUBLIC void vprintf_error_wprefix(const char *errfmt, va_list argp)
+ASHE_PUBLIC void ashe_print(const char *msg, FILE *stream)
 {
-	fprintf(stderr, ASHE_ERR_PREFIX "");
-	vfprintf(stderr, errfmt, argp);
-	fputs("\r\n", stderr);
-	fflush(stderr);
+	fputs(msg, stream);
+	fflush(stream);
+	if (unlikely(ferror(stream)))
+		panic(NULL);
 }
 
-ASHE_PUBLIC void printf_error(const char *errfmt, ...)
+ASHE_PUBLIC void ashe_printf(FILE *stream, const char *msg, ...)
 {
 	va_list argp;
-	va_start(argp, errfmt);
-	vprintf_error_wprefix(errfmt, argp);
+	va_start(argp, msg);
+	vfprintf(stream, msg, argp);
+	fflush(stream);
+	if (unlikely(ferror(stream))) {
+		va_end(argp);
+		panic(NULL); // can't print shit...
+	}
 	va_end(argp);
 }
 
-ASHE_PUBLIC void print_errno(void)
+ASHE_PUBLIC void ashe_vprintf(FILE *stream, const char *msg, va_list argp)
 {
-	// ashe_assert(errno != 0, "invalid errno");
-	const char *errmsg = strerror(errno);
-	printf_error(errmsg); // unblock_signals() in here
+	vfprintf(stream, msg, argp);
+	fflush(stream);
+	if (unlikely(ferror(stream))) {
+		va_end(argp);
+		panic(NULL); // can't print shit...
+	}
 }
 
-ASHE_PUBLIC void vprintf_info_wprefix(const char *ifmt, va_list argp)
+ASHE_PRIVATE void ashe_vprintf_prefix(FILE *stream, const char *fmt,
+				  const char *prefix, va_list argp)
 {
-	fprintf(stderr, ASHE_INFO_PREFIX "");
-	vfprintf(stderr, ifmt, argp);
-	fputs("\r\n", stderr);
+	ashe_printf(stream, prefix); /* memleak 'va_list' on panic */
+	ashe_vprintf(stream, fmt, argp);
+	ashe_print("\r\n", stream);
+}
+
+ASHE_PUBLIC void ashe_eprintf(const char *errfmt, ...)
+{
+	va_list argp;
+
+	va_start(argp, errfmt);
+	ashe_vprintf_prefix(stderr, errfmt, ASHE_ERR_PREFIX, argp);
+	va_end(argp);
+}
+
+ASHE_PUBLIC void ashe_perrno(void)
+{
+	const char *errmsg;
+
+	if (unlikely(errno == ENOMEM)) {
+		perror(NULL);
+	} else {
+		errmsg = strerror(errno);
+		ashe_eprintf(errmsg);
+	}
 }
 
 ASHE_PUBLIC void printf_info(const char *ifmt, ...)
 {
 	va_list argp;
+
 	va_start(argp, ifmt);
-	vprintf_info_wprefix(ifmt, argp);
+	ashe_vprintf_prefix(stderr, ifmt, ASHE_INFO_PREFIX, argp);
 	va_end(argp);
+}
+
+ASHE_PUBLIC char *dupstrn(const char *str, memmax len)
+{
+	char *dup;
+
+	dup = amalloc(len);
+	memcpy(dup, str, len);
+	return dup;
 }
 
 ASHE_PUBLIC char *dupstr(const char *str)
 {
-	char *dup = NULL;
-	memmax len = strlen(str) + 1;
+	char *dup;
+	memmax len;
+
+	len = strlen(str) + 1;
 	dup = amalloc(len);
 	memcpy(dup, str, len);
 	return dup;
@@ -57,8 +100,10 @@ ASHE_PUBLIC char *dupstr(const char *str)
 ASHE_PUBLIC memmax len_without_seq(const char *ptr)
 {
 	memmax len = 0;
+	memmax i;
 	ubyte escape_seq = 0;
-	for (memmax i = 0; ptr[i]; i++) {
+
+	for (i = 0; ptr[i]; i++) {
 		if (escape_seq) {
 			if (ptr[i] == 'm')
 				escape_seq = 0;
@@ -71,28 +116,49 @@ ASHE_PUBLIC memmax len_without_seq(const char *ptr)
 	return len;
 }
 
+ASHE_PRIVATE memmax is_ashe_var(const char *ptr)
+{
+	memmax offset = 0;
+
+	switch (ptr[0]) {
+	case ASHE_VAR_STATUS_C:
+	case ASHE_VAR_PID_C:
+		if (isspace(ptr[1]) || ptr[1] == '\0')
+			offset = 1;
+		break;
+	default:
+		break;
+	}
+	return offset;
+}
+
 ASHE_PUBLIC void expand_vars(Buffer *buffer)
 {
-	char *ptr = buffer->data;
 	const char *value = NULL;
+	char *ptr = buffer->data;
+	char *end;
+	memmax offset;
+	ssize diff;
+	int32 klen, vlen;
+	char cached;
 
 	for (; ((ptr = strchr(ptr, '$')) != NULL); ptr++) {
 		if (is_escaped(ptr, ptr - buffer->data))
 			continue;
-		memmax offset = strspn(++ptr, ENV_VAR_CHARS);
-		if (offset == 0)
+		offset = strspn(++ptr, ENV_VAR_CHARS);
+		if (offset == 0 && (offset = is_ashe_var(ptr)) == 0)
 			continue;
-		char *end = ptr + offset;
-		char cached = *end;
+		end = ptr + offset;
+		cached = *end;
 		*end = '\0';
 		value = getenv(ptr);
 		*end = cached;
-		--ptr; // go back to '$'
-		int32 klen = offset + 1; // key chars + '$'
+		--ptr; /* go back to '$' */
+		klen = offset + 1; /* key chars + '$' */
 
-		if (value != NULL) { // found value ?
-			int32 vlen = strlen(value);
-			ssize diff = vlen - klen;
+		if (value != NULL) { /* found value ? */
+			vlen = strlen(value);
+			diff = vlen - klen;
 
 			if (diff > 0) {
 				if (likely(buffer->len + diff < ARG_MAX)) {
@@ -109,7 +175,7 @@ ASHE_PUBLIC void expand_vars(Buffer *buffer)
 			}
 
 			memcpy(ptr, value, vlen);
-		} else { // no variable found, remove the whole key together with '$'
+		} else { /* no variable found, remove the whole key together with '$' */
 l_remove:
 			memcpy(ptr, end, klen);
 			buffer->len -= klen;
@@ -120,6 +186,7 @@ l_remove:
 ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 {
 	ubyte dq = 0;
+
 	while (len--)
 		dq ^= (*str++ == '"');
 	return dq;
@@ -128,11 +195,12 @@ ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
 {
 	char *at = s + curpos;
+
 	return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') ||
 		(curpos == 1 && *(at - 1) == '\\'));
 }
 
-/* Unescape tabs, newlines, etc.. for prettier output in debug functions. */
+/* Unescape tabs, newlines, etc.. for more readable output in debug functions. */
 ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
 {
 	static const int32 unescape[UINT8_MAX] = {
@@ -160,6 +228,7 @@ ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
 	}
 }
 
+/* escape bytes that are outside of '"' */
 ASHE_PUBLIC void escape(Buffer *buffer)
 {
 	static const int32 escape[UINT8_MAX] = {
@@ -169,12 +238,16 @@ ASHE_PUBLIC void escape(Buffer *buffer)
 	};
 	char *oldp = buffer->data;
 	char *newp = oldp;
+	ubyte dq = 0;
+	int32 c;
 
 	while (*oldp) {
-		int32 c = *(ubyte *)oldp++;
-		if (c == '"')
+		c = *(ubyte *)oldp++;
+		if (c == '"') {
+			dq ^= 1;
 			continue;
-		if (c == '\\') {
+		}
+		if (c == '\\' && !dq) {
 			c = *(ubyte *)oldp;
 			if (c == '\0') {
 				break;

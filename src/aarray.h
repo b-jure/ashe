@@ -153,11 +153,15 @@ typedef void (*FreeFn)(void *value);
                                                                                            \
 	static inline void _ARRAY_METHOD_VARARG(name, free, FreeFn fn)                     \
 	{                                                                                  \
-		if (fn)                                                                    \
-			for (uint32 i = 0; i < self->len; i++)                             \
-				fn((void *)&self->data[i]);                                \
-		if (self->data)                                                            \
+		uint32 i;                                                                  \
+                                                                                           \
+		if (fn != NULL)                                                            \
+			for (i = 0; i < self->len; i++)                                    \
+				fn((void*)&self->data[i]);                                        \
+		if (self->cap > 0) {                                                       \
+			ashe_assert(self->data != NULL);                                   \
 			afree(self->data);                                                 \
+		}                                                                          \
 	}                                                                                  \
                                                                                            \
 	static inline void _ARRAY_METHOD_VARARG(name, push_str,                            \

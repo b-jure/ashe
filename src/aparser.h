@@ -55,6 +55,6 @@ typedef struct {
 ARRAY_NEW(ArrayConditional, Conditional)
 
 void Conditional_free(Conditional *cond);
-int32 parse(const char *cstr);
+int32 ashe_parse(const char *cstr);
 
 #endif

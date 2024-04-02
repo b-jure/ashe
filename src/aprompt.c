@@ -38,7 +38,7 @@ ASHE_PUBLIC const char *ashe_user(void)
 	return ashe_plhbuf;
 error:
 	if (errno)
-		print_errno();
+		ashe_perrno();
 	return NULL;
 }
 
@@ -48,7 +48,7 @@ ASHE_PUBLIC const char *ashe_jobc(void)
 	const char *fmt = (jobc ? "%u" : "");
 
 	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, fmt, jobc) < 0)) {
-		print_errno();
+		ashe_perrno();
 		return NULL;
 	}
 	return ashe_plhbuf;
@@ -67,14 +67,14 @@ ASHE_PUBLIC const char *ashe_dir(void)
 	}
 	return ashe_plhbuf;
 error:
-	print_errno();
+	ashe_perrno();
 	return NULL;
 }
 
 ASHE_PUBLIC const char *ashe_adir(void)
 {
 	if (unlikely(!getcwd(ashe_plhbuf, BUFSIZ))) {
-		print_errno();
+		ashe_perrno();
 		return NULL;
 	}
 	return ashe_plhbuf;
@@ -93,7 +93,7 @@ ASHE_PUBLIC const char *ashe_time(void)
 
 	return ashe_plhbuf;
 error:
-	print_errno();
+	ashe_perrno();
 	return NULL;
 }
 
@@ -111,7 +111,7 @@ ASHE_PUBLIC const char *ashe_date(void)
 
 	return ashe_plhbuf;
 error:
-	print_errno();
+	ashe_perrno();
 	return NULL;
 }
 
@@ -122,7 +122,7 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 	if (unlikely(sysinfo(&si) < 0 ||
 		     snprintf(ashe_plhbuf, UINT_DIGITS, "%ldh %ldm",
 			      (si.uptime / 3600), (si.uptime / 60) % 60) < 0)) {
-		print_errno();
+		ashe_perrno();
 		return NULL;
 	}
 	return ashe_plhbuf;
@@ -171,23 +171,13 @@ ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
 	Buffer_push(out, '\0');
 }
 
-ASHE_PRIVATE inline void print_parsed_string(const char *str)
-{
-	fputs(str, stderr);
-	fflush(stderr);
-	if (unlikely(ferror(stderr))) {
-		print_errno();
-		panic(NULL);
-	}
-}
-
 ASHE_PUBLIC void userstr_print(const char *str, memmax len)
 {
 	Buffer buffer;
 
 	Buffer_init_cap(&buffer, len);
 	parsestring(&buffer, str);
-	print_parsed_string(buffer.data);
+	ashe_print(buffer.data, stderr);
 	Buffer_free(&buffer, NULL);
 }
 
@@ -195,7 +185,7 @@ ASHE_PUBLIC void welcome_print(void)
 {
 	ashe.sh_welcome.len = 0;
 	parsestring(&ashe.sh_welcome, ASHE_WELCOME);
-	print_parsed_string(ashe.sh_welcome.data);
+	ashe_print(ashe.sh_welcome.data, stderr);
 }
 
 ASHE_PUBLIC void prompt_print(void)
@@ -203,5 +193,5 @@ ASHE_PUBLIC void prompt_print(void)
 	ashe.sh_prompt.len = 0;
 	parsestring(&ashe.sh_prompt, ASHE_PROMPT);
 	ashe.sh_term.tm_promptlen = ashe.sh_prompt.len - 1;
-	print_parsed_string(ashe.sh_prompt.data);
+	ashe_print(ashe.sh_prompt.data, stderr);
 }

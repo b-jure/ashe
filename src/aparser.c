@@ -27,7 +27,7 @@ static const ubyte is_n_redirection[] = {
 #define BM(type) (1 << (type))
 
 /* Parsing errors */
-#define ERR_EXPECT 0
+#define ERR_EXPECT   0
 #define ERR_CMDSUBST 1
 
 static const char *perrors[] = {
@@ -40,6 +40,8 @@ ASHE_PRIVATE void next_token(Lexer *lexer)
 {
 	lexer->prev = lexer->curr;
 	lexer->curr = Lexer_next(lexer);
+	printf("Previous token: '%s'\r\n", Token_debug(&lexer->prev));
+	printf("Current token: '%s'\r\n", Token_debug(&lexer->curr));
 }
 
 /* =========== AST =========== */
@@ -66,7 +68,7 @@ ASHE_PRIVATE void Command_free(Command *cmd)
 	Command_init(cmd);
 }
 
-ASHE_PRIVATE void Pipeline_init(Pipeline *pip)
+ASHE_PRIVATE inline void Pipeline_init(Pipeline *pip)
 {
 	ArrayCommand_init(&pip->commands);
 	pip->connection = CON_NONE;
@@ -78,7 +80,7 @@ ASHE_PRIVATE void Pipeline_free(Pipeline *pip)
 	Pipeline_init(pip);
 }
 
-ASHE_PRIVATE void Conditional_init(Conditional *cond)
+ASHE_PRIVATE inline void Conditional_init(Conditional *cond)
 {
 	ArrayPipeline_init(&cond->pipelines);
 	cond->is_background = 0;
@@ -99,17 +101,18 @@ ASHE_PRIVATE void pipeline(Lexer *lexer, ArrayPipeline *arpip, Pipeline *pip,
 ASHE_PRIVATE inline void print_input_and_invalid_token(Lexer *lexer, Token *tok)
 {
 	int32 startlen = tok->start - lexer->start;
-	printf_error("%.*s'%s'", startlen, lexer->start, tok->start);
+
+	ashe_eprintf("%.*s'%s'", startlen, lexer->start, tok->start);
 }
 
 ASHE_PRIVATE inline void expect(Lexer *lexer, ubyte next, memmax bitmask,
-				 const char *type)
+				const char *type)
 {
 	if (next)
 		next_token(lexer);
 	if (BM(lexer->curr.type) & bitmask)
 		return;
-	printf_error(perrors[ERR_EXPECT], type, Token_tostr(&lexer->curr));
+	ashe_eprintf(perrors[ERR_EXPECT], type, Token_debug(&lexer->curr));
 	print_input_and_invalid_token(lexer, &lexer->curr);
 	jump_out(-1);
 }
@@ -144,7 +147,9 @@ ASHE_PRIVATE void redirection(Lexer *lexer, Command *cmd)
 		fh.append = 1;
 		/* FALLTHRU */
 	case TK_AND_GREATER:
-		ashe_assertf(!have_n, "parser fatal error, can't have number before '&>'");
+		ashe_assertf(
+			!have_n,
+			"parser fatal error, can't have number before '&>'");
 		fh.op = OP_REDIRECT_ERROUT;
 		// fd is irrelevant, won't get checked at runtime
 		goto l_redirect_fin;
@@ -198,10 +203,13 @@ l_dup_fin:
 
 ASHE_PRIVATE int32 number(Lexer *lexer, Command *cmd)
 {
+	Tokentype type;
+	char *number_string;
+
+	number_string = *ArrayCharptr_last(&ashe.sh_buffers);
 	next_token(lexer);
-	Tokentype type = lexer->curr.type;
+	type = lexer->curr.type;
 	if (lexer->ws || !isnredirect(type)) {
-		char *number_string = *ArrayCharptr_last(&ashe.sh_buffers);
 		ArrayCharptr_push(&cmd->argv, number_string);
 		return 0; // not a file descriptor (n)
 	}
@@ -212,21 +220,22 @@ ASHE_PRIVATE int32 number(Lexer *lexer, Command *cmd)
 ASHE_PRIVATE ubyte get_first_command(Lexer *lexer, Command *cmd)
 {
 	Tokentype type;
+	char *numstr;
 
 	for (;;) {
 		next_token(lexer);
 		type = lexer->curr.type;
+
 		switch (type) {
-		case TK_NUMBER:;
-			char *numstr = CSTR(lexer);
+		case TK_NUMBER:
+			numstr = CSTR(lexer);
 			next_token(lexer);
 			if (lexer->ws || !isnredirect(type)) {
 				ArrayCharptr_push(&cmd->argv, numstr);
 				return 1;
 			}
-			const char *adjacent = Token_tostr(&lexer->curr);
-			printf_error("expected string, instead got '%s%s'.", numstr,
-				     adjacent);
+			ashe_eprintf("expected string, instead got '%s%s'.",
+				     numstr, Token_debug(&lexer->curr));
 			jump_out(-1);
 		case TK_WORD:
 			ArrayCharptr_push(&cmd->argv, CSTR(lexer));
@@ -237,17 +246,21 @@ ASHE_PRIVATE ubyte get_first_command(Lexer *lexer, Command *cmd)
 		case TK_EOL:
 			return 0;
 		default:
-			printf_error(perrors[ERR_EXPECT], "string",
-				     Token_tostr(&lexer->curr));
+			ashe_eprintf(perrors[ERR_EXPECT], "string",
+				     Token_debug(&lexer->curr));
 			print_input_and_invalid_token(lexer, &lexer->curr);
 			jump_out(-1);
 		}
 	}
 }
 
-ASHE_PRIVATE void command(Lexer *lexer, ArrayPipeline *arpip, Command *cmd, memmax depth)
+ASHE_PRIVATE void command(Lexer *lexer, ArrayPipeline *arpip, Command *cmd,
+			  memmax depth)
 {
+	Pipeline pip;
 	ArrayCharptr *target;
+	Tokentype prevt;
+	memmax index;
 
 	if (get_first_command(lexer, cmd))
 		goto l_switch; // we are 1 token ahead
@@ -275,29 +288,27 @@ l_switch:
 		case TK_MINUS:
 			ArrayCharptr_push(&cmd->argv, "-");
 			break;
-		case TK_LPAREN:;
-			Tokentype prevt = lexer->prev.type;
-			if (!lexer->ws && (prevt == TK_WORD || prevt == TK_NUMBER)) {
-				printf_error(perrors[ERR_CMDSUBST]);
-				print_input_and_invalid_token(lexer, &lexer->curr);
+		case TK_LPAREN:
+			prevt = lexer->prev.type;
+			if (!lexer->ws &&
+			    (prevt == TK_WORD || prevt == TK_NUMBER)) {
+				ashe_eprintf(perrors[ERR_CMDSUBST]);
+				print_input_and_invalid_token(lexer,
+							      &lexer->curr);
 				jump_out(-1);
 			}
-			Pipeline pip;
-			Pipeline_init(&pip);
-			/*
-                         * Have to insert immediately in order to be able to
+			/* Have to insert immediately in order to be able to
                          * clean it up in case of errors (jump_out), this makes
                          * the logic a bit strange and clunky.
                          * We must know the recursion depth in order to correctly
                          * insert into the array, that is what the 'depth' parameter
-                         * is for.
-                         */
-			memmax index = arpip->len - (depth + 1);
+                         * is for. */
+			Pipeline_init(&pip);
+			index = arpip->len - (depth + 1);
 			ArrayPipeline_insert(arpip, index, pip);
 			next_token(lexer);
 			pipeline(lexer, arpip, &arpip->data[index], depth + 1);
-			expect(lexer, 0, BM(TK_RPAREN),
-			       "')' (missing end of command substitution)");
+			expect(lexer, 0, BM(TK_RPAREN), "')' (cmd subst)");
 			break;
 		case TK_WORD:
 			target = &cmd->argv;
@@ -321,12 +332,13 @@ ASHE_PRIVATE void pipeline(Lexer *lexer, ArrayPipeline *arpip, Pipeline *pip,
 			   memmax depth)
 {
 	Command cmd;
+	Tokentype type;
+
 	Command_init(&cmd);
 	for (;;) {
 		ArrayCommand_push(&pip->commands, cmd);
-		Command *last = ArrayCommand_last(&pip->commands);
-		command(lexer, arpip, last, depth);
-		if (lexer->curr.type != TK_PIPE && lexer->curr.type != TK_PIPE_AND)
+		command(lexer, arpip, ArrayCommand_last(&pip->commands), depth);
+		if ((type = lexer->curr.type) != TK_PIPE && type != TK_PIPE_AND)
 			break;
 	}
 }
@@ -334,10 +346,12 @@ ASHE_PRIVATE void pipeline(Lexer *lexer, ArrayPipeline *arpip, Pipeline *pip,
 ASHE_PRIVATE inline void conditional(Lexer *lexer, Conditional *cond)
 {
 	Pipeline pip;
+	Pipeline *last;
+
 	Pipeline_init(&pip);
 	for (;;) {
 		ArrayPipeline_push(&cond->pipelines, pip);
-		Pipeline *last = ArrayPipeline_last(&cond->pipelines);
+		last = ArrayPipeline_last(&cond->pipelines);
 		pipeline(lexer, &cond->pipelines, last, 1);
 		if (lexer->curr.type == TK_AND_AND)
 			last->connection = CON_AND;
@@ -348,28 +362,28 @@ ASHE_PRIVATE inline void conditional(Lexer *lexer, Conditional *cond)
 	}
 }
 
-ASHE_PUBLIC int32 parse(const char *str)
+ASHE_PUBLIC int32 ashe_parse(const char *str)
 {
 	ArrayConditional *conds = &ashe.sh_conds;
 	AsheJmpBuf *jmpbuf = &ashe.sh_buf;
 	Lexer *lexer = &ashe.sh_lexer;
+	Tokentype type;
+	Conditional cond, *last;
+
 	Lexer_init(lexer, str);
+	ashe_assert(str != NULL);
 	jmpbuf->buf_code = 0;
 	if (setjmp(jmpbuf->buf_jmpbuf) == 0) { // didn't jump out (setter) ?
-		Tokentype type;
-		Conditional cond;
+
 		Conditional_init(&cond);
 		for (;;) {
 			ArrayConditional_push(conds, cond);
-			Conditional *last = ArrayConditional_last(conds);
+			last = ArrayConditional_last(conds);
 			conditional(lexer, last);
 			type = lexer->curr.type;
+			last->is_background = (type == TK_AND);
 			if (type != TK_SEMICOLON && type != TK_AND) {
-				if (type != TK_EOL) {
-					const char *got = Token_tostr(&lexer->curr);
-					printf_error(perrors[ERR_EXPECT], "string", got);
-					jmpbuf->buf_code = -1;
-				}
+				expect(lexer, 0, BM(TK_EOL), "string");
 				break;
 			}
 		}
