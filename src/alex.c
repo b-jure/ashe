@@ -53,16 +53,16 @@ ASHE_PRIVATE inline ubyte has_precedence(int32 c)
 	}
 }
 
-ASHE_PRIVATE inline void Token_init(struct a_token *token)
+ASHE_PRIVATE inline void a_token_init(struct a_token *token)
 {
 	memset(token, 0, sizeof(struct a_token));
 }
 
-ASHE_PUBLIC void Lexer_init(struct a_lexer *lexer, const char *start)
+ASHE_PUBLIC void a_lexer_init(struct a_lexer *lexer, const char *start)
 {
 	lexer->current = lexer->start = start;
-	Token_init(&lexer->curr);
-	Token_init(&lexer->prev);
+	a_token_init(&lexer->curr);
+	a_token_init(&lexer->prev);
 }
 
 /* Peek 'amount' without advancing. */
@@ -100,14 +100,14 @@ ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
 }
 
 /* Gets a string, expands environmental variables and unescapes it. */
-ASHE_PRIVATE struct a_token Token_string(struct a_lexer *lexer)
+ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 {
-	int32 c, code;
-	ubyte dq, esc;
 	struct a_token token = { 0 };
 	a_arr_char buffer;
-	char *ptr;
 	memmax n, klen;
+	char *ptr;
+	int32 c, code;
+	ubyte dq, esc;
 
 	a_arr_char_init(&buffer);
 	token.type = TK_WORD;
@@ -122,6 +122,7 @@ ASHE_PRIVATE struct a_token Token_string(struct a_lexer *lexer)
 		a_arr_char_push(&buffer, c);
 		advance(lexer);
 	}
+	token.end = lexer->current;
 	a_arr_char_push(&buffer, '\0');
 
 	ptr = buffer.data;
@@ -181,7 +182,7 @@ ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 	}
 }
 
-/* Auxiliary to 'Token_tostr()' */
+/* Auxiliary to 'a_token_tostr()' */
 ASHE_PRIVATE inline const char *num2str(memmax n)
 {
 	static char buffer[UINT_DIGITS + 1];
@@ -195,7 +196,7 @@ ASHE_PRIVATE inline const char *num2str(memmax n)
  * Note: TOKEN_NUMBER stores its own string in a static
  * buffer, invoking this function second time could overwrite
  * the static buffer. */
-ASHE_PUBLIC const char *Token_debug(struct a_token *token)
+ASHE_PUBLIC const char *a_token_debug(struct a_token *token)
 {
 	switch (token->type) {
 	case TK_AND_AND:
@@ -230,7 +231,7 @@ ASHE_PUBLIC const char *Token_debug(struct a_token *token)
 	}
 }
 
-ASHE_PRIVATE inline struct a_token Token_new(enum a_toktype type)
+ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type)
 {
 	struct a_token token;
 	token.type = type;
@@ -238,7 +239,7 @@ ASHE_PRIVATE inline struct a_token Token_new(enum a_toktype type)
 	return token;
 }
 
-ASHE_PUBLIC struct a_token Lexer_next(struct a_lexer *lexer)
+ASHE_PUBLIC struct a_token a_lexer_next(struct a_lexer *lexer)
 {
 	int32 c;
 	enum a_toktype type;
@@ -246,7 +247,7 @@ ASHE_PUBLIC struct a_token Lexer_next(struct a_lexer *lexer)
 	skipws(lexer);
 	if ((c = peek(lexer, 0)) == '\0') {
 		advance(lexer);
-		return Token_new(TK_EOL);
+		return a_token_new(TK_EOL);
 	}
 
 	switch (c) {
@@ -319,7 +320,7 @@ ASHE_PUBLIC struct a_token Lexer_next(struct a_lexer *lexer)
 	}
 	case '-':
 		if (!isspace(peek(lexer, 1)))
-			return Token_string(lexer);
+			return a_token_string(lexer);
 		type = TK_MINUS;
 		break;
 	case ';':
@@ -332,9 +333,9 @@ ASHE_PUBLIC struct a_token Lexer_next(struct a_lexer *lexer)
 		type = TK_RPAREN;
 		break;
 	default:
-		return Token_string(lexer);
+		return a_token_string(lexer);
 	}
 
 	advance(lexer);
-	return Token_new(type);
+	return a_token_new(type);
 }

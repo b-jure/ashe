@@ -18,8 +18,6 @@ enum a_connect {
 	ACON_NONE = 1,
 	ACON_AND = 2,
 	ACON_OR = 4,
-	ACON_BG = 8,
-	ACON_FG = 16,
 };
 
 enum a_redirect_op {
@@ -61,6 +59,8 @@ ARRAY_NEW(a_arr_cmd, struct a_cmd)
 struct a_pipeline {
 	a_arr_cmd pl_cmds; /* commands */
 	enum a_connect pl_con; /* connection type */
+	ubyte pl_bg; /* run asynchronously */
+	const char *pl_input; /* debug */
 };
 
 ARRAY_NEW(a_arr_pipeline, struct a_pipeline)
@@ -77,6 +77,6 @@ struct a_block {
 };
 
 void a_block_free(struct a_block *block);
-int32 ashe_block(const char *cstr);
+int32 a_parse_block(const char *cstr);
 
 #endif

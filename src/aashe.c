@@ -29,17 +29,17 @@ int main(int argc, char **argv)
 
 	for (;;) {
 		prompt_print();
-		TerminalInput_clear();
+		a_terminput_clear();
 		a_jobcntl_update_and_notify(jobcntl);
 		enable_async_jobcntl_updates();
-		TerminalInput_read();
+		a_terminput_read();
 		disable_async_jobcntl_updates();
 		a_jobcntl_update_and_notify(jobcntl);
 		clear_parsed_data();
 		expand_vars(&IBF); /* '$' */
-		if (IBF.len <= 1 || ashe_block(IBF.data) < 0)
+		if (IBF.len <= 1 || a_parse_block(IBF.data) < 0)
 			continue;
-		status = cmdexec(&ashe.sh_block);
+		status = a_run_block(&ashe.sh_block);
 		status = (status < 0 ? -status : status);
 		if (unlikely(snprintf(retstatus, INT_DIGITS, "%d", status) < 0))
 			goto error;

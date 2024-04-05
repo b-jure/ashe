@@ -27,7 +27,7 @@ ASHE_PRIVATE void vprintf_panic(const char *errmsg, va_list argp)
 	ashe_print("\r\n", stderr);
 }
 
-ASHE_PUBLIC void panic(const char *errmsg, ...)
+ASHE_PUBLIC a_noret panic(const char *errmsg, ...)
 {
 	va_list argp;
 

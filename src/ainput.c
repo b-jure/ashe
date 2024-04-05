@@ -194,7 +194,7 @@ ASHE_PUBLIC int32 get_cursor_pos(uint32 *row, uint32 *col)
 	return 0;
 }
 
-/* Auxiliary to 'Terminal_init()' */
+/* Auxiliary to 'a_term_init()' */
 ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 {
 	tcgetattr(STDIN_FILENO, rawterm);
@@ -206,7 +206,7 @@ ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 	rawterm->c_cc[VTIME] = 0;
 }
 
-ASHE_PUBLIC void TerminalInput_init(void)
+ASHE_PUBLIC void a_terminput_init(void)
 {
 	a_arr_char_init_cap(&IBF, 8);
 	a_arr_char_init_cap(&DBF, 8);
@@ -217,16 +217,16 @@ ASHE_PUBLIC void TerminalInput_init(void)
 	ROW = 0;
 }
 
-ASHE_PUBLIC void TerminalInput_free(void)
+ASHE_PUBLIC void a_terminput_free(void)
 {
 	a_arr_char_free(&IBF, NULL);
 	a_arr_char_free(&DBF, NULL);
 	a_arr_line_free(&LINES, NULL);
 }
 
-ASHE_PUBLIC void Terminal_init(void)
+ASHE_PUBLIC void a_term_init(void)
 {
-	TerminalInput_init();
+	a_terminput_init();
 	init_dflterm(&TM.tm_dfltermios);
 	init_rawterm(&TM.tm_rawtermios);
 	get_winsize_or_panic(&TM.tm_rows, &TM.tm_columns);
@@ -422,7 +422,7 @@ ASHE_PUBLIC ubyte ashe_insert(int32 c)
 	dbf_push_len(&IBF.data[idx], IBF.len - idx);
 	dbf_pushlit(csi_cursor_load);
 	dbf_flush();
-	if (c != '\n') /* otherwise we are in 'TerminalInput_cr()' */
+	if (c != '\n') /* otherwise we are in 'a_terminput_cr()' */
 		ashe_cursor_right();
 	return 1;
 }
@@ -688,7 +688,7 @@ ASHE_PRIVATE ubyte process_key(void)
 }
 
 /* Read input from STDIN_FILENO. */
-ASHE_PUBLIC void TerminalInput_read(void)
+ASHE_PUBLIC void a_terminput_read(void)
 {
 	ashe_assert(IBF.data != NULL);
 	ashe_assert(DBF.data != NULL);

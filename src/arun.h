@@ -4,6 +4,6 @@
 #include "acommon.h"
 #include "aparser.h"
 
-int32 cmdexec(struct a_block *block);
+int32 a_run_block(struct a_block *block);
 
 #endif

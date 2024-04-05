@@ -36,7 +36,8 @@ struct a_token {
 		a_arr_char string;
 		memmax number;
 	} u;
-	const char *start; // debug
+	const char *start; /* debug */
+	const char *end; /* debug */
 };
 
 #endif

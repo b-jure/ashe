@@ -8,10 +8,10 @@
 #include <stdio.h>
 #include <errno.h>
 
-#define fdinbounds(fd)		((fd) >= 0 && (fd) <= INT_MAX)
-#define fdisvalid(fd)		(fcntl(fd, F_GETFD) != -1 || errno != EBADFD)
-#define fdisok(fd)		(fdinbounds(fd) && fdisvalid(fd))
-#define fdisopened(fd, bitmask) ((bitmask) & fcntl(fd, F_GETFL))
+#define fd_inbounds(fd)	       ((fd) >= 0 && (fd) <= INT_MAX)
+#define fd_isvalid(fd)	       (fcntl(fd, F_GETFD) != -1 || errno != EBADFD)
+#define fd_isok(fd)	       (fd_inbounds(fd) && fd_isvalid(fd))
+#define fd_isopen(fd, bitmask) ((bitmask) & fcntl(fd, F_GETFL))
 
 /* open file for writing '>' or '>>' */
 #define ashe_wopen(file, append) \

@@ -22,6 +22,7 @@
 
 /* Compiler intrinsics */
 #if defined(__GNUC__)
+#define a_noret	       void __attribute__((noreturn))
 #define likely(expr)   __glibc_likely(expr)
 #define unlikely(expr) __glibc_unlikely(expr)
 #define MAX(a, b)                       \
@@ -37,6 +38,7 @@
 		_a > _b ? _b : _a;      \
 	})
 #else
+#define a_noret	       void
 #define likely(expr)   (expr)
 #define unlikely(expr) (expr)
 #define MAX(a, b)      ((a) > (b) ? (a) : (b))

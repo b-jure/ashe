@@ -69,7 +69,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ashe_cursor_end();
 	ashe_print("\r\n", stderr);
 	prompt_print();
-	TerminalInput_clear();
+	a_terminput_clear();
 	if (unlikely(get_cursor_pos(NULL, &TCOL)) < 0)
 		panic("couldn't get cursor position.");
 #ifdef ASHE_DBG_CURSOR

@@ -222,8 +222,10 @@ ASHE_PRIVATE int32 a_job_wait(struct a_job *job, ubyte *stop)
 	} while (!proc->stopped && !(proc->stopped = a_job_is_stopped(job)) &&
 		 !a_job_is_completed(job));
 
-	*stop = proc->stopped;
-	return a_arr_process_last(&job->processes)->status;
+	if (!(*stop = proc->stopped))
+		return a_arr_process_last(&job->processes)->status;
+	else
+		return 0;
 }
 
 /* Moves the 'job' into foreground.
@@ -299,7 +301,6 @@ ASHE_PUBLIC void a_job_continue(struct a_job *job, ubyte isfg)
 ASHE_PUBLIC void a_job_free(struct a_job *job)
 {
 	a_arr_process_free(&job->processes, NULL);
-	afree((void *)job->input);
 }
 
 /* ==== JOB-CONTROL ==== */
@@ -414,7 +415,7 @@ ASHE_PRIVATE void a_jobcntl_update(struct a_jobcntl *jobcntl)
  * SIG_BLOCK is highly unsafe and will probably break something. */
 ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 {
-	Terminal *term = &ashe.sh_term;
+	struct a_term *term = &ashe.sh_term;
 	uint32 col, row, idx;
 	memmax jobcnt, i;
 	struct a_job *job, out;

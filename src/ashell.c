@@ -51,7 +51,7 @@ ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 get_terminal:
 	sh->sh_flags.interactive = isatty(STDIN_FILENO);
 	if (sh->sh_flags.interactive) {
-		Terminal_init();
+		a_term_init();
 		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp()))
 			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
 				goto error;
@@ -80,7 +80,7 @@ ASHE_PUBLIC void wafree_charp(void *ptr)
 ASHE_PUBLIC void a_shell_free(struct a_shell *sh)
 {
 	a_jobcntl_free(&sh->sh_jobcntl);
-	Terminal_free();
+	a_term_free();
 	a_arr_ccharp_free(&sh->sh_buffers, wafree_charp);
 	a_arr_char_free(&sh->sh_prompt, NULL);
 	a_arr_char_free(&sh->sh_welcome, NULL);
