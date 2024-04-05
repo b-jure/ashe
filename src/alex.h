@@ -3,13 +3,13 @@
 
 #include "atoken.h"
 
-typedef struct {
-	Token curr;
-	Token prev;
+struct a_lexer {
+	struct a_token curr;
+	struct a_token prev;
 	ubyte ws; /* set each time whitespace is skipped */
 	const char *current;
 	const char *start; // for debug
-} Lexer;
+};
 
 /* current token number */
 #define CNM(lexer) ((lexer)->curr.u.number)
@@ -20,8 +20,8 @@ typedef struct {
 /* previous token cstring */
 #define PSTR(lexer) ((lexer)->prev.u.string.data)
 
-void Lexer_init(Lexer *lexer, const char *start);
-Token Lexer_next(Lexer *lexer);
-const char *Token_debug(Token *token);
+void a_lexer_init(struct a_lexer *lexer, const char *start);
+struct a_token a_lexer_next(struct a_lexer *lexer);
+const char *a_token_debug(struct a_token *token);
 
 #endif

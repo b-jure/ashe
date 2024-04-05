@@ -2,11 +2,8 @@
 #define ACMD_H
 
 #include "acommon.h"
+#include "aparser.h"
 
-#if !defined(APARSER_H)
-typedef struct ArrayConditional ArrayConditional;
-#endif
-
-int32 cmdexec(ArrayConditional *conds);
+int32 cmdexec(struct a_block *block);
 
 #endif

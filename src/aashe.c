@@ -10,11 +10,9 @@
 
 #define clear_parsed_data()                                        \
 	do {                                                       \
-		ArrayCharptr_free(&ashe.sh_buffers, wafree_charp); \
-		ArrayCharptr_init(&ashe.sh_buffers);               \
-		ArrayConditional_free(&ashe.sh_conds,              \
-				      (FreeFn)Conditional_free);   \
-		ArrayConditional_init(&ashe.sh_conds);             \
+		a_block_free(&ashe.sh_block);                      \
+		a_arr_ccharp_free(&ashe.sh_buffers, wafree_charp); \
+		a_arr_ccharp_init(&ashe.sh_buffers);               \
 	} while (0)
 
 /* ashe */
@@ -22,24 +20,26 @@ int main(int argc, char **argv)
 {
 	unused(argc);
 	unused(argv);
-	int32 status = 0;
 	char retstatus[INT_DIGITS];
-	JobControl *jobcntl = &ashe.sh_jobcntl;
+	int32 status = 0;
+	struct a_jobcntl *jobcntl;
 
-	Shell_init(&ashe);
+	jobcntl = &ashe.sh_jobcntl;
+	a_shell_init(&ashe);
 
 	for (;;) {
 		prompt_print();
 		TerminalInput_clear();
-		JobControl_update_and_notify(jobcntl);
+		a_jobcntl_update_and_notify(jobcntl);
 		enable_async_jobcntl_updates();
 		TerminalInput_read();
 		disable_async_jobcntl_updates();
-		JobControl_update_and_notify(jobcntl);
+		a_jobcntl_update_and_notify(jobcntl);
 		clear_parsed_data();
-		if (IBF.len <= 1 || ashe_parse(IBF.data) < 0)
+		expand_vars(&IBF); /* '$' */
+		if (IBF.len <= 1 || ashe_block(IBF.data) < 0)
 			continue;
-		status = cmdexec(&ashe.sh_conds);
+		status = cmdexec(&ashe.sh_block);
 		status = (status < 0 ? -status : status);
 		if (unlikely(snprintf(retstatus, INT_DIGITS, "%d", status) < 0))
 			goto error;

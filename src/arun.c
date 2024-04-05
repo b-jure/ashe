@@ -6,7 +6,6 @@
 #include "ashell.h"
 #include "aasync.h"
 
-#include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
 #include <signal.h>
@@ -23,17 +22,6 @@ ASHE_PRIVATE const char *devfiles[] = {
 
 #define PIPE_R 0 /* Read end of a pipe */
 #define PIPE_W 1 /* Write end of a pipe */
-
-/* open file for writing '>' or '>>' */
-#define ashe_wopen(file, append) \
-	open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_WRONLY, 0666)
-
-/* open file for reading '<' */
-#define ashe_ropen(file) open(file, O_RDONLY)
-
-/* open file for reading and writing '<>' */
-#define ashe_rwopen(file, append) \
-	open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_RDWR, 0666)
 
 #define ERR_VAREXPORT 0
 #define ERR_VARRM     1
@@ -89,31 +77,33 @@ ASHE_PRIVATE int32 conf_pipe(int32 *pipes, memmax len, memmax i,
 	return 0;
 }
 
-ASHE_PRIVATE int32 try_add_envvars(ArrayCharptr *env)
+ASHE_PRIVATE int32 try_add_envvars(a_arr_ccharp *env)
 {
 	char *name, *sep, *value;
 	memmax len, i;
 
 	len = env->len;
 	for (i = 0; i < len; i++) {
-		name = env->data[i];
+		name = dupstr(*a_arr_ccharp_index(env, i));
 		sep = strchr(name, '=');
 		value = sep + 1;
 		*sep = '\0';
 		if (unlikely(setenv(name, value, 1) < 0)) {
 			ashe_eprintf(runerrors[ERR_VAREXPORT], name);
 			ashe_perrno();
+			afree(name);
 			return -1;
 		}
+		afree(name);
 	}
 	return 0;
 }
 
-ASHE_PRIVATE int32 try_rm_envvars(ArrayCharptr *env)
+ASHE_PRIVATE int32 try_rm_envvars(a_arr_ccharp *env)
 {
 	int32 status = 0;
 	memmax len, i;
-	char *name;
+	const char *name;
 
 	len = env->len;
 	for (i = 0; i < len; i++) {
@@ -162,20 +152,20 @@ ASHE_PRIVATE inline int32 redirect_fd_into(int32 fd, int32 to)
 	return 0;
 }
 
-ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle *fhs, ubyte exec)
+ASHE_PRIVATE int32 try_resolve_redirections(a_arr_redirect *rds, ubyte exec)
 {
 	ssize fd;
-	FileHandle *fh;
+	struct a_redirect *rdp;
 	memmax len, badfd, i;
 
-	len = fhs->len;
+	len = rds->len;
 	for (i = 0; i < len; i++) {
-		fh = &fhs->data[i];
-		switch (fh->op) {
+		rdp = &fhs->data[i];
+		switch (rdp->op) {
 		case OP_REDIRECT_ERROUT:
-			fd = filepath_is_fd(fh->filepath);
+			fd = filepath_is_fd(rdp->filepath);
 			if (fd < 0) {
-				fd = ashe_wopen(fh->filepath, fh->append);
+				fd = ashe_wopen(rdp->filepath, rdp->append);
 				if (fd < 0) {
 					ashe_perrno();
 					return -1;
@@ -191,58 +181,58 @@ ASHE_PRIVATE int32 try_resolve_redirections(ArrayFileHandle *fhs, ubyte exec)
 		case OP_REDIRECT_INOUT:
 		case OP_REDIRECT_IN:
 		case OP_REDIRECT_OUT:
-			fd = filepath_is_fd(fh->filepath);
+			fd = filepath_is_fd(rdp->filepath);
 			if (fd < 0) {
-				if (fh->op == OP_REDIRECT_IN)
-					fd = ashe_ropen(fh->filepath);
-				else if (fh->op == OP_REDIRECT_OUT)
-					fd = ashe_wopen(fh->filepath,
-							fh->append);
+				if (rdp->op == OP_REDIRECT_IN)
+					fd = ashe_ropen(rdp->filepath);
+				else if (rdp->op == OP_REDIRECT_OUT)
+					fd = ashe_wopen(rdp->filepath,
+							rdp->append);
 				else
-					fd = ashe_rwopen(fh->filepath, 0);
+					fd = ashe_rwopen(rdp->filepath, 0);
 				if (fd < 0) {
 					ashe_perrno();
 					return -1;
 				}
 			}
-			if (!fdisok(fh->fd)) {
-			} else if (redirect_fd_into(fh->fd, fd) < 0) {
+			if (!fdisok(rdp->fd)) {
+			} else if (redirect_fd_into(rdp->fd, fd) < 0) {
 				return -1;
 			}
 			break;
 		case OP_DUP_IN:
 		case OP_DUP_OUT:
-			if (!fdisok(fh->fddup)) {
-				badfd = fh->fddup;
+			if (!fdisok(rdp->fddup)) {
+				badfd = rdp->fddup;
 				goto l_badfd;
 			}
 			/* FALLTHRU */
 		case OP_CLOSE:
-			if (!fdisok(fh->fd)) {
-				badfd = fh->fd;
+			if (!fdisok(rdp->fd)) {
+				badfd = rdp->fd;
 				goto l_badfd;
 			}
 			if (!exec)
 				break;
-			if (fh->op == OP_DUP_IN) {
-				if (!fdisopened(fh->fddup, O_RDONLY | O_RDWR)) {
+			if (rdp->op == OP_DUP_IN) {
+				if (!fdisopened(rdp->fddup, O_RDONLY | O_RDWR)) {
 					ashe_eprintf(
 						"fd %d is not open for input.");
 					return -1;
 				}
 				goto l_copy_fd;
-			} else if (fh->op == OP_DUP_OUT) {
-				if (!fdisopened(fh->fddup, O_WRONLY | O_RDWR)) {
+			} else if (rdp->op == OP_DUP_OUT) {
+				if (!fdisopened(rdp->fddup, O_WRONLY | O_RDWR)) {
 					ashe_eprintf(
 						"fd %d is not open for output.");
 					return -1;
 				}
 l_copy_fd:
-				if (unlikely(dup2(fh->fddup, fh->fd) < 0)) {
+				if (unlikely(dup2(rdp->fddup, rdp->fd) < 0)) {
 					ashe_perrno();
 					return -1;
 				}
-			} else if (unlikely(close(fh->fd) < 0)) {
+			} else if (unlikely(close(rdp->fd) < 0)) {
 				ashe_perrno();
 				return -1;
 			}
@@ -260,9 +250,9 @@ l_badfd:
  * variables into 'environ' or both. */
 ASHE_PRIVATE int32 run_cmd_nofork(Command *cmd, enum tbi type)
 {
-	ArrayCharptr *env = &cmd->env;
-	ArrayCharptr *argv = &cmd->argv;
-	ArrayFileHandle *fhs = &cmd->fhandles;
+	a_arr_ccharp *env = &cmd->env;
+	a_arr_ccharp *argv = &cmd->argv;
+	a_arr_redirect *rds = &cmd->fhandles;
 	int32 status = 0;
 	int32 in = ASHE_FD_0;
 	int32 out = ASHE_FD_1;
@@ -277,7 +267,7 @@ ASHE_PRIVATE int32 run_cmd_nofork(Command *cmd, enum tbi type)
 		     dup2(STDERR_FILENO, err) < 0)) {
 		goto error;
 	}
-	if (try_resolve_redirections(fhs, type == TBI_EXEC) < 0)
+	if (try_resolve_redirections(rds, type == TBI_EXEC) < 0)
 		status = -2;
 	else
 		status = run_builtin(cmd, type);
@@ -335,8 +325,8 @@ ASHE_PRIVATE inline int32 try_connect_pipe(PipeContext *ctx)
 ASHE_PRIVATE int32 run_cmd(Command *cmd, PipeContext *ctx, Job *job,
 			   int32 *pipes)
 {
-	ArrayCharptr *argva = &cmd->argv;
-	ArrayCharptr *enva = &cmd->env;
+	a_arr_ccharp *argva = &cmd->argv;
+	a_arr_ccharp *enva = &cmd->env;
 	char **argv;
 	int32 type;
 	pid PID = fork();
@@ -409,69 +399,81 @@ ASHE_PRIVATE inline int32 close_pipe(int32 *pipe)
 	return 0;
 }
 
-ASHE_PRIVATE int32 Pipeline_run(Pipeline *pipeline, ubyte bg)
+ASHE_PRIVATE int32 Conditional_run(Conditional *cond)
 {
-	ArrayCommand *commands = &pipeline->commands;
-	int32 *pipes = NULL;
-	uint32 cmdcnt, pn, i;
-	int32 status, type;
-	ubyte stopped;
+	Pipeline *pipeline;
+	ArrayCommand *commands;
 	PipeContext ctx;
 	Command *cmd;
 	Process proc;
+	uint32 cmdcnt, pipecnt, pn, i, j;
+	int32 status, type;
+	int32 *pipes = NULL;
+	ubyte stopped;
 	pid PID;
 	Job job;
 
-	Job_init(&job, dupstrn(IBF.data, IBF.len), bg);
-	ashe_assert(job.input != NULL);
+	pipecnt = cond->pipelines.len;
+	for (i = 0; i < pipecnt; i++) {
+		pipeline = ArrayPipeline_index(&cond->pipelines, i);
+		commands = &pipeline->commands;
 
-	if ((cmdcnt = commands->len) > 1) {
-		pn = ((cmdcnt - 1) * 2);
-		pipes = amalloc(sizeof(int32) * pn);
-	}
+		// TODO: Fix this (have pipelines contain input str ?)
+		Job_init(&job, dupstrn(cond->input, cond->inlen),
+			 cond->is_background);
+		printf("Job.input: %p\r\n", job.input);
+		ashe_assert(job.input != NULL);
 
-	status = 0;
-	for (i = 0; i < cmdcnt; i++) {
-		cmd = ArrayCommand_index(commands, i);
-		PipeContext_init(&ctx);
+		if ((cmdcnt = commands->len) > 1) {
+			pn = ((cmdcnt - 1) * 2);
+			pipes = amalloc(sizeof(int32) * pn);
+		}
+
+		status = 0;
+		for (j = 0; j < cmdcnt; j++) {
+			cmd = ArrayCommand_index(commands, j);
+			PipeContext_init(&ctx);
+
+			if (cmdcnt > 1) {
+				if (unlikely(conf_pipe(pipes, cmdcnt, j, &ctx) <
+					     0))
+					goto cleanup;
+			} else if (job.foreground &&
+				   (cmd->argv.len == 0 ||
+				    (type = is_builtin(ARGV(cmd, 0))) >= 0)) {
+				Job_free(&job);
+				return run_cmd_nofork(cmd, type);
+			}
+
+			if (unlikely((PID = run_cmd(cmd, &ctx, &job, pipes)) <
+				     0))
+				goto cleanup;
+
+			ashe_assert(PID > 0);
+			Process_init(&proc, PID);
+			Job_add_process(&job, proc);
+
+			if (unlikely(j != 0 &&
+				     close_pipe(&pipes[(j - 1) * 2]) < 0))
+				goto cleanup;
+		}
+
+		if (job.foreground) {
+			status = Job_move_to_foreground(&job, 0, &stopped);
+			if (!stopped) /* job done ? */
+				Job_free(&job);
+		} else {
+			JobControl_add_job(&ashe.sh_jobcntl, &job);
+			Job_mark_as_background(&job, 0);
+		}
 
 		if (cmdcnt > 1) {
-			if (unlikely(conf_pipe(pipes, cmdcnt, i, &ctx) < 0))
-				goto cleanup;
-		} else if (job.foreground &&
-			   (cmd->argv.len == 0 ||
-			    (type = is_builtin(ARGV(cmd, 0))) >= 0)) {
-			Job_free(&job);
-			return run_cmd_nofork(cmd, type);
+			ashe_assert(pipes != NULL);
+			afree(pipes);
 		}
-
-		if (unlikely((PID = run_cmd(cmd, &ctx, &job, pipes)) < 0))
-			goto cleanup;
-
-		ashe_assert(PID > 0);
-		Process_init(&proc, PID);
-		Job_add_process(&job, proc);
-l_close_pipe:
-		errno = 0;
-		if (unlikely(i != 0 && close_pipe(&pipes[(i - 1) * 2]) < 0)) {
-			if (unlikely(errno == EINTR))
-				goto l_close_pipe;
-			goto cleanup;
-		}
-	}
-
-	if (job.foreground) {
-		status = Job_move_to_foreground(&job, 0, &stopped);
-		if (!stopped) /* job done ? */
-			Job_free(&job);
-	} else {
-		JobControl_add_job(&ashe.sh_jobcntl, &job);
-		Job_mark_as_background(&job, 0);
-	}
-
-	if (cmdcnt > 1) {
-		ashe_assert(pipes != NULL);
-		afree(pipes);
+		if ((status == 0 && (pipeline->connection & CON_OR)) ||
+		    (status != 0 && (pipeline->connection & CON_AND)))
+			return status;
 	}
 	return status;
 cleanup:
@@ -480,23 +482,6 @@ cleanup:
 	panic(NULL);
 	ashe_assertf(0, "unreachable");
 	return 0; /* UNREACHED */
-}
-
-ASHE_PRIVATE int32 Conditional_run(Conditional *cond)
-{
-	ArrayPipeline *pipes = &cond->pipelines;
-	Pipeline *pipeline;
-	int32 status = 0;
-	memmax i;
-
-	for (i = 0; i < pipes->len; i++) {
-		pipeline = ArrayPipeline_index(pipes, i);
-		status = Pipeline_run(pipeline, cond->is_background);
-		if ((status == 0 && (pipeline->connection & CON_OR)) ||
-		    (status != 0 && (pipeline->connection & CON_AND)))
-			return status;
-	}
-	return status;
 }
 
 ASHE_PUBLIC int32 cmdexec(ArrayConditional *conds)

@@ -6,13 +6,12 @@
 #if defined(__linux__)
 #include <linux/limits.h>
 #define HOME	  "HOME"
-#define PCS_EXTRA "/.-"
 #else
 #error "Ashe is only compatible with linux platforms."
 #endif
 
 /* ---- Asserts ---- */
-#ifdef ASHE_ASSERT
+#ifdef ASHE_DBG_ASSERT
 #undef NDBG
 #include <assert.h>
 #ifndef ashe_assert

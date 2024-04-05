@@ -52,14 +52,14 @@ error:
 ASHE_PUBLIC void debug_lines(void)
 {
 	static char temp[128];
-	Buffer buffer;
+	a_arr_char buffer;
 	ssize len = 0;
 	uint32 i = 0;
 	uint32 idx;
 	FILE *fp;
 
 	errno = 0;
-	Buffer_init(&buffer);
+	a_arr_char_init(&buffer);
 
 	if (unlikely((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
 		goto error;
@@ -69,20 +69,20 @@ ASHE_PUBLIC void debug_lines(void)
 				     PLEN)) < 0 ||
 		     (memmax)len > sizeof(temp)))
 		goto error;
-	Buffer_push_str(&buffer, temp, len);
-	Buffer_push_str(&buffer, ashe.sh_prompt.data, ashe.sh_prompt.len - 1);
-	Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
+	a_arr_char_push_str(&buffer, temp, len);
+	a_arr_char_push_str(&buffer, ashe.sh_prompt.data, ashe.sh_prompt.len - 1);
+	a_arr_char_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
 
 	/* Log buffer */
 	if (unlikely((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
 				     IBF.len)) < 0 ||
 		     (memmax)len > sizeof(temp)))
 		goto error;
-	Buffer_push_str(&buffer, temp, len);
+	a_arr_char_push_str(&buffer, temp, len);
 	idx = buffer.len;
-	Buffer_push_str(&buffer, IBF.data, IBF.len);
+	a_arr_char_push_str(&buffer, IBF.data, IBF.len);
 	unescape(&buffer, idx, buffer.len);
-	Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
+	a_arr_char_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
 
 	/* Log lines */
 	for (i = 0; i < LINES.len; i++) {
@@ -91,12 +91,12 @@ ASHE_PUBLIC void debug_lines(void)
 					     LINES.data[i].len)) < 0 ||
 			     (memmax)len > sizeof(temp)))
 			goto error;
-		Buffer_push_str(&buffer, temp, len);
+		a_arr_char_push_str(&buffer, temp, len);
 		idx = buffer.len;
-		Buffer_push_str(&buffer, LINES.data[i].start,
+		a_arr_char_push_str(&buffer, LINES.data[i].start,
 				LINES.data[i].len);
 		unescape(&buffer, idx, buffer.len);
-		Buffer_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
+		a_arr_char_push_str(&buffer, "]\r\n", sizeof("]\r\n") - 1);
 	}
 
 	/* Write log file */
@@ -106,12 +106,12 @@ ASHE_PUBLIC void debug_lines(void)
 	if (unlikely(fclose(fp) == EOF))
 		goto fclose_error;
 
-	Buffer_free(&buffer, NULL);
+	a_arr_char_free(&buffer, NULL);
 	return;
 error:
 	fclose(fp);
 fclose_error:
-	Buffer_free(&buffer, NULL);
+	a_arr_char_free(&buffer, NULL);
 	ashe_perrno();
 	panic("panic in debug_lines()");
 }

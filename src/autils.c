@@ -19,6 +19,7 @@ ASHE_PUBLIC void ashe_print(const char *msg, FILE *stream)
 ASHE_PUBLIC void ashe_printf(FILE *stream, const char *msg, ...)
 {
 	va_list argp;
+
 	va_start(argp, msg);
 	vfprintf(stream, msg, argp);
 	fflush(stream);
@@ -40,7 +41,7 @@ ASHE_PUBLIC void ashe_vprintf(FILE *stream, const char *msg, va_list argp)
 }
 
 ASHE_PRIVATE void ashe_vprintf_prefix(FILE *stream, const char *fmt,
-				  const char *prefix, va_list argp)
+				      const char *prefix, va_list argp)
 {
 	ashe_printf(stream, prefix); /* memleak 'va_list' on panic */
 	ashe_vprintf(stream, fmt, argp);
@@ -99,10 +100,11 @@ ASHE_PUBLIC char *dupstr(const char *str)
 
 ASHE_PUBLIC memmax len_without_seq(const char *ptr)
 {
-	memmax len = 0;
-	memmax i;
-	ubyte escape_seq = 0;
+	memmax len, i;
+	ubyte escape_seq;
 
+	len = 0;
+	escape_seq = 0;
 	for (i = 0; ptr[i]; i++) {
 		if (escape_seq) {
 			if (ptr[i] == 'm')
@@ -118,8 +120,9 @@ ASHE_PUBLIC memmax len_without_seq(const char *ptr)
 
 ASHE_PRIVATE memmax is_ashe_var(const char *ptr)
 {
-	memmax offset = 0;
+	memmax offset;
 
+	offset = 0;
 	switch (ptr[0]) {
 	case ASHE_VAR_STATUS_C:
 	case ASHE_VAR_PID_C:
@@ -132,16 +135,16 @@ ASHE_PRIVATE memmax is_ashe_var(const char *ptr)
 	return offset;
 }
 
-ASHE_PUBLIC void expand_vars(Buffer *buffer)
+ASHE_PUBLIC void expand_vars(a_arr_char *buffer)
 {
-	const char *value = NULL;
-	char *ptr = buffer->data;
-	char *end;
+	const char *value;
+	char *ptr, *end;
+	int32 klen, vlen;
 	memmax offset;
 	ssize diff;
-	int32 klen, vlen;
 	char cached;
 
+	ptr = buffer->data;
 	for (; ((ptr = strchr(ptr, '$')) != NULL); ptr++) {
 		if (is_escaped(ptr, ptr - buffer->data))
 			continue;
@@ -162,7 +165,7 @@ ASHE_PUBLIC void expand_vars(Buffer *buffer)
 
 			if (diff > 0) {
 				if (likely(buffer->len + diff < ARG_MAX)) {
-					Buffer_ensure(buffer, diff);
+					a_arr_char_ensure(buffer, diff);
 					memmove(end + diff, end, diff);
 					buffer->len += diff;
 				} else {
@@ -185,8 +188,9 @@ l_remove:
 
 ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 {
-	ubyte dq = 0;
+	ubyte dq;
 
+	dq = 0;
 	while (len--)
 		dq ^= (*str++ == '"');
 	return dq;
@@ -194,14 +198,15 @@ ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 
 ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
 {
-	char *at = s + curpos;
+	char *at;
 
+	at = s + curpos;
 	return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') ||
 		(curpos == 1 && *(at - 1) == '\\'));
 }
 
 /* Unescape tabs, newlines, etc.. for more readable output in debug functions. */
-ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
+ASHE_PUBLIC void unescape(a_arr_char *buffer, uint32 from, uint32 to)
 {
 	static const int32 unescape[UINT8_MAX] = {
 		['\a'] = 'a', ['\b'] = 'b', ['\f'] = 'f', ['\n'] = 'n',
@@ -211,36 +216,38 @@ ASHE_PUBLIC void unescape(Buffer *buffer, uint32 from, uint32 to)
 	ubyte c;
 
 	for (i = from; i < to; i++) {
-		c = *Buffer_index(buffer, i);
+		c = *a_arr_char_index(buffer, i);
 		if (c == '\0')
 			break;
 		if (c == '\033') {
-			*Buffer_index(buffer, i++) = '\\';
-			Buffer_insert(buffer, i++, '0');
-			Buffer_insert(buffer, i++, '3');
-			Buffer_insert(buffer, i, '3');
+			*a_arr_char_index(buffer, i++) = '\\';
+			a_arr_char_insert(buffer, i++, '0');
+			a_arr_char_insert(buffer, i++, '3');
+			a_arr_char_insert(buffer, i, '3');
 			to += 3;
 		} else if (unescape[c]) {
-			*Buffer_index(buffer, i++) = '\\';
-			Buffer_insert(buffer, i, unescape[c]);
+			*a_arr_char_index(buffer, i++) = '\\';
+			a_arr_char_insert(buffer, i, unescape[c]);
 			to++;
 		}
 	}
 }
 
 /* escape bytes that are outside of '"' */
-ASHE_PUBLIC void escape(Buffer *buffer)
+ASHE_PUBLIC void escape(a_arr_char *buffer)
 {
 	static const int32 escape[UINT8_MAX] = {
 		['a'] = '\a',  ['b'] = '\b', ['f'] = '\f', ['n'] = '\n',
 		['r'] = '\r',  ['t'] = '\t', ['v'] = '\v', ['\\'] = '\\',
 		['\''] = '\'', ['"'] = '\"', ['?'] = '\?', ['e'] = '\033',
 	};
-	char *oldp = buffer->data;
-	char *newp = oldp;
-	ubyte dq = 0;
+	char *oldp, *newp;
+	ubyte dq;
 	int32 c;
 
+	oldp = buffer->data;
+	newp = oldp;
+	dq = 0;
 	while (*oldp) {
 		c = *(ubyte *)oldp++;
 		if (c == '"') {

@@ -54,9 +54,9 @@
 /* draw buffer */
 #define dbf_draw_lit(strlit) write_or_panic(strlit, sizeof(strlit) - 1)
 #define dbf_pushlit(strlit)  dbf_push_len(strlit, sizeof(strlit) - 1)
-#define dbf_pushc(c)	     Buffer_push(&DBF, c)
-#define dbf_push(s)	     Buffer_push_str(&DBF, s, strlen(s))
-#define dbf_push_len(s, len) Buffer_push_str(&DBF, s, len)
+#define dbf_pushc(c)	     a_arr_char_push(&DBF, c)
+#define dbf_push(s)	     a_arr_char_push_str(&DBF, s, strlen(s))
+#define dbf_push_len(s, len) a_arr_char_push_str(&DBF, s, len)
 #define dbf_push_movecol(n)       \
 	do {                      \
 		dbf_pushlit(CSI); \
@@ -131,12 +131,12 @@ ASHE_PRIVATE inline void dbf_push_unum(memmax n)
 		ashe_perrno();
 		panic(NULL);
 	}
-	Buffer_push_str(&DBF, temp, chars);
+	a_arr_char_push_str(&DBF, temp, chars);
 }
 
 ASHE_PRIVATE inline void dbf_flush()
 {
-	Buffer *drawbuf = &DBF;
+	a_arr_char *drawbuf = &DBF;
 	opost_on();
 	write_or_panic(drawbuf->data, drawbuf->len);
 	opost_off();
@@ -208,10 +208,10 @@ ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 
 ASHE_PUBLIC void TerminalInput_init(void)
 {
-	Buffer_init_cap(&IBF, 8);
-	Buffer_init_cap(&DBF, 8);
-	ArrayLine_init(&LINES);
-	ArrayLine_push(&LINES, (Line){ .len = 0, .start = IBF.data });
+	a_arr_char_init_cap(&IBF, 8);
+	a_arr_char_init_cap(&DBF, 8);
+	a_arr_line_init(&LINES);
+	a_arr_line_push(&LINES, (struct a_line){ .len = 0, .start = IBF.data });
 	IBFIDX = 0;
 	COL = 0;
 	ROW = 0;
@@ -219,16 +219,16 @@ ASHE_PUBLIC void TerminalInput_init(void)
 
 ASHE_PUBLIC void TerminalInput_free(void)
 {
-	Buffer_free(&IBF, NULL);
-	Buffer_free(&DBF, NULL);
-	ArrayLine_free(&LINES, NULL);
+	a_arr_char_free(&IBF, NULL);
+	a_arr_char_free(&DBF, NULL);
+	a_arr_line_free(&LINES, NULL);
 }
 
 ASHE_PUBLIC void Terminal_init(void)
 {
 	TerminalInput_init();
-	init_rawterm(&TM.tm_rawtermios);
 	init_dflterm(&TM.tm_dfltermios);
+	init_rawterm(&TM.tm_rawtermios);
 	get_winsize_or_panic(&TM.tm_rows, &TM.tm_columns);
 	/* tm_col - gets set when reading and drawing */
 	/* tm_promptlen - gets set in 'print_prompt()' */
@@ -396,19 +396,19 @@ ASHE_PUBLIC ubyte ashe_insert(int32 c)
 	memmax i;
 	uint32 idx;
 	ubyte relink;
-	Line *prev = NULL;
-	Line *curr = NULL;
+	struct a_line *prev = NULL;
+	struct a_line *curr = NULL;
 
 	if (IBF.len >= ARG_MAX - 1)
 		return 0;
 	idx = IBFIDX;
 	relink = (IBF.len >= IBF.cap);
-	Buffer_insert(&IBF, IBFIDX, c);
+	a_arr_char_insert(&IBF, IBFIDX, c);
 	LINE.len++;
 	prev = &LINES.data[0];
 	prev->start = IBF.data;
 	for (i = 1; i < relink * LINES.len; i++) {
-		curr = ArrayLine_index(&LINES, i);
+		curr = a_arr_line_index(&LINES, i);
 		curr->start = prev->start + prev->len;
 		prev = curr;
 	}
@@ -429,7 +429,7 @@ ASHE_PUBLIC ubyte ashe_insert(int32 c)
 
 ASHE_PUBLIC ubyte ashe_cr(void)
 {
-	Line newline = { 0 };
+	struct a_line newline = { 0 };
 
 	if (is_escaped(IBF.data, IBFIDX) || in_dq(IBF.data, IBFIDX)) {
 		ashe_insert('\n');
@@ -440,7 +440,7 @@ ASHE_PUBLIC ubyte ashe_cr(void)
 		IBFIDX++;
 		COL = 0;
 		TCOL = 1;
-		ArrayLine_insert(&LINES, ROW, newline);
+		a_arr_line_insert(&LINES, ROW, newline);
 		return 1;
 	}
 	return 0;
@@ -448,12 +448,12 @@ ASHE_PUBLIC ubyte ashe_cr(void)
 
 ASHE_PUBLIC ubyte ashe_remove(void)
 {
-	Line *l;
+	struct a_line *l;
 	ubyte coalesce;
 
 	if (IBFIDX <= 0)
 		return 0;
-	Buffer_remove(&IBF, IBFIDX - 1);
+	a_arr_char_remove(&IBF, IBFIDX - 1);
 	shift_lines_left(ROW + 1);
 	LINE.len -= !(coalesce = (COL == 0));
 	l = &LINE; /* cache current line */
@@ -464,7 +464,7 @@ ASHE_PUBLIC ubyte ashe_remove(void)
 		ashe_assert(l == &LINES.data[ROW + 1]);
 		ashe_assert(l->start == LINES.data[ROW + 1].start);
 		ashe_assert(l->len == LINES.data[ROW + 1].len);
-		ArrayLine_remove(&LINES, ROW + 1);
+		a_arr_line_remove(&LINES, ROW + 1);
 	}
 	dbf_pushlit(csi_cursor_hide csi_clear_line_right csi_clear_down
 			    csi_cursor_save);
@@ -526,30 +526,14 @@ ASHE_PUBLIC ubyte ashe_cursor_linestart(void)
 
 ASHE_PUBLIC void ashe_redraw(void)
 {
-	memmax lidx = LINES.len - 1;
-	Line *line = &LINES.data[lidx];
-	ssize temp;
-	uint32 extra = (ROW == 0) * PLEN;
-	uint32 col, len, up;
+	uint32 col = COL + (ROW == 0) * PLEN;
 
-	/* find the current Line */
-	for (up = 0; lidx != ROW; line = &LINES.data[--lidx]) {
-		temp = line->len;
-		while (temp > 0) { /* unwrap it */
-			up++;
-			temp -= TCOLMAX;
-		}
-	}
-	col = COL + extra;
-	len = LINE.len + extra;
-	up += ((len - 1) / TCOLMAX) - (col / TCOLMAX);
 	TCOL = modlen(col + 1, TCOLMAX);
 	dbf_pushlit(csi_cursor_hide);
-	dbf_push_len(IBF.data, IBF.len);
-	if (up > 0)
-		dbf_push_moveup(up);
-	dbf_push_movecol(TCOL);
-	dbf_pushlit(csi_cursor_show);
+	dbf_push_len(IBF.data, IBFIDX);
+	dbf_pushlit(csi_cursor_save);
+	dbf_push_len(IBF.data + IBFIDX, IBF.len - IBFIDX);
+	dbf_pushlit(csi_cursor_load csi_cursor_show);
 	dbf_flush();
 }
 
@@ -721,10 +705,9 @@ ASHE_PUBLIC void TerminalInput_read(void)
 #endif
 	while (process_key())
 		;
-	Buffer_push(&IBF, '\0');
+	a_arr_char_push(&IBF, '\0');
 	ashe_cursor_end();
-	fprintf(stderr, "\r\n");
-	fflush(stderr);
+	ashe_print("\r\n", stderr);
 	TM.tm_reading = 0;
 	set_terminal_mode(&TM.tm_dfltermios);
 }

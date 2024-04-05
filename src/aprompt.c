@@ -44,7 +44,7 @@ error:
 
 ASHE_PUBLIC const char *ashe_jobc(void)
 {
-	uint32 jobc = JobControl_jobs(&ashe.sh_jobcntl);
+	uint32 jobc = a_jobcntl_jobs(&ashe.sh_jobcntl);
 	const char *fmt = (jobc ? "%u" : "");
 
 	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, fmt, jobc) < 0)) {
@@ -128,7 +128,7 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 	return ashe_plhbuf;
 }
 
-ASHE_PRIVATE void try_expand_placeholder(Buffer *out, const char **ptr)
+ASHE_PRIVATE void try_expand_placeholder(a_arr_char *out, const char **ptr)
 {
 	const char *p = *ptr;
 	const char *res;
@@ -143,23 +143,23 @@ ASHE_PRIVATE void try_expand_placeholder(Buffer *out, const char **ptr)
 	if (unlikely(n >= ELEMENTS(placeholders)))
 		goto push_plh_sign;
 	if (likely((res = placeholders[n]()) != NULL)) {
-		Buffer_push_str(out, res, strlen(res));
+		a_arr_char_push_str(out, res, strlen(res));
 		*ptr = p;
 	} else {
 push_plh_sign:
-		Buffer_push(out, '%');
+		a_arr_char_push(out, '%');
 		*ptr += 1;
 	}
 }
 
 /* Parses 'str' by expanding all placeholders. */
-ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
+ASHE_PRIVATE void parsestring(a_arr_char *out, const char *str)
 {
 	int32 c;
 
 	while ((c = *str)) {
 		if (c != ASHE_PLH_SIGN) {
-			Buffer_push(out, c);
+			a_arr_char_push(out, c);
 			str++;
 		} else {
 			try_expand_placeholder(out, &str);
@@ -168,17 +168,17 @@ ASHE_PRIVATE void parsestring(Buffer *out, const char *str)
 	out->len = ((ASHE_PROMPT_LEN_MAX - 1) *
 		    (out->len >= ASHE_PROMPT_LEN_MAX)) +
 		   (out->len * (out->len < ASHE_PROMPT_LEN_MAX));
-	Buffer_push(out, '\0');
+	a_arr_char_push(out, '\0');
 }
 
 ASHE_PUBLIC void userstr_print(const char *str, memmax len)
 {
-	Buffer buffer;
+	a_arr_char buffer;
 
-	Buffer_init_cap(&buffer, len);
+	a_arr_char_init_cap(&buffer, len);
 	parsestring(&buffer, str);
 	ashe_print(buffer.data, stderr);
-	Buffer_free(&buffer, NULL);
+	a_arr_char_free(&buffer, NULL);
 }
 
 ASHE_PUBLIC void welcome_print(void)

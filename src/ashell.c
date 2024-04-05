@@ -12,7 +12,7 @@
 #include <signal.h>
 
 /* global shell */
-Shell ashe = { 0 };
+struct a_shell ashe = { 0 };
 
 static int32 init_ashe_vars(void)
 {
@@ -31,7 +31,7 @@ static int32 init_ashe_vars(void)
  * TODO: in future allow shell to not be interactive but
  * only with certian arguments (such as '-c'). 
  */
-ASHE_PUBLIC void Shell_init(Shell *sh)
+ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 {
 	pid_t sh_pgid = getpgrp();
 
@@ -41,13 +41,12 @@ ASHE_PUBLIC void Shell_init(Shell *sh)
 #ifdef ASHE_DBG_LINES
 	logfile_create("debug_lines.dbg.txt", ALOG_LINES);
 #endif
-	JobControl_init(&sh->sh_jobcntl);
-	ArrayCharptr_init(&sh->sh_buffers);
-	ArrayConditional_init(&sh->sh_conds);
-	Buffer_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));
-	Buffer_init_cap(&sh->sh_welcome, sizeof(ASHE_WELCOME));
-	memset(&sh->sh_settings, 0, sizeof(Settings));
-	memset(&sh->sh_flags, 0, sizeof(Flags));
+	a_jobcntl_init(&sh->sh_jobcntl);
+	a_arr_ccharp_init(&sh->sh_buffers);
+	a_arr_char_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));
+	a_arr_char_init_cap(&sh->sh_welcome, sizeof(ASHE_WELCOME));
+	memset(&sh->sh_settings, 0, sizeof(struct a_settings));
+	memset(&sh->sh_flags, 0, sizeof(struct a_flags));
 	init_ashe_vars();
 get_terminal:
 	sh->sh_flags.interactive = isatty(STDIN_FILENO);
@@ -78,12 +77,12 @@ ASHE_PUBLIC void wafree_charp(void *ptr)
 	afree(*(char **)ptr);
 }
 
-ASHE_PUBLIC void Shell_free(Shell *sh)
+ASHE_PUBLIC void a_shell_free(struct a_shell *sh)
 {
-	JobControl_free(&sh->sh_jobcntl);
+	a_jobcntl_free(&sh->sh_jobcntl);
 	Terminal_free();
-	ArrayCharptr_free(&sh->sh_buffers, wafree_charp);
-	Buffer_free(&sh->sh_prompt, NULL);
-	Buffer_free(&sh->sh_welcome, NULL);
-	ArrayConditional_free(&sh->sh_conds, (FreeFn)Conditional_free);
+	a_arr_ccharp_free(&sh->sh_buffers, wafree_charp);
+	a_arr_char_free(&sh->sh_prompt, NULL);
+	a_arr_char_free(&sh->sh_welcome, NULL);
+	a_block_free(&sh->sh_block);
 }

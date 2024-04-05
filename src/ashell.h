@@ -9,46 +9,43 @@
 #include <signal.h>
 #include <setjmp.h>
 
-typedef struct {
+struct a_jmpbuf {
 	jmp_buf buf_jmpbuf;
 	volatile int32 buf_code;
-} AsheJmpBuf;
+};
 
-typedef enum {
-	SETTING_EXIT = (1 << 0),
-	SETTING_NOCLOBBER = (1 << 1),
-} Setting;
+enum a_setting_type {
+	ASETTING_NOCLOBBER = (1 << 1),
+};
 
-typedef struct {
-	ubyte sett_exit : 1; /* if set exit after executing next command */
-	ubyte sett_noclobber : 1; /* if set do not overwrite existing file */
-	// TODO: Implement more settings...
-} Settings; /* shell settings */
+struct a_settings {
+	ubyte sett_noclobber : 1; /* do not overwrite existing file */
+}; /* shell settings */
 
-typedef struct {
+struct a_flags {
 	volatile ubyte exit : 1; /* set if last command was 'exit' */
 	volatile ubyte isfork : 1; /* set if this is forked shell process */
 	volatile ubyte interactive : 1; /* set if shell is interactive */
-} Flags;
+};
 
-typedef struct {
-	JobControl sh_jobcntl;
-	Terminal sh_term;
-	Lexer sh_lexer;
-	ArrayCharptr sh_buffers;
-	Buffer sh_prompt;
-	Buffer sh_welcome;
-	ArrayConditional sh_conds;
-	AsheJmpBuf sh_buf;
-	Settings sh_settings;
+struct a_shell {
+	struct a_jobcntl sh_jobcntl;
+	struct a_term sh_term;
+	struct a_lexer sh_lexer;
+	a_arr_ccharp sh_buffers;
+	a_arr_char sh_prompt;
+	a_arr_char sh_welcome;
+	struct a_block sh_block;
+	struct a_jmpbuf sh_buf;
+	struct a_flags sh_flags;
+	struct a_settings sh_settings;
 	volatile sig_atomic_t sh_int; /* set if we got interrupted */
-	Flags sh_flags;
-} Shell;
+};
 
-extern Shell ashe; /* global */
+extern struct a_shell ashe; /* global */
 
-void Shell_init(Shell *sh);
+void a_shell_init(struct a_shell *sh);
 void wafree_charp(void *ptr);
-void Shell_free(Shell *sh);
+void a_shell_free(struct a_shell *sh);
 
 #endif

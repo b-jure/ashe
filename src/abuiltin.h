@@ -3,12 +3,9 @@
 
 #include "acommon.h"
 #include "aarray.h"
+#include "aparser.h"
 
-typedef struct Command Command;
-
-ARRAY_NEW(ArrayCharptr, char *)
-
-enum tbi {
+enum a_builtin_type {
 	TBI_BUILTIN = 0,
 	TBI_BG,
 	TBI_CD,
@@ -23,7 +20,7 @@ enum tbi {
 	TBI_EXIT,
 };
 
-int32 run_builtin(Command *cmd, enum tbi bi);
+int32 run_builtin(struct a_simple_cmd *scmd, enum a_builtin_type bi);
 int32 is_builtin(const char *command);
 
 #endif

@@ -10,7 +10,7 @@
 
 /* Environment variable valid name characters (subset of PCS) */
 #define ENV_VAR_CHARS \
-	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM" PCS_EXTRA
+	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
 
 /* Miscellaneous macros */
 #define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -68,12 +68,5 @@ typedef ssize_t ssize;
 typedef pid_t pid;
 typedef void (*sighandler)(int);
 /* -------------------------------- */
-
-/* Connection type for jobs and pipelines */
-typedef enum {
-	CON_AND = 2,
-	CON_OR = 4,
-	CON_NONE = 8,
-} Connection;
 
 #endif

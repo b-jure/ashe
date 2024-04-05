@@ -13,7 +13,7 @@ ASANFLAGS = -fsanitize=address -fsanitize=undefined
 LIBS = -L${ASANLIB}
 
 # Debug definitions (builtin)
-DBGDEFS = -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_ASSERT
+DBGDEFS = -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_DBG_ASSERT -DASHE_DBG_LEX
 
 # Debug flags
 DBGFLAGS = -g

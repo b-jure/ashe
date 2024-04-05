@@ -15,7 +15,6 @@
 static const char *tokenstr[] = {
 	"&&",
 	"||",
-	"|&",
 	"<&",
 	">&",
 	">|",
@@ -54,12 +53,12 @@ ASHE_PRIVATE inline ubyte has_precedence(int32 c)
 	}
 }
 
-ASHE_PRIVATE inline void Token_init(Token *token)
+ASHE_PRIVATE inline void Token_init(struct a_token *token)
 {
-	memset(token, 0, sizeof(Token));
+	memset(token, 0, sizeof(struct a_token));
 }
 
-ASHE_PUBLIC void Lexer_init(Lexer *lexer, const char *start)
+ASHE_PUBLIC void Lexer_init(struct a_lexer *lexer, const char *start)
 {
 	lexer->current = lexer->start = start;
 	Token_init(&lexer->curr);
@@ -67,13 +66,13 @@ ASHE_PUBLIC void Lexer_init(Lexer *lexer, const char *start)
 }
 
 /* Peek 'amount' without advancing. */
-ASHE_PRIVATE inline int32 peek(Lexer *lexer, memmax amount)
+ASHE_PRIVATE inline int32 peek(struct a_lexer *lexer, memmax amount)
 {
 	return *(lexer->current + amount);
 }
 
 /* Advance buffer by a single character unless EOF is reached. */
-ASHE_PRIVATE inline int32 advance(Lexer *lexer)
+ASHE_PRIVATE inline int32 advance(struct a_lexer *lexer)
 {
 	int32 c = *lexer->current;
 
@@ -101,16 +100,16 @@ ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
 }
 
 /* Gets a string, expands environmental variables and unescapes it. */
-ASHE_PRIVATE Token Token_string(Lexer *lexer)
+ASHE_PRIVATE struct a_token Token_string(struct a_lexer *lexer)
 {
 	int32 c, code;
 	ubyte dq, esc;
-	Token token = { 0 };
-	Buffer buffer;
+	struct a_token token = { 0 };
+	a_arr_char buffer;
 	char *ptr;
 	memmax n, klen;
 
-	Buffer_init(&buffer);
+	a_arr_char_init(&buffer);
 	token.type = TK_WORD;
 	token.start = lexer->current;
 	dq = esc = 0;
@@ -120,14 +119,10 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 			break;
 		dq ^= (!esc && c == '"');
 		esc ^= (c == '\\' || esc);
-		Buffer_push(&buffer, c);
+		a_arr_char_push(&buffer, c);
 		advance(lexer);
 	}
-	Buffer_push(&buffer, '\0');
-	token.len = lexer->current - token.start;
-
-	printf("Raw string: '%s'\r\n", buffer.data);
-	expand_vars(&buffer); /* '$' vars */
+	a_arr_char_push(&buffer, '\0');
 
 	ptr = buffer.data;
 	if (*ptr != '=' && (ptr = strstr(ptr, "=")) != NULL) {
@@ -141,7 +136,7 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 	escape(&buffer);
 
 	if (buffer.len == 2 && buffer.data[0] == '-') {
-		Buffer_free(&buffer, NULL);
+		a_arr_char_free(&buffer, NULL);
 		token.type = TK_MINUS;
 	} else {
 		n = 0;
@@ -152,18 +147,25 @@ ASHE_PRIVATE Token Token_string(Lexer *lexer)
 		} else {
 			token.u.string = buffer;
 		}
-		ArrayCharptr_push(&ashe.sh_buffers, buffer.data);
+		a_arr_ccharp_push(&ashe.sh_buffers, buffer.data);
 	}
 	return token;
 }
 
-/* Skip whitespace characters */
-ASHE_PRIVATE void skipws(Lexer *lexer)
+/* Skip whitespace characters and comments */
+ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 {
+	int32 c;
+
 	lexer->ws = 0;
-	int32 c = peek(lexer, 0);
+	c = peek(lexer, 0);
 	for (;;) {
 		switch (c) {
+		case '#':
+			advance(lexer);
+			while ((c = peek(lexer, 0)) != '\n' && c != '\v')
+				advance(lexer);
+			break;
 		case '\n':
 		case '\r':
 		case ' ':
@@ -193,12 +195,11 @@ ASHE_PRIVATE inline const char *num2str(memmax n)
  * Note: TOKEN_NUMBER stores its own string in a static
  * buffer, invoking this function second time could overwrite
  * the static buffer. */
-ASHE_PUBLIC const char *Token_debug(Token *token)
+ASHE_PUBLIC const char *Token_debug(struct a_token *token)
 {
 	switch (token->type) {
 	case TK_AND_AND:
 	case TK_PIPE_PIPE:
-	case TK_PIPE_AND:
 	case TK_LESS_AND:
 	case TK_GREATER_AND:
 	case TK_GREATER_GREATER:
@@ -229,17 +230,18 @@ ASHE_PUBLIC const char *Token_debug(Token *token)
 	}
 }
 
-ASHE_PRIVATE inline Token Token_new(Tokentype type)
+ASHE_PRIVATE inline struct a_token Token_new(enum a_toktype type)
 {
-	Token token;
+	struct a_token token;
 	token.type = type;
+	token.start = ashe.sh_lexer.current;
 	return token;
 }
 
-ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
+ASHE_PUBLIC struct a_token Lexer_next(struct a_lexer *lexer)
 {
 	int32 c;
-	Tokentype type;
+	enum a_toktype type;
 
 	skipws(lexer);
 	if ((c = peek(lexer, 0)) == '\0') {
@@ -286,10 +288,6 @@ ASHE_PUBLIC Token Lexer_next(Lexer *lexer)
 		case '|':
 			advance(lexer);
 			type = TK_PIPE_PIPE;
-			break;
-		case '&':
-			advance(lexer);
-			type = TK_PIPE_AND;
 			break;
 		default:
 			type = TK_PIPE;

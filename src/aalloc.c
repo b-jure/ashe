@@ -10,13 +10,13 @@
 
 ASHE_PUBLIC void cleanup_all(void)
 {
-	JobControl_harvest(&ashe.sh_jobcntl);
-	Shell_free(&ashe);
+	a_jobcntl_harvest(&ashe.sh_jobcntl);
+	a_shell_free(&ashe);
 }
 
 ASHE_PUBLIC void cleanup_fork(void)
 {
-	Shell_free(&ashe);
+	a_shell_free(&ashe);
 }
 
 ASHE_PRIVATE void vprintf_panic(const char *errmsg, va_list argp)

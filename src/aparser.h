@@ -4,57 +4,79 @@
 #include "acommon.h"
 #include "aarray.h"
 #include "alex.h"
-#include "abuiltin.h"
 #include "atoken.h"
 
-typedef enum {
-	OP_REDIRECT_ERROUT = 0, /* '>&'string | '&>'string | '&>>'string */
-	OP_REDIRECT_OUT, /* [n]'>'string | [n]'>>'string */
-	OP_REDIRECT_IN, /* [n]'<'string */
-	OP_REDIRECT_INOUT, /* [n]'<>'string */
-	OP_DUP_IN, /* [n]'<&'n */
-	OP_DUP_OUT, /* [n]'>&'n */
-	OP_CLOSE, /* [n]'>&-' | [n]'<&-' */
-} Operation;
+#define BM_STRING (BM(TK_WORD) | BM(TK_KVPAIR) | BM(TK_NUMBER))
 
-typedef struct {
-	const char *filepath; /* redirection filepath */
-	ssize fd; /* file descriptor */
-	ssize fddup; /* file descriptor to duplicate */
-	ubyte append; /* open file with append flag */
-	Operation op;
-} FileHandle;
+ARRAY_NEW(a_arr_ccharp, const char *)
 
-ARRAY_NEW(ArrayFileHandle, FileHandle)
-
-struct Command {
-	ArrayCharptr argv; /* command name and arguments */
-	ArrayCharptr env; /* environmental variables */
-	ArrayFileHandle fhandles; /* file handles */
-	uint32 cmd_settings; /* bitmask of settings [@builtin.h] */
-	ubyte pipand; /* is this '|&' pipeline */
+enum a_cmdtype {
+	ACMD_SIMPLE = 0,
 };
 
-ARRAY_NEW(ArrayCommand, Command)
+enum a_connect {
+	ACON_NONE = 1,
+	ACON_AND = 2,
+	ACON_OR = 4,
+	ACON_BG = 8,
+	ACON_FG = 16,
+};
 
-#define ARGV(cmd, n) (cmd)->argv.data[n]
-#define ENV(cmd, n)  (cmd)->env.data[n]
+enum a_redirect_op {
+	ARDOP_REDIRECT_ERROUT = 0,
+	ARDOP_REDIRECT_OUT,
+	ARDOP_REDIRECT_CLOB,
+	ARDOP_REDIRECT_IN,
+	ARDOP_REDIRECT_INOUT,
+	ARDOP_DUP_IN,
+	ARDOP_DUP_OUT,
+	ARDOP_CLOSE,
+};
 
-typedef struct {
-	ArrayCommand commands; /* commands connected with '|' or '|&' */
-	Connection connection; /* '&&', '||' or none */
-} Pipeline;
+struct a_redirect {
+	ssize rd_lhsfd; /* lhs file descriptor */
+	ssize rd_rhsfd; /* rhs file descriptor */
+	const char *rd_fname; /* filepath */
+	enum a_redirect_op rd_op; /* redirection op */
+	byte rd_append; /* append flag */
+};
 
-ARRAY_NEW(ArrayPipeline, Pipeline)
+ARRAY_NEW(a_arr_redirect, struct a_redirect)
 
-typedef struct {
-	ArrayPipeline pipelines; /* collection of pipelines */
-	ubyte is_background; /* is process being run in background ? */
-} Conditional;
+struct a_simple_cmd { /* simple command */
+	a_arr_ccharp sc_argv;
+	a_arr_ccharp sc_env;
+	a_arr_redirect sc_rds;
+};
 
-ARRAY_NEW(ArrayConditional, Conditional)
+struct a_cmd { /* tagged union */
+	enum a_cmdtype c_type;
+	union {
+		struct a_simple_cmd scmd;
+	} c_u;
+};
 
-void Conditional_free(Conditional *cond);
-int32 ashe_parse(const char *cstr);
+ARRAY_NEW(a_arr_cmd, struct a_cmd)
+
+struct a_pipeline {
+	a_arr_cmd pl_cmds; /* commands */
+	enum a_connect pl_con; /* connection type */
+};
+
+ARRAY_NEW(a_arr_pipeline, struct a_pipeline)
+
+struct a_list {
+	a_arr_pipeline ls_pipes;
+};
+
+ARRAY_NEW(a_arr_list, struct a_list)
+
+struct a_block {
+	a_arr_list bl_lists;
+	memmax bl_subst; /* recursion depth '()' */
+};
+
+void a_block_free(struct a_block *block);
+int32 ashe_block(const char *cstr);
 
 #endif

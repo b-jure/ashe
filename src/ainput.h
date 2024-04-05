@@ -7,7 +7,7 @@
 
 #include <termios.h>
 
-#define TM      ashe.sh_term
+#define TM	ashe.sh_term
 #define TI	ashe.sh_term.tm_input
 #define IBF	TI.in_ibf
 #define DBF	TI.in_dbf
@@ -20,7 +20,7 @@
 #define TCOLMAX ashe.sh_term.tm_columns
 #define PLEN	ashe.sh_term.tm_promptlen
 
-#define TerminalInput_clear() (TerminalInput_free(), TerminalInput_init())
+#define a_terminput_clear() (a_terminput_free(), a_terminput_init())
 
 #define get_winsize_or_panic(row, col)                               \
 	do {                                                         \
@@ -28,32 +28,33 @@
 			panic("couldn't get terminal window size."); \
 	} while (0)
 
-typedef struct {
+struct a_cursor {
 	uint32 cr_col; /* current column */
 	uint32 cr_row; /* current row */
-} Cursor; /* current Line position */
+}; /* current Line position */
 
-typedef struct {
+struct a_line {
 	char *start; /* start of line */
 	memmax len; /* line length (bytes) */
-} Line; /* slice of bytes */
+}; /* slice of bytes */
 
-ARRAY_NEW(ArrayLine, Line)
+ARRAY_NEW(a_arr_line, struct a_line)
 
-typedef struct {
-	Buffer in_ibf; /* input buffer */
-	Buffer in_dbf; /* draw buffer */
-	ArrayLine in_lines; /* abstract input newline or terminal wrapping as lines */
-	Cursor in_cursor; /* terminal cursor */
+struct a_terminput {
+	a_arr_char in_ibf; /* input buffer */
+	a_arr_char in_dbf; /* draw buffer */
+	a_arr_line
+		in_lines; /* abstract input newline or terminal wrapping as lines */
+	struct a_cursor in_cursor; /* terminal cursor */
 	memmax in_ibfidx; /* input buffer index */
-} TerminalInput;
+};
 
-void TerminalInput_init(void);
-void TerminalInput_read(void);
-void TerminalInput_free(void);
+void a_terminput_init(void);
+void a_terminput_read(void);
+void a_terminput_free(void);
 
-typedef struct {
-	TerminalInput tm_input;
+struct a_term {
+	struct a_terminput tm_input;
 	struct termios tm_dfltermios; /* default mode */
 	struct termios tm_rawtermios; /* raw mode */
 	memmax tm_promptlen; /* prompt length */
@@ -61,10 +62,10 @@ typedef struct {
 	uint32 tm_columns; /* terminal columns */
 	uint32 tm_col; /* current terminal column */
 	ubyte tm_reading; /* flag indicating if we are reading input */
-} Terminal;
+};
 
-void Terminal_init(void);
-#define Terminal_free() TerminalInput_free()
+void a_term_init(void);
+#define a_term_free() a_terminput_free()
 
 /* public only for signal handlers (SIGCHLD and SIGIWNCH) */
 int32 get_window_size(uint32 *height, uint32 *width);

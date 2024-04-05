@@ -87,7 +87,7 @@ ASHE_PRIVATE void SIGCHLD_handler(int signum)
 	unused(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
-	JobControl_update_and_notify(&ashe.sh_jobcntl);
+	a_jobcntl_update_and_notify(&ashe.sh_jobcntl);
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif
