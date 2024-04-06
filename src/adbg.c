@@ -10,18 +10,49 @@
 #include <errno.h>
 #include <dirent.h>
 
-#define ASHE_TAB 4
+/* push string literal */
+#define SS(str)				 (sizeof(str) - 1)
+#define a_arr_char_push_strlit(out, lit) a_arr_char_push_str(out, lit, SS(lit))
 
+/* push tabs for proper indentation */
+#define ASHE_TAB 4
 #define pushtabs(out, tabs)                           \
 	for (uint32 i = 0; i < tabs; i++)             \
 		for (uint32 j = 0; j < ASHE_TAB; j++) \
 			a_arr_char_push(out, ' ');
 
+/* push struct/array value separator */
 #define pushsep(out) a_arr_char_push_strlit(out, ",\n")
+/* push struct field name */
+#define pushfieldname(out, name)                              \
+	do {                                                  \
+		a_arr_char_push_str(out, name, strlen(name)); \
+		a_arr_char_push_strlit(out, ": ");            \
+	} while (0)
 
-#define a_arr_char_push_strlit(out, lit) a_arr_char_push_str(out, lit, SS(lit))
-
-#define SS(str) (sizeof(str) - 1)
+/* generic array index function */
+#define refidxfn(type)	 a_arr_##type##_index
+#define derefidxfn(type) *a_arr_##type##_index
+/* debug generic array */
+#define debug_arr(type, ptr, name, tabs, out, idxfn) \
+	debug_arr_internal(type, ptr, name, tabs, out, idxfn)
+#define debug_arr_internal(type, ptr, name, tabs, out, idxfn)           \
+	do {                                                            \
+		uint32 len, i;                                          \
+                                                                        \
+		len = a_arr_##type##_len(ptr);                          \
+		debug_arr_prefix("a_arr_" #type, name, len, tabs, out); \
+		++tabs;                                                 \
+		for (i = 0; i < len; i++) {                             \
+			debug_##type(idxfn(ptr, i), NULL, tabs, out);   \
+			if (i + 1 < len)                                \
+				pushsep(out);                           \
+			else                                            \
+				a_arr_char_push(out, '\n');             \
+		}                                                       \
+		--tabs;                                                 \
+		debug_suffix(tabs, out);                                \
+	} while (0)
 
 const char *logfiles[] = {
 	NULL,
@@ -131,27 +162,36 @@ ASHE_PRIVATE void debug_suffix(uint32 tabs, a_arr_char *out)
 
 /*			TERMS				*/
 
-ASHE_PUBLIC void debug_number(ssize n, uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_number(ssize n, const char *name, uint32 tabs,
+			      a_arr_char *out)
 {
 	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
 	a_arr_char_push_num(out, n);
 }
 
-ASHE_PUBLIC void debug_boolean(ubyte b, uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_boolean(ubyte b, const char *name, uint32 tabs,
+			       a_arr_char *out)
 {
 	const char *boolean;
 
 	boolean = (b ? "true" : "false");
 	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
 	a_arr_char_push_str(out, boolean, strlen(boolean));
 }
 
-ASHE_PUBLIC void debug_cstring(const char *ptr, uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, uint32 tabs,
+			      a_arr_char *out)
 {
 	const char *string;
 
 	string = (ptr ? ptr : "(null)");
 	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
 	a_arr_char_push(out, '"');
 	a_arr_char_push_str(out, string, strlen(string));
 	a_arr_char_push(out, '"');
@@ -159,11 +199,14 @@ ASHE_PUBLIC void debug_cstring(const char *ptr, uint32 tabs, a_arr_char *out)
 
 /*			ENUMS				 */
 
-ASHE_PUBLIC void debug_connect(enum a_connect con, uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name,
+			       uint32 tabs, a_arr_char *out)
 {
 	const char *suffix;
 
 	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
 	a_arr_char_push_strlit(out, "ACON_");
 	switch (con) {
 	case ACON_NONE:
@@ -182,12 +225,14 @@ ASHE_PUBLIC void debug_connect(enum a_connect con, uint32 tabs, a_arr_char *out)
 	a_arr_char_push_str(out, suffix, strlen(suffix));
 }
 
-ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, uint32 tabs,
-				   a_arr_char *out)
+ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name,
+				   uint32 tabs, a_arr_char *out)
 {
 	const char *suffix;
 
 	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
 	a_arr_char_push_strlit(out, "ARDOP_");
 	switch (op) {
 	case ARDOP_REDIRECT_ERROUT:
@@ -238,15 +283,15 @@ ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
 	debug_struct_prefix("struct a_redirect", name, tabs, out);
 	/* body */
 	++tabs;
-	debug_number(rd->rd_lhsfd, tabs, out);
+	debug_number(rd->rd_lhsfd, "rd_lhsfd", tabs, out);
 	pushsep(out);
-	debug_number(rd->rd_rhsfd, tabs, out);
+	debug_number(rd->rd_rhsfd, "rd_rhsfd", tabs, out);
 	pushsep(out);
-	debug_cstring(rd->rd_fname, tabs, out);
+	debug_ccharp(rd->rd_fname, "rd_fname", tabs, out);
 	pushsep(out);
-	debug_redirect_op(rd->rd_op, tabs, out);
+	debug_redirect_op(rd->rd_op, "rd_op", tabs, out);
 	pushsep(out);
-	debug_boolean(rd->rd_append, tabs, out);
+	debug_boolean(rd->rd_append, "rd_append", tabs, out);
 	a_arr_char_push(out, '\n');
 	--tabs;
 	/* suffix */
@@ -292,13 +337,13 @@ ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name,
 	debug_struct_prefix("struct a_pipeline", name, tabs, out);
 	/* body */
 	++tabs;
-	debug_arr_cmd(&pipeline->pl_cmds, NULL, tabs, out);
+	debug_arr_cmd(&pipeline->pl_cmds, "pl_cmds", tabs, out);
 	pushsep(out);
-	debug_connect(pipeline->pl_con, tabs, out);
+	debug_connect(pipeline->pl_con, "pl_con", tabs, out);
 	pushsep(out);
-	debug_boolean(pipeline->pl_bg, tabs, out);
+	debug_boolean(pipeline->pl_bg, "pl_bg", tabs, out);
 	pushsep(out);
-	debug_cstring(pipeline->pl_input, tabs, out);
+	debug_ccharp(pipeline->pl_input, "pl_input", tabs, out);
 	a_arr_char_push(out, '\n');
 	--tabs;
 	/* suffix */
@@ -326,9 +371,9 @@ ASHE_PUBLIC void debug_block(struct a_block *block, const char *name,
 	debug_struct_prefix("struct a_block", name, tabs, out);
 	/* body */
 	++tabs;
-	debug_arr_list(&block->bl_lists, NULL, tabs, out);
+	debug_arr_list(&block->bl_lists, "bl_lists", tabs, out);
 	pushsep(out);
-	debug_number(block->bl_subst, tabs, out);
+	debug_number(block->bl_subst, "bl_subst", tabs, out);
 	a_arr_char_push(out, '\n');
 	--tabs;
 	/* suffix */
@@ -348,114 +393,34 @@ ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name,
 	a_arr_char_push_strlit(out, "] = {\n");
 }
 
+ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *ccharps, const char *name,
+				  uint32 tabs, a_arr_char *out)
+{
+	debug_arr(ccharp, ccharps, name, tabs, out, derefidxfn(ccharp));
+}
+
 ASHE_PUBLIC void debug_arr_redirect(a_arr_redirect *rds, const char *name,
 				    uint32 tabs, a_arr_char *out)
 {
-	uint32 len, i;
-
-	len = a_arr_redirect_len(rds);
-	/* prefix */
-	debug_arr_prefix("a_arr_redirect", name, len, tabs, out);
-	/* body */
-	++tabs;
-	for (i = 0; i < len; i++) {
-		debug_redirect(a_arr_redirect_index(rds, i), NULL, tabs, out);
-		if (i + 1 < len)
-			pushsep(out);
-		else
-			a_arr_char_push(out, '\n');
-	}
-	--tabs;
-	/* suffix */
-	debug_suffix(tabs, out);
-}
-
-ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *arr, const char *name,
-				  uint32 tabs, a_arr_char *out)
-{
-	uint32 len, i;
-
-	len = a_arr_ccharp_len(arr);
-	/* prefix */
-	debug_arr_prefix("a_arr_ccharp", name, len, tabs, out);
-	/* body */
-	++tabs;
-	for (i = 0; i < len; i++) {
-		debug_cstring(*a_arr_ccharp_index(arr, i), tabs, out);
-		if (i + 1 < len)
-			pushsep(out);
-		else
-			a_arr_char_push(out, '\n');
-	}
-	--tabs;
-	/* suffix */
-	debug_suffix(tabs, out);
+	debug_arr(redirect, rds, name, tabs, out, refidxfn(redirect));
 }
 
 ASHE_PUBLIC void debug_arr_cmd(a_arr_cmd *cmds, const char *name, uint32 tabs,
 			       a_arr_char *out)
 {
-	uint len, i;
-
-	len = a_arr_cmd_len(cmds);
-	/* prefix */
-	debug_arr_prefix("a_arr_cmd", name, len, tabs, out);
-	/* body */
-	++tabs;
-	for (i = 0; i < len; i++) {
-		debug_cmd(a_arr_cmd_index(cmds, i), NULL, tabs, out);
-		if (i + 1 < len)
-			pushsep(out);
-		else
-			a_arr_char_push(out, '\n');
-	}
-	--tabs;
-	/* suffix */
-	debug_suffix(tabs, out);
+	debug_arr(cmd, cmds, name, tabs, out, refidxfn(cmd));
 }
 
 ASHE_PUBLIC void debug_arr_pipeline(a_arr_pipeline *pipes, const char *name,
 				    uint32 tabs, a_arr_char *out)
 {
-	uint len, i;
-
-	len = a_arr_pipeline_len(pipes);
-	/* prefix */
-	debug_arr_prefix("a_arr_pipeline", name, len, tabs, out);
-	/* body */
-	++tabs;
-	for (i = 0; i < len; i++) {
-		debug_pipeline(a_arr_pipeline_index(pipes, i), NULL, tabs, out);
-		if (i + 1 < len)
-			pushsep(out);
-		else
-			a_arr_char_push(out, '\n');
-	}
-	--tabs;
-	/* suffix */
-	debug_suffix(tabs, out);
+	debug_arr(pipeline, pipes, name, tabs, out, refidxfn(pipeline));
 }
 
 ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name,
 				uint32 tabs, a_arr_char *out)
 {
-	uint len, i;
-
-	len = a_arr_list_len(lists);
-	/* prefix */
-	debug_arr_prefix("a_arr_list", name, len, tabs, out);
-	/* body */
-	++tabs;
-	for (i = 0; i < len; i++) {
-		debug_list(a_arr_list_index(lists, i), NULL, tabs, out);
-		if (i + 1 < len)
-			pushsep(out);
-		else
-			a_arr_char_push(out, '\n');
-	}
-	--tabs;
-	/* suffix */
-	debug_suffix(tabs, out);
+	debug_arr(list, lists, name, tabs, out, refidxfn(list));
 }
 
 /*
