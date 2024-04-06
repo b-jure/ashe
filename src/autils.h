@@ -37,6 +37,9 @@ void ashe_perrno(void);
 /* print info */
 void printf_info(const char *ifmt, ...);
 
+/* print debug */
+void ashe_dprintf(const char *dfmt, ...);
+
 /* duplicate string/bytes */
 char *dupstr(const char *str);
 char *dupstrn(const char *str, memmax len);

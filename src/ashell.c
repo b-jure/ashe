@@ -33,7 +33,7 @@ static int32 init_ashe_vars(void)
  */
 ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 {
-	pid_t sh_pgid = getpgrp();
+	pid_t sh_pgid;
 
 #ifdef ASHE_DBG_CURSOR
 	logfile_create("debug_cursor.dbg.txt", ALOG_CURSOR);
@@ -41,6 +41,7 @@ ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 #ifdef ASHE_DBG_LINES
 	logfile_create("debug_lines.dbg.txt", ALOG_LINES);
 #endif
+	sh_pgid = getpgrp();
 	a_jobcntl_init(&sh->sh_jobcntl);
 	a_arr_ccharp_init(&sh->sh_buffers);
 	a_arr_char_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));

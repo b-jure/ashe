@@ -57,6 +57,17 @@ ASHE_PUBLIC void ashe_eprintf(const char *errfmt, ...)
 	va_end(argp);
 }
 
+ASHE_PUBLIC void ashe_dprintf(const char *dfmt, ...)
+{
+	va_list argp;
+
+	va_start(argp, dfmt);
+	ashe_print("[DEBUG]: ", stderr);
+	ashe_vprintf(stderr, dfmt, argp);
+	va_end(argp);
+	ashe_print("\r\n", stderr);
+}
+
 ASHE_PUBLIC void ashe_perrno(void)
 {
 	const char *errmsg;
@@ -83,6 +94,7 @@ ASHE_PUBLIC char *dupstrn(const char *str, memmax len)
 	char *dup;
 
 	dup = amalloc(len);
+	dup[len - 1] = '\0';
 	memcpy(dup, str, len);
 	return dup;
 }
@@ -94,6 +106,7 @@ ASHE_PUBLIC char *dupstr(const char *str)
 
 	len = strlen(str) + 1;
 	dup = amalloc(len);
+	dup[len - 1] = '\0';
 	memcpy(dup, str, len);
 	return dup;
 }

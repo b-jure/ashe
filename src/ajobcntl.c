@@ -424,10 +424,6 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 	jobcnt = a_jobcntl_jobs(jobcntl);
 	a_jobcntl_update(jobcntl);
 
-	col = COL;
-	row = ROW;
-	idx = IBFIDX;
-
 	for (i = 0; i < jobcnt;) {
 		job = a_jobcntl_get_job_at(jobcntl, i);
 		completed = 0;
@@ -445,6 +441,9 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 		} else if (a_job_is_stopped(job) && !job->notified) {
 l_redraw:
 			if (ashe.sh_term.tm_reading) { /* in signal handler ? */
+				col = COL;
+				row = ROW;
+				idx = IBFIDX;
 				ashe_cursor_end();
 				ashe_print("\r\n", stderr);
 			}
@@ -452,7 +451,7 @@ l_redraw:
 				    (completed ? "completed [+]" :
 						 "stopped [-]"));
 			prompt_print();
-			if (term->tm_reading) { /* TODO: fix ? */
+			if (term->tm_reading) {
 				COL = col;
 				ROW = row;
 				IBFIDX = idx;

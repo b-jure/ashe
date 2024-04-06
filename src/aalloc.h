@@ -3,8 +3,6 @@
 
 #include "acommon.h"
 
-typedef void (*CleanupFn)(void);
-
 void *arealloc(void *ptr, memmax size);
 #define amalloc(size) arealloc(NULL, size)
 void *acalloc(memmax elem, memmax size);

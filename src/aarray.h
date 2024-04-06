@@ -7,6 +7,7 @@
 
 #include <memory.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #define ARRAY_INITIAL_SIZE 8
 #define GROW_ARRAY_CAPACITY(cap, initial_size) \
@@ -157,7 +158,7 @@ typedef void (*FreeFn)(void *value);
                                                                                            \
 		if (fn != NULL)                                                            \
 			for (i = 0; i < self->len; i++)                                    \
-				fn((void*)&self->data[i]);                                        \
+				fn((void *)&self->data[i]);                                \
 		if (self->cap > 0) {                                                       \
 			ashe_assert(self->data != NULL);                                   \
 			afree(self->data);                                                 \
@@ -168,6 +169,8 @@ typedef void (*FreeFn)(void *value);
 						const char *str, memmax len)               \
 	{                                                                                  \
 		uint32 required;                                                           \
+                                                                                           \
+		ashe_assert(sizeof(type) == sizeof(char));                                 \
 		if (len <= 0)                                                              \
 			return;                                                            \
 		required = self->len + len;                                                \
@@ -176,6 +179,18 @@ typedef void (*FreeFn)(void *value);
 		type *dest = self->data + self->len;                                       \
 		memcpy(dest, str, len * sizeof(char));                                     \
 		self->len += len;                                                          \
+	}                                                                                  \
+                                                                                           \
+	static inline void _ARRAY_METHOD_VARARG(name, push_num, ssize n)                   \
+	{                                                                                  \
+		char temp[UINT_DIGITS];                                                    \
+		ssize chars;                                                               \
+                                                                                           \
+		ashe_assert(sizeof(type) == sizeof(char));                                 \
+		chars = snprintf(temp, sizeof(temp), "%ld", n);                            \
+		if (unlikely(chars < 0 || (memmax)chars > sizeof(temp)))                   \
+			panic(#name "_puhs_num(%u) failed.", n);                           \
+		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);                    \
 	}
 
 #endif

@@ -12,30 +12,6 @@
  * #include <glob.h>
  */
 
-static const char *tokenstr[] = {
-	"&&",
-	"||",
-	"<&",
-	">&",
-	">|",
-	">>",
-	"&>",
-	"&>>",
-	"<>",
-	"<",
-	">",
-	"-",
-	";",
-	"(",
-	")",
-	"|",
-	"&",
-	"EOL",
-	NULL /* WORD */,
-	NULL /* KVPAIR */,
-	NULL /* NUMBER */
-};
-
 /* Return 1 if character 'c' is a char token. */
 ASHE_PRIVATE inline ubyte has_precedence(int32 c)
 {
@@ -182,60 +158,12 @@ ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 	}
 }
 
-/* Auxiliary to 'a_token_tostr()' */
-ASHE_PRIVATE inline const char *num2str(memmax n)
-{
-	static char buffer[UINT_DIGITS + 1];
-
-	snprintf(buffer, UINT_DIGITS + 1, "%lu", n);
-	return buffer;
-}
-
-/* Use this only for DEBUG, because this changes the
- * buffer contents!
- * Note: TOKEN_NUMBER stores its own string in a static
- * buffer, invoking this function second time could overwrite
- * the static buffer. */
-ASHE_PUBLIC const char *a_token_debug(struct a_token *token)
-{
-	switch (token->type) {
-	case TK_AND_AND:
-	case TK_PIPE_PIPE:
-	case TK_LESS_AND:
-	case TK_GREATER_AND:
-	case TK_GREATER_GREATER:
-	case TK_AND_GREATER:
-	case TK_AND_GREATER_GREATER:
-	case TK_LESS_GREATER:
-	case TK_LESS:
-	case TK_GREATER:
-	case TK_MINUS:
-	case TK_SEMICOLON:
-	case TK_LPAREN:
-	case TK_RPAREN:
-	case TK_PIPE:
-	case TK_AND:
-	case TK_EOL:
-		return tokenstr[token->type];
-	case TK_WORD:
-	case TK_KVPAIR: {
-		unescape(&token->u.string, 0, token->u.string.len);
-		return token->u.string.data;
-	}
-	case TK_NUMBER:
-		return num2str(token->u.number);
-	default:
-		/* UNREACHED */
-		ashe_assertf(0, "unreachable");
-		return NULL;
-	}
-}
-
-ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type)
+ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type, const char *start)
 {
 	struct a_token token;
 	token.type = type;
-	token.start = ashe.sh_lexer.current;
+	token.start = start;
+	token.end = ashe.sh_lexer.current;
 	return token;
 }
 
@@ -243,11 +171,14 @@ ASHE_PUBLIC struct a_token a_lexer_next(struct a_lexer *lexer)
 {
 	int32 c;
 	enum a_toktype type;
+	const char *start;
 
 	skipws(lexer);
+
+	start = lexer->current;
 	if ((c = peek(lexer, 0)) == '\0') {
 		advance(lexer);
-		return a_token_new(TK_EOL);
+		return a_token_new(TK_EOL, start);
 	}
 
 	switch (c) {
@@ -337,5 +268,5 @@ ASHE_PUBLIC struct a_token a_lexer_next(struct a_lexer *lexer)
 	}
 
 	advance(lexer);
-	return a_token_new(type);
+	return a_token_new(type, start);
 }

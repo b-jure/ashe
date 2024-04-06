@@ -22,6 +22,5 @@ struct a_lexer {
 
 void a_lexer_init(struct a_lexer *lexer, const char *start);
 struct a_token a_lexer_next(struct a_lexer *lexer);
-const char *a_token_debug(struct a_token *token);
 
 #endif

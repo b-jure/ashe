@@ -1,5 +1,6 @@
 #include "aarray.h"
 #include "acommon.h"
+#include "adbg.h"
 #include "autils.h"
 #include "alex.h"
 #include "ashell.h"
@@ -50,8 +51,7 @@ ASHE_PRIVATE void nexttok(struct a_lexer *lexer)
 	lexer->prev = lexer->curr;
 	lexer->curr = a_lexer_next(lexer);
 #ifdef ASHE_DBG_LEX
-	ashe_printf(stderr, "[DEBUG]: TOKEN -> '%s' [%d]\r\n",
-		    a_token_debug(&CTOK), CTOK.type);
+	debug_token(&CTOK);
 #endif
 }
 
@@ -68,7 +68,7 @@ ASHE_PRIVATE void expect_error(const char *what)
 {
 	const char *invalid;
 
-	invalid = a_token_debug(&CTOK);
+	invalid = a_token_str(&CTOK);
 	ashe_eprintf(perrors[ERR_EXPECT], what, invalid);
 	jump_out(-1);
 }
@@ -90,23 +90,25 @@ ASHE_PRIVATE inline void a_redirect_init(struct a_redirect *rd)
 	rd->rd_op = 0;
 }
 
-ASHE_PRIVATE inline void a_smcmd_init(struct a_simple_cmd *smcmd)
+ASHE_PRIVATE inline void a_simple_cmd_init(struct a_simple_cmd *scmd)
 {
-	a_arr_ccharp_init(&smcmd->sc_argv);
-	a_arr_ccharp_init(&smcmd->sc_env);
+	a_arr_ccharp_init(&scmd->sc_argv);
+	a_arr_ccharp_init(&scmd->sc_env);
+	a_arr_redirect_init(&scmd->sc_rds);
 }
 
-ASHE_PRIVATE inline void a_smcmd_free(struct a_simple_cmd *smcmd)
+ASHE_PRIVATE inline void a_simple_cmd_free(struct a_simple_cmd *scmd)
 {
-	a_arr_ccharp_free(&smcmd->sc_argv, NULL);
-	a_arr_ccharp_free(&smcmd->sc_env, NULL);
+	a_arr_ccharp_free(&scmd->sc_argv, NULL);
+	a_arr_ccharp_free(&scmd->sc_env, NULL);
+	a_arr_redirect_free(&scmd->sc_rds, NULL);
 }
 
 ASHE_PRIVATE inline void a_cmd_free(struct a_cmd *cmd)
 {
 	switch (cmd->c_type) {
 	case ACMD_SIMPLE:
-		a_smcmd_free(&cmd->c_u.scmd);
+		a_simple_cmd_free(&cmd->c_u.scmd);
 		break;
 	default:
 		/* UNREACHED */
@@ -429,7 +431,7 @@ ASHE_PRIVATE void command(struct a_block *block, struct a_cmd *cmd)
 	switch (CTOK.type) {
 	default: /* for now only supports simple commands */
 		cmd->c_type = ACMD_SIMPLE;
-		a_smcmd_init(&cmd->c_u.scmd);
+		a_simple_cmd_init(&cmd->c_u.scmd);
 		simple_cmd(block, &cmd->c_u.scmd);
 		break;
 	}
@@ -479,7 +481,7 @@ ASHE_PRIVATE inline void plist(struct a_block *block, struct a_list *list)
 			last->pl_con = ACON_OR;
 		else
 			last->pl_con = ACON_NONE;
-		last->pl_input = dupstrn(temp, CTOK.end - temp);
+		last->pl_input = dupstrn(temp, 1 + (CTOK.end - temp));
 		a_arr_ccharp_push(&ashe.sh_buffers, last->pl_input);
 	} while (last->pl_con != ACON_NONE);
 }
@@ -495,20 +497,19 @@ ASHE_PUBLIC int32 a_parse_block(const char *cstr)
 	struct a_list list;
 	struct a_lexer *lexer;
 
+	block = &ashe.sh_block;
 	lexer = &ashe.sh_lexer;
 	ashe.sh_buf.buf_code = 0;
+
 	a_lexer_init(lexer, cstr);
+	a_list_init(&list);
 
 	if (setjmp(ashe.sh_buf.buf_jmpbuf) == 0) {
-		block = &ashe.sh_block;
-		a_block_init(block);
-		a_list_init(&list);
-		do {
-			nexttok(&LEX);
+		for (nexttok(&LEX); CTOK.type != TK_EOL; nexttok(&LEX)) {
 			a_arr_list_push(&block->bl_lists, list);
 			plist(block, a_arr_list_last(&block->bl_lists));
 			ashe_assert(block->bl_subst == 0);
-		} while (!match(BM(TK_EOL)));
+		}
 	}
 
 	return ashe.sh_buf.buf_code;

@@ -8,6 +8,9 @@
 
 #define BM_STRING (BM(TK_WORD) | BM(TK_KVPAIR) | BM(TK_NUMBER))
 
+#define ARGV(cmd, i) (*a_arr_ccharp_index(&(cmd)->sc_argv, i))
+#define ARGC(cmd)    a_arr_ccharp_len(&(cmd)->sc_argv)
+
 ARRAY_NEW(a_arr_ccharp, const char *)
 
 enum a_cmdtype {
@@ -76,6 +79,7 @@ struct a_block {
 	memmax bl_subst; /* recursion depth '()' */
 };
 
+void a_block_init(struct a_block *block);
 void a_block_free(struct a_block *block);
 int32 a_parse_block(const char *cstr);
 

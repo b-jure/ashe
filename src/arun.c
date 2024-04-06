@@ -333,8 +333,8 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 				 struct a_pipectx *ctx, struct a_job *job,
 				 int32 *pipes)
 {
-	a_arr_ccharp *argva = &scmd->sc_argv;
-	a_arr_ccharp *enva = &scmd->sc_env;
+	a_arr_ccharp *aargv = &scmd->sc_argv;
+	a_arr_ccharp *aenv = &scmd->sc_env;
 	char **argv;
 	int32 type;
 	pid PID = fork();
@@ -357,7 +357,7 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 	ashe.sh_flags.isfork = 1;
 	afree(pipes);
 
-	if (unlikely(argva->len == 0 || try_add_envvars(enva) < 0))
+	if (unlikely(aargv->len == 0 || try_add_envvars(aenv) < 0))
 		goto cleanup;
 
 	PID = getpid();
@@ -381,9 +381,9 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 	if (type != -1)
 		_exit(run_builtin(scmd, type));
 
-	argv = acalloc(argva->len + 1, sizeof(char *));
-	memcpy(argv, argva->data, sizeof(char *) * argva->len);
-	argv[argva->len] = NULL;
+	argv = acalloc(aargv->len + 1, sizeof(const char *));
+	memcpy(argv, ARGV(scmd, 0), sizeof(const char *) * ARGC(scmd));
+	argv[aargv->len] = NULL;
 
 	if (execvp(argv[0], argv) < 0) {
 		afree(argv);
@@ -421,9 +421,9 @@ ASHE_PRIVATE int32 a_run_simple_cmd(struct a_simple_cmd *scmd,
 	if (cmdcnt > 1) {
 		if (unlikely(conf_pipe(pipes, cmdcnt, i, &ctx) < 0))
 			goto cleanup;
-	} else if (job->foreground && (a_arr_ccharp_len(&scmd->sc_argv) == 0 ||
-				       (type = is_builtin(*a_arr_ccharp_index(
-						&scmd->sc_argv, 0))))) {
+	} else if (job->foreground &&
+		   (ARGC(scmd) == 0 ||
+		    (type = is_builtin(ARGV(scmd, 0))) >= 0)) {
 		a_job_free(job);
 		return run_scmd_nofork(scmd, type);
 	}
