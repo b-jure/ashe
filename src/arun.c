@@ -252,7 +252,7 @@ l_badfd:
 	return -1;
 }
 
-/* This runs a built-in command or puts 
+/* This runs a built-in command or puts
  * environment variables into 'environ' or both. */
 ASHE_PRIVATE int32 run_scmd_nofork(struct a_simple_cmd *scmd,
 				   enum a_builtin_type type)
@@ -297,7 +297,7 @@ error:
 	return 0; /* UNREACHED */
 }
 
-ASHE_PRIVATE void reset_signal_handling(void)
+ASHE_PRIVATE int32 reset_signal_handling(void)
 {
 	struct sigaction sigdfl_ac;
 
@@ -312,9 +312,10 @@ ASHE_PRIVATE void reset_signal_handling(void)
 		     sigaction(SIGTTIN, &sigdfl_ac, NULL) < 0 ||
 		     sigaction(SIGTTOU, &sigdfl_ac, NULL) < 0)) {
 		ashe_perrno();
-		panic(NULL);
+		return -1;
 	}
 	ashe_mask_signals(SIG_UNBLOCK);
+	return 0;
 }
 
 ASHE_PRIVATE inline int32 try_connect_pipe(struct a_pipectx *ctx)
@@ -336,8 +337,11 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 	a_arr_ccharp *aargv = &scmd->sc_argv;
 	a_arr_ccharp *aenv = &scmd->sc_env;
 	char **argv;
+	uint32 argc;
 	int32 type;
-	pid PID = fork();
+	pid PID;
+
+	PID = fork();
 
 	if (unlikely(PID < 0)) {
 		ashe_perrno();
@@ -352,12 +356,11 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 		}
 		return PID;
 	}
-	/* forked process */
-	ashe_assert(PID == 0);
+	/* fork */
 	ashe.sh_flags.isfork = 1;
-	afree(pipes);
+	argc = a_arr_ccharp_len(aargv);
 
-	if (unlikely(aargv->len == 0 || try_add_envvars(aenv) < 0))
+	if (unlikely(argc == 0 || try_add_envvars(aenv) < 0))
 		goto cleanup;
 
 	PID = getpid();
@@ -370,19 +373,23 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 
 	if (unlikely(setpgid(PID, job->pgid) < 0))
 		goto error;
+	if (unlikely(reset_signal_handling() < 0))
+		goto cleanup;
 
-	a_job_free(job);
-	reset_signal_handling();
+	type = is_builtin(ARGV(scmd, 0));
 
-	type = is_builtin(*a_arr_ccharp_index(&scmd->sc_argv, 0));
 	if (try_connect_pipe(ctx) < 0 ||
 	    try_resolve_redirections(&scmd->sc_rds, type == TBI_EXEC) < 0)
-		goto panic;
-	if (type != -1)
+		goto cleanup;
+	if (type != -1) {
+		if (pipes != NULL)
+			afree(pipes);
+		a_job_free(job);
 		_exit(run_builtin(scmd, type));
+	}
 
-	argv = acalloc(aargv->len + 1, sizeof(const char *));
-	memcpy(argv, ARGV(scmd, 0), sizeof(const char *) * ARGC(scmd));
+	argv = acalloc(argc + 1, sizeof(char *));
+	memcpy(argv, scmd->sc_argv.data, sizeof(char *) * argc);
 	argv[aargv->len] = NULL;
 
 	if (execvp(argv[0], argv) < 0) {
@@ -390,8 +397,9 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 error:
 		ashe_perrno();
 cleanup:
+		if (pipes != NULL)
+			afree(pipes);
 		a_job_free(job);
-panic:
 		panic(NULL);
 	}
 	ashe_assert(0);
@@ -419,6 +427,7 @@ ASHE_PRIVATE int32 a_run_simple_cmd(struct a_simple_cmd *scmd,
 	a_pipectx_init(&ctx);
 
 	if (cmdcnt > 1) {
+		ashe_assert(pipes != NULL);
 		if (unlikely(conf_pipe(pipes, cmdcnt, i, &ctx) < 0))
 			goto cleanup;
 	} else if (job->foreground &&
@@ -467,11 +476,14 @@ ASHE_PRIVATE int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 
 	cmds = &pipeline->pl_cmds;
 	a_job_init(&job, pipeline->pl_input, pipeline->pl_bg);
+	ashe_assert(job.foreground == !pipeline->pl_bg);
 	ashe_assert(job.input != NULL);
 
 	if ((cmdcnt = a_arr_cmd_len(cmds)) > 1) {
 		pn = ((cmdcnt - 1) * 2);
 		pipes = amalloc(sizeof(int32) * pn);
+	} else {
+		pipes = NULL;
 	}
 
 	ashe_assert(cmdcnt >= 1);

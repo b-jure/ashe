@@ -57,6 +57,7 @@ ASHE_PUBLIC void ashe_eprintf(const char *errfmt, ...)
 	va_end(argp);
 }
 
+#ifdef ASHE_DBG
 ASHE_PUBLIC void ashe_dprintf(const char *dfmt, ...)
 {
 	va_list argp;
@@ -67,6 +68,7 @@ ASHE_PUBLIC void ashe_dprintf(const char *dfmt, ...)
 	va_end(argp);
 	ashe_print("\r\n", stderr);
 }
+#endif
 
 ASHE_PUBLIC void ashe_perrno(void)
 {
@@ -93,8 +95,8 @@ ASHE_PUBLIC char *dupstrn(const char *str, memmax len)
 {
 	char *dup;
 
-	dup = amalloc(len);
-	dup[len - 1] = '\0';
+	dup = amalloc(len + 1);
+	dup[len] = '\0';
 	memcpy(dup, str, len);
 	return dup;
 }

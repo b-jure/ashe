@@ -17,10 +17,13 @@ void logfile_create(const char *logfile, int32 which);
 void remove_logfiles(void);
 
 /* debug lexer */
-void debug_token(struct a_token *token);
+void debug_current_token(struct a_token *token);
+void debug_token(struct a_token *token, const char *name, uint32 tabs, a_arr_char *out);
+void debug_toktype(enum a_toktype type, const char *name, uint32 tabs, a_arr_char *out);
 const char *a_token_str(struct a_token *token);
 
 /* debug parser (AST) */
+void debug_ast(struct a_block *block);
 /* structs */
 void debug_block(struct a_block *block, const char *name, uint32 tabs, a_arr_char *out);
 void debug_list(struct a_list *list, const char *name, uint32 tabs, a_arr_char *out);
@@ -40,6 +43,8 @@ void debug_arr_ccharp(a_arr_ccharp *arr, const char *name, uint32 tabs, a_arr_ch
 /* terms */
 void debug_boolean(ubyte b, const char *name, uint32 tabs, a_arr_char *out);
 void debug_ccharp(const char *ptr, const char *name, uint32 tabs, a_arr_char *out);
+void debug_ptr(const void *ptr, const char *name, uint32 tabs, a_arr_char *out);
+void debug_string(const char *str, memmax len, const char *name, uint32 tabs, a_arr_char *out);
 void debug_number(ssize n, const char *name, uint32 tabs, a_arr_char *out);
 
 #endif

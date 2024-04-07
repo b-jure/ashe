@@ -131,11 +131,6 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
 	}
 }
 
-ASHE_PUBLIC void debug_token(struct a_token *token)
-{
-	ashe_dprintf("TOKEN -> '%s' [%d]", a_token_str(token), token->type);
-}
-
 /*
  *
  *			DEBUG AST
@@ -183,6 +178,24 @@ ASHE_PUBLIC void debug_boolean(ubyte b, const char *name, uint32 tabs,
 	a_arr_char_push_str(out, boolean, strlen(boolean));
 }
 
+ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, uint32 tabs,
+			   a_arr_char *out)
+{
+	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
+	a_arr_char_push_ptr(out, ptr);
+}
+
+ASHE_PUBLIC void debug_string(const char *str, memmax len, const char *name,
+			      uint32 tabs, a_arr_char *out)
+{
+	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
+	a_arr_char_push_str(out, str, len);
+}
+
 ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, uint32 tabs,
 			      a_arr_char *out)
 {
@@ -197,7 +210,88 @@ ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, uint32 tabs,
 	a_arr_char_push(out, '"');
 }
 
-/*			ENUMS				 */
+/*			ENUMS				*/
+
+ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name,
+			       uint32 tabs, a_arr_char *out)
+{
+	const char *suffix;
+
+	pushtabs(out, tabs);
+	if (name != NULL)
+		pushfieldname(out, name);
+	a_arr_char_push_strlit(out, "TK_");
+	switch (type) {
+	case TK_AND_AND:
+		suffix = "AND_AND";
+		break;
+	case TK_PIPE_PIPE:
+		suffix = "PIPE_PIPE";
+		break;
+	case TK_LESS_AND:
+		suffix = "LESS_AND";
+		break;
+	case TK_GREATER_AND:
+		suffix = "GREATER_AND";
+		break;
+	case TK_GREATER_PIPE:
+		suffix = "GREATER_PIPE";
+		break;
+	case TK_GREATER_GREATER:
+		suffix = "GREATER_GREATER";
+		break;
+	case TK_AND_GREATER:
+		suffix = "AND_GREATER";
+		break;
+	case TK_AND_GREATER_GREATER:
+		suffix = "AND_GREATER_GREATER";
+		break;
+	case TK_LESS_GREATER:
+		suffix = "LESS_GREATER";
+		break;
+	case TK_LESS:
+		suffix = "LESS";
+		break;
+	case TK_GREATER:
+		suffix = "GREATER";
+		break;
+	case TK_MINUS:
+		suffix = "MINUS";
+		break;
+	case TK_SEMICOLON:
+		suffix = "SEMICOLON";
+		break;
+	case TK_LPAREN:
+		suffix = "LPAREN";
+		break;
+	case TK_RPAREN:
+		suffix = "RPAREN";
+		break;
+	case TK_PIPE:
+		suffix = "PIPE";
+		break;
+	case TK_AND:
+		suffix = "AND";
+		break;
+	case TK_EOL:
+		suffix = "EOL";
+		break;
+	case TK_WORD:
+		suffix = "WORD";
+		break;
+	case TK_KVPAIR:
+		suffix = "KVPAIR";
+		break;
+	case TK_NUMBER:
+		suffix = "NUMBER";
+		break;
+	default:
+		/* UNREACHED */
+		ashe_assert(0);
+		break;
+	}
+	a_arr_char_push_str(out, suffix, strlen(suffix));
+}
 
 ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name,
 			       uint32 tabs, a_arr_char *out)
@@ -275,11 +369,35 @@ ASHE_PRIVATE void debug_struct_prefix(const char *type, const char *name,
 	a_arr_char_push_strlit(out, "{\n");
 }
 
+ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, uint32 tabs,
+			     a_arr_char *out)
+{
+	/* prefix */
+	debug_struct_prefix("struct a_token", name, tabs, out);
+	/* body */
+	++tabs;
+	debug_toktype(tok->type, "type", tabs, out);
+	pushsep(out);
+	if (tok->type == TK_NUMBER) {
+		debug_number(tok->u.number, "u.number", tabs, out);
+		pushsep(out);
+	} else if (tok->type == TK_WORD || tok->type == TK_KVPAIR) {
+		debug_ccharp(tok->u.string.data, "u.string", tabs, out);
+		pushsep(out);
+	}
+	debug_ptr(tok->start, "start", tabs, out);
+	pushsep(out);
+	debug_ptr(tok->end, "end", tabs, out);
+	pushsep(out);
+	--tabs;
+	/* suffix */
+	debug_suffix(tabs, out);
+}
+
 ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
 				uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
-	pushtabs(out, tabs);
 	debug_struct_prefix("struct a_redirect", name, tabs, out);
 	/* body */
 	++tabs;
@@ -421,6 +539,30 @@ ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name,
 				uint32 tabs, a_arr_char *out)
 {
 	debug_arr(list, lists, name, tabs, out, refidxfn(list));
+}
+
+/*			ASHE DEBUG			*/
+
+ASHE_PUBLIC void debug_current_token(struct a_token *token)
+{
+	a_arr_char out;
+
+	a_arr_char_init(&out);
+	debug_token(token, NULL, 0, &out);
+	a_arr_char_push(&out, '\0');
+	ashe_dprintf("got token...\n```\n%s\n```", out.data);
+	a_arr_char_free(&out, NULL);
+}
+
+ASHE_PUBLIC void debug_ast(struct a_block *block)
+{
+	a_arr_char out;
+
+	a_arr_char_init(&out);
+	debug_block(block, NULL, 0, &out);
+	a_arr_char_push(&out, '\0');
+	ashe_dprintf("dumping AST...\n'''\n%s\n'''", out.data);
+	a_arr_char_free(&out, NULL);
 }
 
 /*

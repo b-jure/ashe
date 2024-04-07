@@ -62,7 +62,7 @@ ARRAY_NEW(a_arr_cmd, struct a_cmd)
 struct a_pipeline {
 	a_arr_cmd pl_cmds; /* commands */
 	enum a_connect pl_con; /* connection type */
-	ubyte pl_bg; /* run asynchronously */
+	ubyte pl_bg; /* run in background */
 	const char *pl_input; /* debug */
 };
 

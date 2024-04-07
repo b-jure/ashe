@@ -181,6 +181,19 @@ typedef void (*FreeFn)(void *value);
 		self->len += len;                                                          \
 	}                                                                                  \
                                                                                            \
+	static inline void _ARRAY_METHOD_VARARG(name, push_ptr,                            \
+						const void *ptr)                           \
+	{                                                                                  \
+		char temp[UINT_DIGITS];                                                    \
+		ssize chars;                                                               \
+                                                                                           \
+		ashe_assert(sizeof(type) == sizeof(char));                                 \
+		chars = snprintf(temp, sizeof(temp), "%p", ptr);                           \
+		if (unlikely(chars < 0 || (memmax)chars > sizeof(temp)))                   \
+			panic(#name "_puhs_ptr(%p) failed.", ptr);                         \
+		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);                    \
+	}                                                                                  \
+                                                                                           \
 	static inline void _ARRAY_METHOD_VARARG(name, push_num, ssize n)                   \
 	{                                                                                  \
 		char temp[UINT_DIGITS];                                                    \

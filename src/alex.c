@@ -158,7 +158,8 @@ ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 	}
 }
 
-ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type, const char *start)
+ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type,
+					       const char *start)
 {
 	struct a_token token;
 	token.type = type;
