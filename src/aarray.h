@@ -9,9 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define ARRAY_INITIAL_SIZE 8
-#define GROW_ARRAY_CAPACITY(cap, initial_size) \
-	((cap) < (initial_size) ? (initial_size) : (cap) * 2)
+#define GROW_ARRAY_CAPACITY(cap) ((cap) < 8 ? 8 : (cap) * 2)
 
 /* These are internal only macros. */
 #define _ARRAY_METHOD_NAME(tname, name) tname##_##name
@@ -82,9 +80,7 @@ typedef void (*FreeFn)(void *value);
 			oldcap++;                                                          \
 			oldcap >>= 1;                                                      \
 		}                                                                          \
-		self->cap =                                                                \
-			MIN(GROW_ARRAY_CAPACITY(oldcap, ARRAY_INITIAL_SIZE),               \
-			    UINT_MAX);                                                     \
+		self->cap = MIN(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);                    \
 		self->data = (type *)arealloc(self->data,                                  \
 					      self->cap * sizeof(type));                   \
 	}                                                                                  \
@@ -118,10 +114,16 @@ typedef void (*FreeFn)(void *value);
 		return &self->data[0];                                                     \
 	}                                                                                  \
                                                                                            \
-	static inline void _ARRAY_METHOD_VARARG(name, ensure, uint32 len)                  \
+	static inline ubyte _ARRAY_METHOD_VARARG(name, ensure, uint32 len)                 \
 	{                                                                                  \
-		while (self->cap < self->len + len)                                        \
+		ubyte grew;                                                                \
+                                                                                           \
+		grew = 0;                                                                  \
+		while (self->cap < self->len + len) {                                      \
+			grew = 1;                                                          \
 			_CALL_ARRAY_METHOD(name, grow);                                    \
+		}                                                                          \
+		return grew;                                                               \
 	}                                                                                  \
                                                                                            \
 	static inline void _ARRAY_METHOD_VARARG(name, insert, uint32 index,                \

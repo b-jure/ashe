@@ -11,8 +11,16 @@
 
 #include <stdio.h>
 
-#define clear_parsed_data() \
-	do {                \
+#define clear_ast()                           \
+	do {                                  \
+		a_block_free(&ashe.sh_block); \
+		a_block_init(&ashe.sh_block); \
+	} while (0)
+
+#define clear_buffers()                                            \
+	do {                                                       \
+		a_arr_ccharp_free(&ashe.sh_buffers, wafree_charp); \
+		a_arr_ccharp_init(&ashe.sh_buffers);               \
 	} while (0)
 
 /* ashe */
@@ -38,10 +46,8 @@ int main(int argc, char **argv)
 		ashe_dprintf("read %u bytes: '%s'", IBF.len, IBF.data);
 		disable_async_jobcntl_updates();
 		a_jobcntl_update_and_notify(jobcntl);
-		a_block_free(&ashe.sh_block);
-		a_block_init(&ashe.sh_block);
-		a_arr_ccharp_free(&ashe.sh_buffers, wafree_charp);
-		a_arr_ccharp_init(&ashe.sh_buffers);
+		clear_ast();
+		clear_buffers();
 		expand_vars(&IBF); /* '$' */
 		ashe_dprintf("expanded '$' vars: '%s'", IBF.data);
 		if (IBF.len <= 1 || a_parse_block(IBF.data) < 0)

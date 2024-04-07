@@ -37,14 +37,14 @@ ASHE_PRIVATE inline void a_token_init(struct a_token *token)
 ASHE_PUBLIC void a_lexer_init(struct a_lexer *lexer, const char *start)
 {
 	lexer->current = lexer->start = start;
-	a_token_init(&lexer->curr);
-	a_token_init(&lexer->prev);
+	a_token_init(&A_CTOK);
+	a_token_init(&A_PTOK);
 }
 
 /* Peek 'amount' without advancing. */
 ASHE_PRIVATE inline int32 peek(struct a_lexer *lexer, memmax amount)
 {
-	return *(lexer->current + amount);
+	return lexer->current[amount];
 }
 
 /* Advance buffer by a single character unless EOF is reached. */
@@ -134,7 +134,6 @@ ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 {
 	int32 c;
 
-	lexer->ws = 0;
 	c = peek(lexer, 0);
 	for (;;) {
 		switch (c) {
@@ -148,7 +147,6 @@ ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 		case ' ':
 		case '\t':
 		case '\v':
-			lexer->ws = 1;
 			advance(lexer);
 			c = peek(lexer, 0);
 			break;

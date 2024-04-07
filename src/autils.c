@@ -155,17 +155,21 @@ ASHE_PUBLIC void expand_vars(a_arr_char *buffer)
 	const char *value;
 	char *ptr, *end;
 	int32 klen, vlen;
-	memmax offset;
+	memmax offset, idx;
 	ssize diff;
 	char cached;
 
 	ptr = buffer->data;
-	for (; ((ptr = strchr(ptr, '$')) != NULL); ptr++) {
-		if (is_escaped(ptr, ptr - buffer->data))
+	while ((ptr = strchr(ptr, '$')) != NULL) {
+		idx = ptr - buffer->data;
+
+		if (is_escaped(buffer->data, idx))
 			continue;
+
 		offset = strspn(++ptr, ENV_VAR_CHARS);
 		if (offset == 0 && (offset = is_ashe_var(ptr)) == 0)
 			continue;
+
 		end = ptr + offset;
 		cached = *end;
 		*end = '\0';
@@ -176,11 +180,16 @@ ASHE_PUBLIC void expand_vars(a_arr_char *buffer)
 
 		if (value != NULL) { /* found value ? */
 			vlen = strlen(value);
+			ashe_assert(vlen >= 0 && klen >= 0);
 			diff = vlen - klen;
 
 			if (diff > 0) {
 				if (likely(buffer->len + diff < ARG_MAX)) {
-					a_arr_char_ensure(buffer, diff);
+					if (a_arr_char_ensure(buffer, diff)) {
+						ptr = buffer->data + idx;
+						end = ptr + offset + 1;
+					}
+					/* setup space */
 					memmove(end + diff, end, diff);
 					buffer->len += diff;
 				} else {
@@ -188,20 +197,22 @@ ASHE_PUBLIC void expand_vars(a_arr_char *buffer)
 				}
 			} else {
 				diff = -diff;
-				memcpy(end - diff, end, diff);
+				/* setup space */
+				memmove(end - diff, end, diff);
 				buffer->len -= diff;
 			}
 
-			memcpy(ptr, value, vlen);
-		} else { /* no variable found, remove the whole key together with '$' */
+			memmove(ptr, value, vlen);
+			ptr += vlen;
+		} else { /* remove the whole key together with '$' */
 l_remove:
-			memcpy(ptr, end, klen);
+			memmove(ptr, end, klen);
 			buffer->len -= klen;
 		}
 	}
 }
 
-ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
+ASHE_PUBLIC ubyte in_dq(const char *restrict str, memmax len)
 {
 	ubyte dq;
 
@@ -211,13 +222,15 @@ ASHE_PUBLIC ubyte in_dq(char *str, memmax len)
 	return dq;
 }
 
-ASHE_PUBLIC ubyte is_escaped(char *s, memmax curpos)
+ASHE_PUBLIC ubyte is_escaped(const char *restrict str, memmax curpos)
 {
-	char *at;
+	const char *at;
 
-	at = s + curpos;
-	return ((curpos > 1 && *(at - 1) == '\\' && *(at - 2) != '\\') ||
-		(curpos == 1 && *(at - 1) == '\\'));
+	ashe_assert(str != NULL);
+	at = str + curpos;
+	return (curpos > 0 &&
+		((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') ||
+		 at[-1] == '\\'));
 }
 
 /* Unescape tabs, newlines, etc.. for more readable output in debug functions. */
@@ -286,4 +299,22 @@ ASHE_PUBLIC void escape(a_arr_char *buffer)
 	}
 	*newp = '\0';
 	buffer->len = (newp - buffer->data) + 1;
+}
+
+ASHE_PUBLIC int32 ashe_dup2(int32 oldfd, int32 newfd)
+{
+	if (unlikely(dup2(oldfd, newfd) < 0)) {
+		ashe_perrno();
+		return -1;
+	}
+	return 0;
+}
+
+ASHE_PUBLIC int32 ashe_close(int32 fd)
+{
+	if (unlikely(close(fd) < 0)) {
+		ashe_perrno();
+		return -1;
+	}
+	return 0;
 }

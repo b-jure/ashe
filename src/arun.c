@@ -13,13 +13,6 @@
 #include <unistd.h>
 #include <stdio.h>
 
-#define DEV_DIR "/dev/"
-ASHE_PRIVATE const char *devfiles[] = {
-	DEV_DIR "stdin",
-	DEV_DIR "stdout",
-	DEV_DIR "stderr",
-};
-
 #define PIPE_R 0 /* Read end of a pipe */
 #define PIPE_W 1 /* Write end of a pipe */
 
@@ -29,7 +22,7 @@ ASHE_PRIVATE const char *devfiles[] = {
 ASHE_PRIVATE const char *runerrors[] = {
 	"failed exporting variable '%s'.",
 	"couldn't remove variable '%s'.",
-	"bad file descriptor '%zu'.",
+	"bad file descriptor '%zd'.",
 };
 
 /* Instructs forked process which pipe stream to dup() and close. */
@@ -77,7 +70,7 @@ ASHE_PRIVATE int32 conf_pipe(int32 *pipes, memmax len, memmax i,
 	return 0;
 }
 
-ASHE_PRIVATE int32 try_add_envvars(a_arr_ccharp *env)
+ASHE_PRIVATE int32 add_envs(a_arr_ccharp *env)
 {
 	char *name, *sep, *value;
 	memmax len, i;
@@ -99,7 +92,7 @@ ASHE_PRIVATE int32 try_add_envvars(a_arr_ccharp *env)
 	return 0;
 }
 
-ASHE_PRIVATE int32 try_rm_envvars(a_arr_ccharp *env)
+ASHE_PRIVATE int32 rm_envs(a_arr_ccharp *env)
 {
 	int32 status = 0;
 	memmax len, i;
@@ -119,44 +112,21 @@ ASHE_PRIVATE int32 try_rm_envvars(a_arr_ccharp *env)
 	return status;
 }
 
-ASHE_PRIVATE inline int32 filepath_is_fd(const char *filepath)
+ASHE_PRIVATE inline int32 redirect_errout_into(int32 fd)
 {
-	memmax i;
-
-	for (i = 0; i < ELEMENTS(devfiles); i++) {
-		if (strcmp(filepath, devfiles[i]) != 0)
-			continue;
-		if (fd_isvalid(i))
-			return i;
-		break;
-	}
-	return -1;
-}
-
-ASHE_PRIVATE inline int32 redirect_stderrout_into(int32 fd)
-{
-	if ((dup2(STDOUT_FILENO, STDERR_FILENO) == 0 &&
-	     dup2(fd, STDOUT_FILENO) == 0)) {
-		ashe_perrno();
+	if (unlikely(ashe_dup2(fd, STDERR_FILENO) < 0 ||
+		     ashe_dup2(fd, STDOUT_FILENO) < 0 || ashe_close(fd) < 0))
 		return -1;
-	}
 	return 0;
 }
 
-ASHE_PRIVATE inline int32 redirect_fd_into(int32 fd, int32 to)
-{
-	if (dup2(to, fd) < 0) {
-		ashe_perrno();
-		return -1;
-	}
-	return 0;
-}
-
+/* clang-format off */
 ASHE_PRIVATE int32 try_resolve_redirections(a_arr_redirect *rds, ubyte exec)
 {
 	ssize fd;
 	struct a_redirect *rdp;
-	memmax len, badfd, i;
+	memmax len, i;
+	ssize badfd;
 
 	len = rds->len;
 	for (i = 0; i < len; i++) {
@@ -166,91 +136,69 @@ ASHE_PRIVATE int32 try_resolve_redirections(a_arr_redirect *rds, ubyte exec)
 			// TODO: Implement
 			break;
 		case ARDOP_REDIRECT_ERROUT:
-			fd = filepath_is_fd(rdp->rd_fname);
-			if (fd < 0) {
-				fd = ashe_wopen(rdp->rd_fname, rdp->rd_append);
-				if (fd < 0) {
-					ashe_perrno();
-					return -1;
-				}
-			}
-			if (unlikely(!fd_isok(fd))) {
-				badfd = fd;
-				goto l_badfd;
-			} else if (redirect_stderrout_into(fd) < 0) {
-				return -1;
-			}
-			break;
+			fd = ashe_wopen(rdp->rd_fname, rdp->rd_append);
+			if (fd < 0)
+				ashe_perrno();
+			else if (likely(redirect_errout_into(fd) == 0))
+				break;
+			return -1;
 		case ARDOP_REDIRECT_INOUT:
+			fd = ashe_rwopen(rdp->rd_fname, 0);
+			goto checkfd;
 		case ARDOP_REDIRECT_IN:
+			fd = ashe_ropen(rdp->rd_fname);
+			goto checkfd;
 		case ARDOP_REDIRECT_OUT:
-			fd = filepath_is_fd(rdp->rd_fname);
+			fd = ashe_wopen(rdp->rd_fname, rdp->rd_append);
+checkfd:
 			if (fd < 0) {
-				if (rdp->rd_op == ARDOP_REDIRECT_IN)
-					fd = ashe_ropen(rdp->rd_fname);
-				else if (rdp->rd_op == ARDOP_REDIRECT_OUT)
-					fd = ashe_wopen(rdp->rd_fname,
-							rdp->rd_append);
-				else
-					fd = ashe_rwopen(rdp->rd_fname, 0);
-				if (fd < 0) {
-					ashe_perrno();
-					return -1;
-				}
-			}
-			if (!fd_isok(rdp->rd_lhsfd)) {
-			} else if (redirect_fd_into(rdp->rd_lhsfd, fd) < 0) {
+				ashe_perrno();
 				return -1;
 			}
+			if (!fd_isok((badfd = rdp->rd_lhsfd)))
+				goto badfd;
+			else if (unlikely(ashe_dup2(fd, rdp->rd_lhsfd) < 0 || ashe_close(fd) < 0))
+				return -1;
 			break;
 		case ARDOP_DUP_IN:
 		case ARDOP_DUP_OUT:
 			if (!fd_isok(rdp->rd_rhsfd)) {
 				badfd = rdp->rd_rhsfd;
-				goto l_badfd;
+				goto badfd;
 			}
 			/* FALLTHRU */
 		case ARDOP_CLOSE:
 			if (!fd_isok(rdp->rd_lhsfd)) {
 				badfd = rdp->rd_lhsfd;
-				goto l_badfd;
+				goto badfd;
 			}
 			if (!exec)
 				break;
 			if (rdp->rd_op == ARDOP_DUP_IN) {
-				if (!fd_isopen(rdp->rd_rhsfd,
-					       O_RDONLY | O_RDWR)) {
-					ashe_eprintf(
-						"fd %d is not open for input.");
+				if (!fd_isopen(rdp->rd_rhsfd, O_RDONLY | O_RDWR)) {
+					ashe_eprintf("fd %d is not open for input.");
 					return -1;
 				}
-				goto l_copy_fd;
+				goto copyfd;
 			} else if (rdp->rd_op == ARDOP_DUP_OUT) {
-				if (!fd_isopen(rdp->rd_rhsfd,
-					       O_WRONLY | O_RDWR)) {
-					ashe_eprintf(
-						"fd %d is not open for output.");
+				if (!fd_isopen(rdp->rd_rhsfd, O_WRONLY | O_RDWR)) {
+					ashe_eprintf("fd %d is not open for output.");
 					return -1;
 				}
-l_copy_fd:
-				if (unlikely(dup2(rdp->rd_rhsfd,
-						  rdp->rd_lhsfd) < 0)) {
-					ashe_perrno();
+copyfd:
+				if (unlikely(ashe_dup2(rdp->rd_rhsfd, rdp->rd_lhsfd) < 0))
 					return -1;
-				}
-			} else if (unlikely(close(rdp->rd_lhsfd) < 0)) {
-				ashe_perrno();
+			} else if (unlikely(ashe_close(rdp->rd_lhsfd) < 0))
 				return -1;
-			}
 			break;
 		}
 	}
 	return 0;
-
-l_badfd:
+badfd:
 	ashe_eprintf(runerrors[ERR_BADFD], badfd);
 	return -1;
 }
+/* clang-format on */
 
 /* This runs a built-in command or puts
  * environment variables into 'environ' or both. */
@@ -265,36 +213,30 @@ ASHE_PRIVATE int32 run_scmd_nofork(struct a_simple_cmd *scmd,
 	int32 out = ASHE_FD_1;
 	int32 err = ASHE_FD_2;
 
-	if (unlikely(try_add_envvars(env) == -1))
+	if (unlikely(add_envs(env) == -1))
 		return -2;
 	if (argv->len == 0)
 		return 0;
-	if (unlikely(dup2(STDIN_FILENO, in) < 0 ||
-		     dup2(STDOUT_FILENO, out) < 0 ||
-		     dup2(STDERR_FILENO, err) < 0)) {
-		goto error;
+	if (unlikely(ashe_dup2(STDIN_FILENO, in) < 0 ||
+		     ashe_dup2(STDOUT_FILENO, out) < 0 ||
+		     ashe_dup2(STDERR_FILENO, err) < 0)) {
+		panic(NULL);
 	}
 	if (try_resolve_redirections(rds, type == TBI_EXEC) < 0)
-		status = -2;
+		status = -1;
 	else
 		status = run_builtin(scmd, type);
-	if (unlikely((dup2(in, STDIN_FILENO)) < 0 ||
-		     (dup2(out, STDOUT_FILENO)) < 0 ||
-		     (dup2(err, STDERR_FILENO)) < 0)) {
-		ashe_perrno();
+	if (unlikely((ashe_dup2(in, STDIN_FILENO)) < 0 ||
+		     (ashe_dup2(out, STDOUT_FILENO)) < 0 ||
+		     (ashe_dup2(err, STDERR_FILENO)) < 0)) {
 		panic("can't restore default file descriptors.");
 	}
-	if (unlikely(close(in) < 0 || close(out) < 0 || close(err) < 0)) {
-		ashe_perrno();
-		return -2;
-	}
-	if (unlikely(try_rm_envvars(env) < 0))
-		return -2;
+	if (unlikely(ashe_close(in) < 0 || ashe_close(out) < 0 ||
+		     ashe_close(err) < 0))
+		return -1;
+	if (unlikely(rm_envs(env) < 0))
+		return -1;
 	return status;
-error:
-	ashe_perrno();
-	panic(NULL);
-	return 0; /* UNREACHED */
 }
 
 ASHE_PRIVATE int32 reset_signal_handling(void)
@@ -320,12 +262,10 @@ ASHE_PRIVATE int32 reset_signal_handling(void)
 
 ASHE_PRIVATE inline int32 try_connect_pipe(struct a_pipectx *ctx)
 {
-	if (unlikely(dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
-		     dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0 ||
-		     (ctx->closefd != -1 && close(ctx->closefd) < 0))) {
-		ashe_perrno();
+	if (unlikely(ashe_dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
+		     ashe_dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0 ||
+		     (ctx->closefd != -1 && ashe_close(ctx->closefd) < 0)))
 		return -1;
-	}
 	return 0;
 }
 
@@ -360,9 +300,8 @@ ASHE_PRIVATE int32 run_scmd_fork(struct a_simple_cmd *scmd,
 	ashe.sh_flags.isfork = 1;
 	argc = a_arr_ccharp_len(aargv);
 
-	if (unlikely(argc == 0 || try_add_envvars(aenv) < 0))
+	if (unlikely(argc == 0 || add_envs(aenv) < 0))
 		goto cleanup;
-
 	PID = getpid();
 	if (job->pgid == 0) {
 		job->pgid = PID;
@@ -408,10 +347,9 @@ cleanup:
 
 ASHE_PRIVATE inline int32 close_pipe(int32 *pipe)
 {
-	if (unlikely(close(pipe[PIPE_R]) < 0 || close(pipe[PIPE_W]) < 0)) {
-		ashe_perrno();
+	if (unlikely(ashe_close(pipe[PIPE_R]) < 0 ||
+		     ashe_close(pipe[PIPE_W]) < 0))
 		return -1;
-	}
 	return 0;
 }
 

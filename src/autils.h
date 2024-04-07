@@ -25,7 +25,6 @@
 	open(file, O_CREAT | ((append) ? O_APPEND : O_TRUNC) | O_RDWR, 0666)
 
 /* generic print */
-// void ashe_print(const char *msg);
 void ashe_print(const char *msg, FILE *stream);
 void ashe_printf(FILE *stream, const char *msg, ...);
 void ashe_vprintf(FILE *stream, const char *msg, va_list argp);
@@ -47,8 +46,8 @@ void ashe_dprintf(const char *dfmt, ...);
 char *dupstr(const char *str);
 char *dupstrn(const char *str, memmax len);
 
-ubyte in_dq(char *str, memmax len);
-ubyte is_escaped(char *s, memmax curpos);
+ubyte in_dq(const char *str, memmax len);
+ubyte is_escaped(const char *s, memmax curpos);
 
 /* Length without escape sequences */
 memmax len_without_seq(const char *str);
@@ -57,5 +56,9 @@ memmax len_without_seq(const char *str);
 void unescape(a_arr_char *buffer, uint32 from, uint32 to);
 void escape(a_arr_char *buffer);
 void expand_vars(a_arr_char *buffer);
+
+/* syscall wrappers */
+int32 ashe_close(int32 fd);
+int32 ashe_dup2(int32 oldfd, int32 newfd);
 
 #endif

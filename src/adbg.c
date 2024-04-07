@@ -134,7 +134,7 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
 /*
  *
  *			DEBUG AST
- *		   
+ *
  */
 
 ASHE_PRIVATE void debug_prefix(const char *type, const char *name, uint32 tabs,
