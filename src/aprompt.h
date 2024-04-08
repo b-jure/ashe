@@ -4,8 +4,8 @@
 #include "acommon.h"
 #include "atoken.h"
 
-void userstr_print(const char *str, memmax len);
-void welcome_print(void);
-void prompt_print(void);
+void ashe_puserstr(const char *str, memmax len);
+void ashe_pwelcome(void);
+void ashe_pprompt(void);
 
 #endif

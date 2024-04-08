@@ -578,31 +578,34 @@ ASHE_PUBLIC void debug_cursor(void)
 	FILE *fp = NULL;
 	memmax len = 0;
 	ssize temp = 0;
+	int32 status;
 
+	status = 0;
 	errno = 0;
 	if (unlikely((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
-		goto error;
+		defer(-1);
 
 	temp = snprintf(
 		buffer, sizeof(buffer),
-		"[TCOLMAX:%u][TCOL:%u][ROW:%u][LINE_LEN:%lu][COL:%u][IBFIDX:%lu]\r\n",
-		TCOLMAX, TCOL, ROW, LINE.len, COL, IBFIDX);
+		"[A_TCOLMAX:%u][A_TCOL:%u][A_ROW:%u][LINE_LEN:%lu][A_COL:%u][A_IBFIDX:%lu]\r\n",
+		A_TCOLMAX, A_TCOL, A_ROW, A_LINE.len, A_COL, A_IBFIDX);
 
 	if (unlikely(temp < 0 || temp > BUFSIZ))
-		goto error;
+		defer(-1);
 
 	len += temp;
 
 	if (unlikely(fwrite(buffer, sizeof(byte), len, fp) != len))
-		goto error;
+		defer(-1);
 	if (unlikely(fclose(fp) == EOF))
-		goto error;
-
-	return;
-error:
-	fclose(fp);
-	ashe_perrno();
-	panic("panic in debug_cursor");
+		defer(-1);
+defer:
+	if (status == -1) {
+		if (fp)
+			fclose(fp);
+		ashe_perrno(NULL);
+		ashe_panic(NULL);
+	}
 }
 
 /* Debug each row and its line (contents) */
@@ -610,22 +613,23 @@ ASHE_PUBLIC void debug_lines(void)
 {
 	static char temp[128];
 	a_arr_char buffer;
-	ssize len = 0;
-	uint32 i = 0;
-	uint32 idx;
-	FILE *fp;
+	FILE *fp = NULL;
+	uint32 i, idx;
+	int32 status;
+	ssize len;
 
+	status = 0;
 	errno = 0;
 	a_arr_char_init(&buffer);
 
 	if (unlikely((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
-		goto error;
+		defer(-1);
 
 	/* Log prompt */
-	if (unlikely((len = snprintf(temp, sizeof(temp), "[PLEN:%lu] -> [",
-				     PLEN)) < 0 ||
+	if (unlikely((len = snprintf(temp, sizeof(temp), "[A_PLEN:%lu] -> [",
+				     A_PLEN)) < 0 ||
 		     (memmax)len > sizeof(temp)))
-		goto error;
+		defer(-1);
 	a_arr_char_push_str(&buffer, temp, len);
 	a_arr_char_push_str(&buffer, ashe.sh_prompt.data,
 			    ashe.sh_prompt.len - 1);
@@ -633,79 +637,88 @@ ASHE_PUBLIC void debug_lines(void)
 
 	/* Log buffer */
 	if (unlikely((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
-				     IBF.len)) < 0 ||
+				     A_IBF.len)) < 0 ||
 		     (memmax)len > sizeof(temp)))
-		goto error;
+		defer(-1);
 	a_arr_char_push_str(&buffer, temp, len);
 	idx = buffer.len;
-	a_arr_char_push_str(&buffer, IBF.data, IBF.len);
-	unescape(&buffer, idx, buffer.len);
+	a_arr_char_push_str(&buffer, A_IBF.data, A_IBF.len);
+	ashe_unescape(&buffer, idx, buffer.len);
 	a_arr_char_push_strlit(&buffer, "]\r\n");
 
 	/* Log lines */
-	for (i = 0; i < LINES.len; i++) {
+	for (i = 0; i < A_LINES.len; i++) {
 		if (unlikely((len = snprintf(temp, sizeof(temp),
-					     "[LINE:%4u][LEN:%4lu] -> [", i,
-					     LINES.data[i].len)) < 0 ||
+					     "[A_LINE:%4u][LEN:%4lu] -> [", i,
+					     A_LINES.data[i].len)) < 0 ||
 			     (memmax)len > sizeof(temp)))
-			goto error;
+			defer(-1);
 		a_arr_char_push_str(&buffer, temp, len);
 		idx = buffer.len;
-		a_arr_char_push_str(&buffer, LINES.data[i].start,
-				    LINES.data[i].len);
-		unescape(&buffer, idx, buffer.len);
+		a_arr_char_push_str(&buffer, A_LINES.data[i].start,
+				    A_LINES.data[i].len);
+		ashe_unescape(&buffer, idx, buffer.len);
 		a_arr_char_push_strlit(&buffer, "]\r\n");
 	}
 
 	/* Write log file */
 	if (unlikely(fwrite(buffer.data, sizeof(byte), buffer.len, fp) <
 		     buffer.len))
-		goto error;
-	if (unlikely(fclose(fp) == EOF))
-		goto fclose_error;
+		defer(-1);
+	if (unlikely(fclose(fp) == EOF)) {
+		fp = NULL;
+		defer(-1);
+	}
 
 	a_arr_char_free(&buffer, NULL);
-	return;
-error:
-	fclose(fp);
-fclose_error:
-	a_arr_char_free(&buffer, NULL);
-	ashe_perrno();
-	panic("panic in debug_lines()");
+defer:
+	if (status == -1) {
+		if (fp)
+			fclose(fp);
+		a_arr_char_free(&buffer, NULL);
+		ashe_perrno(NULL);
+		ashe_panic(NULL);
+	}
 }
 
+// clang-format off
 ASHE_PUBLIC void remove_logfiles(void)
 {
 	DIR *root;
 	struct dirent *entry;
+	int32 status;
 
 	errno = 0;
+	status = 0;
+	root = NULL;
 	if ((root = opendir(".")) == NULL)
-		goto error;
-	for (errno = 0; (entry = readdir(root)) != NULL; errno = 0) {
+		defer(-1);
+	for (errno = 0; (entry = readdir(root)) != NULL;) {
 		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0 ||
 		     strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0) &&
 		    entry->d_type == DT_REG) {
 			if (unlink(entry->d_name) < 0)
-				ashe_perrno(); /* still try unlink other logfiles */
+				ashe_perrno("couldn't unlink %d", entry->d_name);
 		}
 	}
-	if (errno != 0)
-		goto error;
-
-	closedir(root);
-	return;
-error:
-	closedir(root);
-	ashe_perrno();
-	panic("panic in remove_logfiles()");
+	if (unlikely(errno != 0 || closedir(root) < 0))
+		defer(-1);
+defer:
+	if (root)
+		closedir(root);
+	if (status == -1) {
+		closedir(root);
+		ashe_perrno(NULL);
+		ashe_panic(NULL);
+	}
 }
+// clang-format on
 
 ASHE_PUBLIC void logfile_create(const char *logfile, int32 which)
 {
 	logfiles[which] = logfile;
 	if (unlikely(fopen(logfile, "w") == NULL)) {
-		ashe_perrno();
-		panic("panic in logfile_create(\"%s\", %d)", logfile, which);
+		ashe_perrno("failed opening %s file", logfile);
+		ashe_panic(NULL);
 	}
 }

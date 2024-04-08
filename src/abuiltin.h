@@ -20,7 +20,7 @@ enum a_builtin_type {
 	TBI_EXIT,
 };
 
-int32 run_builtin(struct a_simple_cmd *scmd, enum a_builtin_type bi);
-int32 is_builtin(const char *command);
+int32 ashe_runbin(struct a_simple_cmd *scmd, enum a_builtin_type bi);
+int32 ashe_isbin(const char *command);
 
 #endif

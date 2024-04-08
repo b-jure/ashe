@@ -110,7 +110,7 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 		*ptr = '=';
 	}
 
-	escape(&buffer);
+	ashe_escape(&buffer);
 
 	if (buffer.len == 2 && buffer.data[0] == '-') {
 		a_arr_char_free(&buffer, NULL);

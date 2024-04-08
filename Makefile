@@ -1,4 +1,4 @@
-# Ashe - async linux shell
+# ashe - async linux shell
 # See any of the source files in 'src' directory
 # for copyright and licence details.
 

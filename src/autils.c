@@ -1,10 +1,13 @@
 #include "acommon.h"
 #include "aconf.h"
+#include "ashell.h"
 #include "autils.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <ctype.h>
 
@@ -13,7 +16,7 @@ ASHE_PUBLIC void ashe_print(const char *msg, FILE *stream)
 	fputs(msg, stream);
 	fflush(stream);
 	if (unlikely(ferror(stream)))
-		panic(NULL);
+		ashe_panic(NULL);
 }
 
 ASHE_PUBLIC void ashe_printf(FILE *stream, const char *msg, ...)
@@ -25,7 +28,7 @@ ASHE_PUBLIC void ashe_printf(FILE *stream, const char *msg, ...)
 	fflush(stream);
 	if (unlikely(ferror(stream))) {
 		va_end(argp);
-		panic(NULL); // can't print shit...
+		ashe_panic(NULL); // can't print shit...
 	}
 	va_end(argp);
 }
@@ -36,7 +39,7 @@ ASHE_PUBLIC void ashe_vprintf(FILE *stream, const char *msg, va_list argp)
 	fflush(stream);
 	if (unlikely(ferror(stream))) {
 		va_end(argp);
-		panic(NULL); // can't print shit...
+		ashe_panic(NULL); // can't print shit...
 	}
 }
 
@@ -70,19 +73,27 @@ ASHE_PUBLIC void ashe_dprintf(const char *dfmt, ...)
 }
 #endif
 
-ASHE_PUBLIC void ashe_perrno(void)
+ASHE_PUBLIC void ashe_perrno(const char *errfmt, ...)
 {
-	const char *errmsg;
+	va_list argp;
 
+	ashe_assert(errno != 0);
 	if (unlikely(errno == ENOMEM)) {
-		perror(NULL);
+		perror(__func__);
 	} else {
-		errmsg = strerror(errno);
-		ashe_eprintf(errmsg);
+		ashe_print(ASHE_ERR_PREFIX, stderr);
+		if (errfmt != NULL) {
+			va_start(argp, errfmt);
+			ashe_vprintf(stderr, errfmt, argp);
+			va_end(argp);
+			ashe_printf(stderr, ": %s\n\r", strerror(errno));
+		} else {
+			perror(__func__);
+		}
 	}
 }
 
-ASHE_PUBLIC void printf_info(const char *ifmt, ...)
+ASHE_PUBLIC void ashe_pinfo(const char *ifmt, ...)
 {
 	va_list argp;
 
@@ -91,7 +102,7 @@ ASHE_PUBLIC void printf_info(const char *ifmt, ...)
 	va_end(argp);
 }
 
-ASHE_PUBLIC char *dupstrn(const char *str, memmax len)
+ASHE_PUBLIC char *ashe_dupstrn(const char *str, memmax len)
 {
 	char *dup;
 
@@ -101,7 +112,7 @@ ASHE_PUBLIC char *dupstrn(const char *str, memmax len)
 	return dup;
 }
 
-ASHE_PUBLIC char *dupstr(const char *str)
+ASHE_PUBLIC char *ashe_dupstr(const char *str)
 {
 	char *dup;
 	memmax len;
@@ -113,7 +124,7 @@ ASHE_PUBLIC char *dupstr(const char *str)
 	return dup;
 }
 
-ASHE_PUBLIC memmax len_without_seq(const char *ptr)
+ASHE_PUBLIC memmax ashe_noescseq_len(const char *ptr)
 {
 	memmax len, i;
 	ubyte escape_seq;
@@ -150,69 +161,46 @@ ASHE_PRIVATE memmax is_ashe_var(const char *ptr)
 	return offset;
 }
 
-ASHE_PUBLIC void expand_vars(a_arr_char *buffer)
+ASHE_PUBLIC void ashe_expandvars(a_arr_char *buffer)
 {
 	const char *value;
 	char *ptr, *end;
-	int32 klen, vlen;
-	memmax offset, idx;
-	ssize diff;
-	char cached;
+	ssize vlen, klen, diff, idx;
+	byte cached;
 
-	ptr = buffer->data;
-	while ((ptr = strchr(ptr, '$')) != NULL) {
+	for (ptr = buffer->data; (ptr = strchr(ptr, '$')) != NULL; ptr++) {
 		idx = ptr - buffer->data;
 
-		if (is_escaped(buffer->data, idx))
+		if (ashe_isescaped(buffer->data, idx))
+			continue;
+		klen = strspn(++ptr, ENV_VAR_CHARS);
+		if (klen == 0 && (klen = is_ashe_var(ptr)) == 0)
 			continue;
 
-		offset = strspn(++ptr, ENV_VAR_CHARS);
-		if (offset == 0 && (offset = is_ashe_var(ptr)) == 0)
-			continue;
-
-		end = ptr + offset;
+		end = ptr + klen;
 		cached = *end;
 		*end = '\0';
 		value = getenv(ptr);
 		*end = cached;
-		--ptr; /* go back to '$' */
-		klen = offset + 1; /* key chars + '$' */
+		--ptr; /* back to '$' */
+		klen++; /* + '$' */
 
-		if (value != NULL) { /* found value ? */
+		if (value) {
 			vlen = strlen(value);
-			ashe_assert(vlen >= 0 && klen >= 0);
 			diff = vlen - klen;
-
-			if (diff > 0) {
-				if (likely(buffer->len + diff < ARG_MAX)) {
-					if (a_arr_char_ensure(buffer, diff)) {
-						ptr = buffer->data + idx;
-						end = ptr + offset + 1;
-					}
-					/* setup space */
-					memmove(end + diff, end, diff);
-					buffer->len += diff;
-				} else {
-					goto l_remove;
-				}
-			} else {
-				diff = -diff;
-				/* setup space */
-				memmove(end - diff, end, diff);
-				buffer->len -= diff;
-			}
-
-			memmove(ptr, value, vlen);
-			ptr += vlen;
-		} else { /* remove the whole key together with '$' */
-l_remove:
-			memmove(ptr, end, klen);
-			buffer->len -= klen;
+			if (unlikely(diff > 0 && buffer->len + diff >= ARG_MAX))
+				continue;
+			a_arr_char_remove_str(buffer, idx, klen);
+			a_arr_char_insert_str(buffer, idx, value, vlen);
+			ptr = buffer->data + idx + vlen - 1;
+		} else { /* remove the key + '$' */
+			--ptr; /* back to char before '$' */
+			a_arr_char_remove_str(buffer, idx, klen);
 		}
 	}
 }
 
-ASHE_PUBLIC ubyte in_dq(const char *restrict str, memmax len)
+ASHE_PUBLIC ubyte ashe_indq(const char *restrict str, memmax len)
 {
 	ubyte dq;
 
@@ -222,7 +210,7 @@ ASHE_PUBLIC ubyte in_dq(const char *restrict str, memmax len)
 	return dq;
 }
 
-ASHE_PUBLIC ubyte is_escaped(const char *restrict str, memmax curpos)
+ASHE_PUBLIC ubyte ashe_isescaped(const char *restrict str, memmax curpos)
 {
 	const char *at;
 
@@ -234,7 +222,7 @@ ASHE_PUBLIC ubyte is_escaped(const char *restrict str, memmax curpos)
 }
 
 /* Unescape tabs, newlines, etc.. for more readable output in debug functions. */
-ASHE_PUBLIC void unescape(a_arr_char *buffer, uint32 from, uint32 to)
+ASHE_PUBLIC void ashe_unescape(a_arr_char *buffer, uint32 from, uint32 to)
 {
 	static const int32 unescape[UINT8_MAX] = {
 		['\a'] = 'a', ['\b'] = 'b', ['\f'] = 'f', ['\n'] = 'n',
@@ -262,7 +250,7 @@ ASHE_PUBLIC void unescape(a_arr_char *buffer, uint32 from, uint32 to)
 }
 
 /* escape bytes that are outside of '"' */
-ASHE_PUBLIC void escape(a_arr_char *buffer)
+ASHE_PUBLIC void ashe_escape(a_arr_char *buffer)
 {
 	static const int32 escape[UINT8_MAX] = {
 		['a'] = '\a',  ['b'] = '\b', ['f'] = '\f', ['n'] = '\n',
@@ -301,10 +289,50 @@ ASHE_PUBLIC void escape(a_arr_char *buffer)
 	buffer->len = (newp - buffer->data) + 1;
 }
 
+/*
+ * SYSCALL WRAPPERS
+ */
+
+ASHE_PUBLIC int32 ashe_open(const char *file, memmax how, ...)
+{
+	va_list ap;
+	ubyte append;
+	int32 fd;
+	memmax o_flags;
+
+	o_flags = 0;
+
+	switch (how) {
+	case AHOW_R:
+		fd = open(file, O_RDONLY);
+		break;
+	case AHOW_RW:
+		o_flags |= O_RDWR;
+		goto checkappend;
+	case AHOW_W:
+		va_start(ap, how);
+		o_flags |= O_WRONLY;
+checkappend:
+		append = (ubyte)va_arg(ap, uint32);
+		o_flags |= (append * O_APPEND) + (!append * O_TRUNC);
+		fd = open(file, o_flags | O_CREAT, 0666);
+		va_end(ap);
+		break;
+	default:
+		/* UNREACHED */
+		ashe_panic("invalid open mode");
+		break;
+	}
+
+	if (unlikely(fd < 0))
+		ashe_perrno("can't open file '%s'", (file ? file : "(null)"));
+	return fd;
+}
+
 ASHE_PUBLIC int32 ashe_dup2(int32 oldfd, int32 newfd)
 {
 	if (unlikely(dup2(oldfd, newfd) < 0)) {
-		ashe_perrno();
+		ashe_perrno("ashe_dup2(%d, %d) failed", oldfd, newfd);
 		return -1;
 	}
 	return 0;
@@ -313,8 +341,28 @@ ASHE_PUBLIC int32 ashe_dup2(int32 oldfd, int32 newfd)
 ASHE_PUBLIC int32 ashe_close(int32 fd)
 {
 	if (unlikely(close(fd) < 0)) {
-		ashe_perrno();
+		ashe_perrno("ashe_close(%d) failed", fd);
 		return -1;
 	}
 	return 0;
+}
+
+ASHE_PUBLIC int32 ashe_write(int32 fd, const void *buf, memmax bts)
+{
+	if (unlikely(write(fd, buf, bts) < 0)) {
+		ashe_perrno("failed writting %zu bytes to fd %d from %p", bts,
+			    fd, buf);
+		return -1;
+	}
+	return 0;
+}
+
+ASHE_PUBLIC void ashe_exit(int32 status)
+{
+	if (ashe.sh_flags.isfork) {
+		ashe_cleanupfork();
+		_exit(status);
+	}
+	ashe_cleanup();
+	exit(status);
 }

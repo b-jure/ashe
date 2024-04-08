@@ -107,7 +107,8 @@ ASHE_PUBLIC void a_job_mark_as_background(struct a_job *job, ubyte cont)
 {
 	job->foreground = 0;
 	if (unlikely(cont && kill(-job->pgid, SIGCONT) < 0))
-		ashe_perrno();
+		ashe_perrno("can't send singal %d to pgid %d", SIGCONT,
+			    job->pgid);
 }
 
 /* Return string representation of 'sig'.
@@ -155,9 +156,9 @@ ASHE_PRIVATE void proc_term_notify(struct a_process *proc, int32 status,
 	proc->status = WTERMSIG(status);
 	if (notify) {
 		signame = sigstr(status);
-		printf_info("PID %d was terminated by SIG%s%s", proc->pid,
-			    signame ? signame : "?",
-			    (polite ? " (polite)" : ""));
+		ashe_pinfo("PID %d was terminated by SIG%s%s", proc->pid,
+			   signame ? signame : "?",
+			   (polite ? " (polite)" : ""));
 	} else { /* print new line */
 		fputs("\r\n", stderr);
 		fflush(stderr);
@@ -214,8 +215,8 @@ ASHE_PRIVATE int32 a_job_wait(struct a_job *job, ubyte *stop)
 		errno = 0;
 		PID = waitpid(-job->pgid, &status, WUNTRACED);
 		if (unlikely(PID < 0)) {
-			ashe_perrno();
-			panic(NULL);
+			ashe_perrno("waitpid");
+			ashe_panic(NULL);
 		}
 		proc = a_job_update_process_status(job, PID, status);
 		ashe_assert(proc != NULL);
@@ -234,33 +235,48 @@ ASHE_PRIVATE int32 a_job_wait(struct a_job *job, ubyte *stop)
 ASHE_PUBLIC int32 a_job_move_to_foreground(struct a_job *job, ubyte cont,
 					   ubyte *stop)
 {
+	int32 status;
+
 	*stop = 0;
 	job->foreground = 1;
-	if (unlikely(tcsetpgrp(STDIN_FILENO, job->pgid) < 0))
-		goto l_panic;
+	if (unlikely(tcsetpgrp(STDIN_FILENO, job->pgid) < 0)) {
+		ashe_perrno("can't put pgid %d into foreground", job->pgid);
+		defer(-1);
+	}
 	if (unlikely(cont &&
-		     tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes) < 0))
-		goto l_panic;
-	if (unlikely(kill(-job->pgid, SIGCONT) < 0))
-		goto l_panic;
-	int32 status = a_job_wait(job, stop);
+		     tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes) < 0)) {
+		ashe_perrno("can't set terminal settings");
+		defer(-1);
+	}
+	if (unlikely(kill(-job->pgid, SIGCONT) < 0)) {
+		ashe_perrno("can't send signal %d to pgid %d", SIGCONT,
+			    job->pgid);
+		defer(-1);
+	}
+	status = a_job_wait(job, stop);
 	/* 'cont' means the 'job' is already inside of the 'JobControl' */
 	if (!cont && *stop)
 		a_jobcntl_add_job(&ashe.sh_jobcntl, job);
-	if (unlikely(tcsetpgrp(STDIN_FILENO, getpgrp()) < 0))
-		goto l_panic;
-	if (unlikely(tcgetattr(STDIN_FILENO, &job->tmodes) < 0))
-		goto l_panic;
+	if (unlikely(tcsetpgrp(STDIN_FILENO, getpgrp()) < 0)) {
+		ashe_perrno("can't put shell into foreground");
+		defer(-1);
+	}
+	if (unlikely(tcgetattr(STDIN_FILENO, &job->tmodes) < 0)) {
+		ashe_perrno("can't update job's terminal settings");
+		defer(-1);
+	}
 	if (unlikely(tcsetattr(STDIN_FILENO, TCSADRAIN,
-			       &ashe.sh_term.tm_dfltermios) < 0))
-		goto l_panic;
+			       &ashe.sh_term.tm_dfltermios) < 0)) {
+		ashe_perrno("can't restore shell terminal settings");
+		defer(-1);
+	}
+defer:
+	if (unlikely(status < 0)) {
+		if (!cont)
+			a_job_free(job);
+		ashe_panic(NULL);
+	}
 	return status;
-l_panic:
-	ashe_perrno();
-	if (!cont)
-		a_job_free(job);
-	panic(NULL);
-	return 0; /* UNREACHED */
 }
 
 /* Set 'job' as running by setting all processes that
@@ -291,7 +307,7 @@ ASHE_PUBLIC void a_job_continue(struct a_job *job, ubyte isfg)
 		a_job_move_to_foreground(job, 1, &stopped);
 		if (unlikely(!stopped && !a_jobcntl_remove_job(&ashe.sh_jobcntl,
 							       job, NULL)))
-			panic("Couldn't remove the job from 'JobControl'.");
+			ashe_panic("job not found");
 	} else {
 		a_job_mark_as_background(job, 1);
 	}
@@ -379,7 +395,7 @@ ASHE_PRIVATE int32 a_jobcntl_update_process(struct a_jobcntl *jobcntl, pid pid,
 
 	if (pid <= 0) {
 		if (pid != 0 && errno != ECHILD)
-			ashe_perrno();
+			ashe_perrno("waitpid");
 		return 0;
 	}
 
@@ -441,20 +457,20 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 		} else if (a_job_is_stopped(job) && !job->notified) {
 l_redraw:
 			if (ashe.sh_term.tm_reading) { /* in signal handler ? */
-				col = COL;
-				row = ROW;
-				idx = IBFIDX;
+				col = A_COL;
+				row = A_ROW;
+				idx = A_IBFIDX;
 				ashe_cursor_end();
 				ashe_print("\r\n", stderr);
 			}
-			printf_info("job %d %s %s", job->pgid, job->input,
-				    (completed ? "completed [+]" :
-						 "stopped [-]"));
-			prompt_print();
+			ashe_pinfo("job %d %s %s", job->pgid, job->input,
+				   (completed ? "completed [+]" :
+						"stopped [-]"));
+			ashe_pprompt();
 			if (term->tm_reading) {
-				COL = col;
-				ROW = row;
-				IBFIDX = idx;
+				A_COL = col;
+				A_ROW = row;
+				A_IBFIDX = idx;
 				ashe_redraw();
 			}
 			if (completed) {
@@ -620,7 +636,8 @@ ASHE_PRIVATE void a_job_kill_and_harvest(struct a_job *job)
 	memmax zombies, processes;
 
 	if (kill(-job->pgid, SIGKILL) < 0)
-		ashe_perrno();
+		ashe_perrno("coudln't send signal %d to pgid %d", SIGKILL,
+			    job->pgid);
 
 	ts.tv_sec = 0;
 	ts.tv_nsec = (ASHE_WAIT_BEFORE_HARVEST_MS % 1000) * 1000000;

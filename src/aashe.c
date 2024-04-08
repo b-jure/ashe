@@ -17,13 +17,13 @@
 		a_block_init(&ashe.sh_block); \
 	} while (0)
 
-#define clear_buffers()                                            \
-	do {                                                       \
-		a_arr_ccharp_free(&ashe.sh_buffers, wafree_charp); \
-		a_arr_ccharp_init(&ashe.sh_buffers);               \
+#define clear_buffers()                                                \
+	do {                                                           \
+		a_arr_ccharp_free(&ashe.sh_buffers, ashe_free_ccharp); \
+		a_arr_ccharp_init(&ashe.sh_buffers);                   \
 	} while (0)
 
-/* ashe */
+/* ashe entry */
 int main(int argc, char **argv)
 {
 	unused(argc);
@@ -38,33 +38,37 @@ int main(int argc, char **argv)
 		     (ashe.sh_flags.interactive ? "interactively" :
 						  "in background"));
 	for (;;) {
-		prompt_print();
+		ashe_pprompt();
 		a_terminput_clear();
 		a_jobcntl_update_and_notify(jobcntl);
-		enable_async_jobcntl_updates();
+		ashe_enable_jobcntl_updates();
 		a_terminput_read();
-		ashe_dprintf("read %u bytes: '%s'", IBF.len, IBF.data);
-		disable_async_jobcntl_updates();
+		ashe_dprintf("read %u bytes: '%s'", A_IBF.len, A_IBF.data);
+		ashe_disable_jobcntl_updates();
 		a_jobcntl_update_and_notify(jobcntl);
 		clear_ast();
 		clear_buffers();
-		expand_vars(&IBF); /* '$' */
-		ashe_dprintf("expanded '$' vars: '%s'", IBF.data);
-		if (IBF.len <= 1 || a_parse_block(IBF.data) < 0)
+		ashe_expandvars(&A_IBF); /* '$' */
+		ashe_dprintf("expanded '$' vars: '%s'", A_IBF.data);
+		if (A_IBF.len <= 1 || a_parse_block(A_IBF.data) < 0)
 			continue;
 #ifdef ASHE_DBG_AST
 		debug_ast(&ashe.sh_block);
 #endif
 		status = a_run_block(&ashe.sh_block);
 		status = (status < 0 ? -status : status);
-		if (unlikely(snprintf(retstatus, INT_DIGITS, "%d", status) < 0))
-			goto error;
+		if (unlikely(snprintf(retstatus, INT_DIGITS, "%d", status) <
+			     0)) {
+			ashe_perrno("snprintf");
+			goto panic;
+		}
 		ashe_dprintf("storing status '%s' into '%s' variable",
 			     retstatus, ASHE_VAR_STATUS);
-		if (unlikely(setenv(ASHE_VAR_STATUS, retstatus, 1)))
-			goto error;
+		if (unlikely(setenv(ASHE_VAR_STATUS, retstatus, 1))) {
+			ashe_perrno("setenv");
+			goto panic;
+		}
 	}
-error:
-	ashe_perrno();
-	panic(NULL);
+panic:
+	ashe_panic(NULL);
 }

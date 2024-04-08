@@ -23,8 +23,8 @@ struct a_settings {
 }; /* shell settings */
 
 struct a_flags {
-	volatile ubyte exit : 1; /* set if last command was 'exit' */
-	volatile ubyte isfork : 1; /* set if this is forked shell process */
+	volatile ubyte exit : 1; /* warned before exiting */
+	volatile ubyte isfork : 1; /* set if this is a forked shell process */
 	volatile ubyte interactive : 1; /* set if shell is interactive */
 };
 
@@ -45,7 +45,7 @@ struct a_shell {
 extern struct a_shell ashe; /* global */
 
 void a_shell_init(struct a_shell *sh);
-void wafree_charp(void *ptr);
 void a_shell_free(struct a_shell *sh);
+void ashe_free_ccharp(void *ptr);
 
 #endif

@@ -37,8 +37,8 @@ ASHE_PUBLIC void ashe_mask_signal(int signum, int how)
 	if (unlikely(sigemptyset(&signal) < 0 ||
 		     sigaddset(&signal, signum) < 0 ||
 		     sigprocmask(how, &signal, NULL) < 0)) {
-		ashe_perrno();
-		panic(NULL);
+		ashe_perrno("failed masking (how=%d) signal %d", how, signum);
+		ashe_panic(NULL);
 	}
 }
 
@@ -48,9 +48,9 @@ ASHE_PRIVATE void SIGWINCH_handler(int signum)
 	unused(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
-	get_winsize_or_panic(&ashe.sh_term.tm_rows, &TCOLMAX);
-	if (unlikely(get_cursor_pos(NULL, &TCOL)))
-		panic("couldn't get cursor position.");
+	ashe_get_winsize_or_panic(&ashe.sh_term.tm_rows, &A_TCOLMAX);
+	if (unlikely(ashe_get_curpos(NULL, &A_TCOL)))
+		ashe_panic("couldn't get cursor position.");
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif
@@ -68,10 +68,10 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ashe.sh_int = 1;
 	ashe_cursor_end();
 	ashe_print("\r\n", stderr);
-	prompt_print();
+	ashe_pprompt();
 	a_terminput_clear();
-	if (unlikely(get_cursor_pos(NULL, &TCOL)) < 0)
-		panic("couldn't get cursor position.");
+	if (unlikely(ashe_get_curpos(NULL, &A_TCOL)) < 0)
+		ashe_panic("couldn't get cursor position.");
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif
@@ -105,7 +105,7 @@ ASHE_PUBLIC void ashe_mask_signals(int32 how)
 }
 
 /* Enables asynchronous 'JobControl' updates. */
-ASHE_PUBLIC void enable_async_jobcntl_updates(void)
+ASHE_PUBLIC void ashe_enable_jobcntl_updates(void)
 {
 	struct sigaction old_action;
 	sigaction(SIGCHLD, NULL, &old_action);
@@ -114,7 +114,7 @@ ASHE_PUBLIC void enable_async_jobcntl_updates(void)
 }
 
 /* disables asynchronous 'JobControl' updates. */
-ASHE_PUBLIC void disable_async_jobcntl_updates(void)
+ASHE_PUBLIC void ashe_disable_jobcntl_updates(void)
 {
 	struct sigaction old_action;
 	sigaction(SIGCHLD, NULL, &old_action);
@@ -123,7 +123,7 @@ ASHE_PUBLIC void disable_async_jobcntl_updates(void)
 }
 
 /* Initializes signal handlers. */
-ASHE_PUBLIC void init_signal_handlers(void)
+ASHE_PUBLIC void ashe_init_sighandlers(void)
 {
 	sighandler handler;
 	struct sigaction default_action;
@@ -146,7 +146,7 @@ ASHE_PUBLIC void init_signal_handlers(void)
 		     sigaction(SIGTSTP, &default_action, NULL) < 0 ||
 		     sigaction(SIGQUIT, &default_action, NULL) < 0)) {
 l_error:
-		ashe_perrno();
-		panic(NULL);
+		ashe_perrno("failed setting SIG_IGN handler");
+		ashe_panic(NULL);
 	}
 }

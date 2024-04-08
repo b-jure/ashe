@@ -8,19 +8,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
-/* Environment variable valid name characters (subset of PCS) */
-#define ENV_VAR_CHARS \
-	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
-
-/* Miscellaneous macros */
-#define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
-#define unused(x)     (void)(x)
-#define ispow2(x)     (((x) & ((x)-1)) == 0)
-#define UINT_DIGITS   20
-#define INT_DIGITS    10
-/* -------------------------------- */
-
-/* Compiler intrinsics */
+/* compiler defines */
 #if defined(__GNUC__)
 #define a_noret	       void __attribute__((noreturn))
 #define likely(expr)   __glibc_likely(expr)
@@ -44,15 +32,25 @@
 #define MAX(a, b)      ((a) > (b) ? (a) : (b))
 #define MIN(a, b)      ((a) > (b) ? (b) : (a))
 #endif // __GNUC__
+
+#if __STDC_VERSION__ < 199901L
+#if __GNUC__ >= 2
+#define __func__ __FUNCTION__
+#endif
+#endif // __STDC_VERSION__
 /* -------------------------------- */
 
+/* function signature markers */
 #define ASHE_PRIVATE static
 #define ASHE_PUBLIC  extern
+/* -------------------------------- */
 
+/* private shell variables */
 #define ASHE_VAR_STATUS	  "?"
 #define ASHE_VAR_PID	  "$"
 #define ASHE_VAR_STATUS_C '?'
 #define ASHE_VAR_PID_C	  '$'
+/* -------------------------------- */
 
 /* ------ integer typedefs ------ */
 typedef int8_t byte;
@@ -69,6 +67,37 @@ typedef ssize_t ssize;
 
 typedef pid_t pid;
 typedef void (*sighandler)(int);
+/* -------------------------------- */
+
+/* Environment variable valid name characters (subset of PCS) */
+#define ENV_VAR_CHARS \
+	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+/* -------------------------------- */
+
+/* elements of array */
+#define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
+/* -------------------------------- */
+
+/* 'mark' variable as unused */
+#define unused(x) (void)(x)
+/* -------------------------------- */
+
+/* check if 'x' is power of 2 */
+#define ispow2(x) (((x) & ((x)-1)) == 0)
+/* -------------------------------- */
+
+/* 64-bit signed/unsigned integer digits */
+#define UINT_DIGITS 20
+#define INT_DIGITS  10
+/* -------------------------------- */
+
+/* defer */
+#define defer_no_status() goto defer;
+#define defer(n)            \
+	do {                \
+		status = n; \
+		goto defer; \
+	} while (0)
 /* -------------------------------- */
 
 #endif

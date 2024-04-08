@@ -8,38 +8,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-ASHE_PUBLIC void cleanup_all(void)
+ASHE_PUBLIC void ashe_cleanup(void)
 {
 	a_jobcntl_harvest(&ashe.sh_jobcntl);
 	a_shell_free(&ashe);
 }
 
-ASHE_PUBLIC void cleanup_fork(void)
+ASHE_PUBLIC void ashe_cleanupfork(void)
 {
 	a_shell_free(&ashe);
 }
 
 ASHE_PRIVATE void vprintf_panic(const char *errmsg, va_list argp)
 {
+	const char *where;
+
 	ashe_print(ASHE_PANIC_PREFIX, stderr); /* memleak 'va_list' on panic */
-	ashe_vprintf(stderr, errmsg, argp);
-	va_end(argp);
+	where = va_arg(argp, const char *);
+	ashe_printf(stderr, "%s: ", where);
+	if (errmsg)
+		ashe_vprintf(stderr, errmsg, argp);
+	else
+		ashe_print("...", stderr);
 	ashe_print("\r\n", stderr);
 }
 
-ASHE_PUBLIC a_noret panic(const char *errmsg, ...)
+ASHE_PUBLIC a_noret ashe_internal_panic(ubyte direct, const char *errmsg, ...)
 {
 	va_list argp;
 
-	if (errmsg) {
+	if (!direct || (direct && errmsg != NULL)) {
 		va_start(argp, errmsg);
 		vprintf_panic(errmsg, argp);
+		va_end(argp);
 	}
 	if (ashe.sh_flags.isfork) {
-		cleanup_fork();
+		ashe_cleanupfork();
 		_exit(EXIT_FAILURE);
 	} else {
-		cleanup_all();
+		ashe_cleanup();
 		exit(EXIT_FAILURE);
 	}
 }
@@ -52,8 +59,8 @@ ASHE_PUBLIC void *arealloc(void *ptr, memmax size)
 	}
 	ptr = realloc(ptr, size);
 	if (unlikely(ptr == NULL)) {
-		ashe_perrno();
-		panic(NULL);
+		ashe_perrno(NULL);
+		ashe_internal_panic(1, NULL);
 	}
 	return ptr;
 }

@@ -463,7 +463,7 @@ ASHE_PRIVATE void pipe_seq(struct a_block *block, struct a_pipeline *pipeline)
 	} while (match(BM(TK_PIPE)));
 
 	pipeline->pl_bg = match(BM(TK_AND));
-	pipeline->pl_input = dupstrn(temp, (A_PTOK.end - temp));
+	pipeline->pl_input = ashe_dupstrn(temp, (A_PTOK.end - temp));
 	a_arr_ccharp_push(&ashe.sh_buffers, pipeline->pl_input);
 }
 

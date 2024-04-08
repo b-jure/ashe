@@ -17,20 +17,25 @@ struct a_shell ashe = { 0 };
 static int32 init_ashe_vars(void)
 {
 	char buffer[INT_DIGITS + 1];
+	int status;
+
+	status = 0;
 
 	if (unlikely(setenv(ASHE_VAR_STATUS, "0", 1) < 0))
-		return -1;
+		defer(-1);
 	if (unlikely(snprintf(buffer, INT_DIGITS, "%d", getpid()) < 0))
-		return -1;
+		defer(-1);
 	if (unlikely(setenv(ASHE_VAR_PID, buffer, 1) < 0))
-		return -1;
-	return 0;
+		defer(-1);
+defer:
+	return status;
 }
 
 /*
  * TODO: in future allow shell to not be interactive but
- * only with certian arguments (such as '-c'). 
+ * only with certian arguments (such as '-c').
  */
+// clang-format off
 ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 {
 	pid_t sh_pgid;
@@ -53,36 +58,46 @@ get_terminal:
 	sh->sh_flags.interactive = isatty(STDIN_FILENO);
 	if (sh->sh_flags.interactive) {
 		a_term_init();
-		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp()))
-			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
-				goto error;
-		if (unlikely(setpgid(getpid(), sh_pgid) < 0))
-			goto error;
-		if (unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0))
-			goto error;
-		init_signal_handlers();
-		welcome_print();
+		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp())) {
+			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0)) {
+				ashe_perrno("can't send signal %d to pgid %d",
+					    SIGTTIN, sh_pgid);
+				goto panic;
+			}
+		}
+		if (unlikely(setpgid(getpid(), sh_pgid) < 0)) {
+			ashe_perrno("can't set shell process group");
+			goto panic;
+		}
+		if (unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0)) {
+			ashe_perrno("can't set terminal foreground process group");
+			goto panic;
+		}
+		ashe_init_sighandlers();
+		ashe_pwelcome();
 	} else {
-		if (unlikely(kill(-sh_pgid, SIGTTIN) < 0))
-			goto error;
+		if (unlikely(kill(-sh_pgid, SIGTTIN) < 0)) {
+			ashe_perrno("can't send signal %d to pgid %d", SIGTTIN, sh_pgid);
+			goto panic;
+		}
 		goto get_terminal;
 	}
 	return;
-error:
-	ashe_perrno();
-	panic(NULL);
+panic:
+	ashe_panic(NULL);
 }
+// clang-format on
 
-ASHE_PUBLIC void wafree_charp(void *ptr)
+ASHE_PUBLIC void ashe_free_ccharp(void *ptr)
 {
-	afree(*(char **)ptr);
+	afree(*(char *const *)ptr);
 }
 
 ASHE_PUBLIC void a_shell_free(struct a_shell *sh)
 {
 	a_jobcntl_free(&sh->sh_jobcntl);
 	a_term_free();
-	a_arr_ccharp_free(&sh->sh_buffers, wafree_charp);
+	a_arr_ccharp_free(&sh->sh_buffers, ashe_free_ccharp);
 	a_arr_char_free(&sh->sh_prompt, NULL);
 	a_arr_char_free(&sh->sh_welcome, NULL);
 	a_block_free(&sh->sh_block);
