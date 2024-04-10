@@ -509,13 +509,13 @@ ASHE_PUBLIC void pblock(struct a_block *block)
 
 	a_list_init(&list);
 
-	for (nexttok(&A_LEX); !match(BM(TK_EOL));) {
+	for (nexttok(&A_LEX); A_CTOK.type != TK_EOL; nexttok(&A_LEX)) {
 		a_arr_list_push(&block->bl_lists, list);
 		plist(block, a_arr_list_last(&block->bl_lists));
 		ashe_assert(block->bl_subst == 0);
 		if (A_CTOK.type == TK_EOL)
 			break;
-		ashe_assert(A_CTOK.type & BM_SEPARATOR);
+		ashe_assert(BM(A_CTOK.type) & BM_SEPARATOR);
 	}
 }
 

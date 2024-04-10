@@ -662,6 +662,7 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			break;
 		// case CTRL_KEY('h'): // TODO: Uncomment after testing
 		case CTRL_KEY('x'):
+			_exit(255);
 		case CTRL_KEY('j'):
 		case CTRL_KEY('k'):
 		case CTRL_KEY('i'):
