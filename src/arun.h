@@ -4,6 +4,6 @@
 #include "acommon.h"
 #include "aparser.h"
 
-int32 a_run_block(struct a_block *block);
+a_int32 ashe_interpret(struct a_block *block);
 
 #endif

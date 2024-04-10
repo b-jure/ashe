@@ -13,7 +13,7 @@
  */
 
 /* Return 1 if character 'c' is a char token. */
-ASHE_PRIVATE inline ubyte has_precedence(int32 c)
+ASHE_PRIVATE inline a_ubyte has_precedence(a_int32 c)
 {
 	switch (c) {
 	case '>':
@@ -32,6 +32,7 @@ ASHE_PRIVATE inline ubyte has_precedence(int32 c)
 ASHE_PRIVATE inline void a_token_init(struct a_token *token)
 {
 	memset(token, 0, sizeof(struct a_token));
+	token->type = TK_EOL;
 }
 
 ASHE_PUBLIC void a_lexer_init(struct a_lexer *lexer, const char *start)
@@ -42,25 +43,25 @@ ASHE_PUBLIC void a_lexer_init(struct a_lexer *lexer, const char *start)
 }
 
 /* Peek 'amount' without advancing. */
-ASHE_PRIVATE inline int32 peek(struct a_lexer *lexer, memmax amount)
+ASHE_PRIVATE inline a_int32 peek(struct a_lexer *lexer, a_memmax amount)
 {
 	return lexer->current[amount];
 }
 
 /* Advance buffer by a single character unless EOF is reached. */
-ASHE_PRIVATE inline int32 advance(struct a_lexer *lexer)
+ASHE_PRIVATE inline a_int32 advance(struct a_lexer *lexer)
 {
-	int32 c = *lexer->current;
+	a_int32 c = *lexer->current;
 
-	if (likely(c != '\0'))
+	if (ASHE_LIKELY(c != '\0'))
 		lexer->current++;
 	return c;
 }
 
-ASHE_PRIVATE int32 all_chars_are_digits(const char *str, memmax *n)
+ASHE_PRIVATE a_int32 all_chars_are_digits(const char *str, a_memmax *n)
 {
-	int32 c;
-	memmax number, prev;
+	a_int32 c;
+	a_memmax number, prev;
 
 	number = prev = 0;
 	while (isdigit((c = *str++))) {
@@ -80,10 +81,10 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 {
 	struct a_token token = { 0 };
 	a_arr_char buffer;
-	memmax n, klen;
+	a_memmax n, klen;
 	char *ptr;
-	int32 c, code;
-	ubyte dq, esc;
+	a_int32 c, code;
+	a_ubyte dq, esc;
 
 	a_arr_char_init(&buffer);
 	token.type = TK_WORD;
@@ -101,30 +102,30 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 	token.end = lexer->current;
 	a_arr_char_push(&buffer, '\0');
 
-	ptr = buffer.data;
+	ptr = a_arr_ptr(buffer);
 	if (*ptr != '=' && (ptr = strstr(ptr, "=")) != NULL) {
 		*ptr = '\0';
-		klen = strlen(buffer.data);
-		if (strspn(buffer.data, ENV_VAR_CHARS) == klen)
+		klen = strlen(a_arr_ptr(buffer));
+		if (strspn(a_arr_ptr(buffer), ENV_VAR_CHARS) == klen)
 			token.type = TK_KVPAIR;
 		*ptr = '=';
 	}
 
 	ashe_escape(&buffer);
 
-	if (buffer.len == 2 && buffer.data[0] == '-') {
+	if (buffer.len == 2 && a_arr_ptr(buffer)[0] == '-') {
 		a_arr_char_free(&buffer, NULL);
 		token.type = TK_MINUS;
 	} else {
 		n = 0;
-		code = all_chars_are_digits(buffer.data, &n);
+		code = all_chars_are_digits(a_arr_ptr(buffer), &n);
 		if (code != -1 && code != -2) {
 			token.u.number = n;
 			token.type = TK_NUMBER;
 		} else {
 			token.u.string = buffer;
 		}
-		a_arr_ccharp_push(&ashe.sh_buffers, buffer.data);
+		a_arr_ccharp_push(&ashe.sh_buffers, a_arr_ptr(buffer));
 	}
 	return token;
 }
@@ -132,7 +133,7 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 /* Skip whitespace characters and comments */
 ASHE_PRIVATE void skipws(struct a_lexer *lexer)
 {
-	int32 c;
+	a_int32 c;
 
 	c = peek(lexer, 0);
 	for (;;) {
@@ -168,7 +169,7 @@ ASHE_PRIVATE inline struct a_token a_token_new(enum a_toktype type,
 
 ASHE_PUBLIC struct a_token a_lexer_next(struct a_lexer *lexer)
 {
-	int32 c;
+	a_int32 c;
 	enum a_toktype type;
 	const char *start;
 

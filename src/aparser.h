@@ -6,10 +6,11 @@
 #include "alex.h"
 #include "atoken.h"
 
-#define BM_STRING (BM(TK_WORD) | BM(TK_KVPAIR) | BM(TK_NUMBER))
+#define BM_STRING    (BM(TK_WORD) | BM(TK_KVPAIR) | BM(TK_NUMBER))
+#define BM_SEPARATOR (BM(TK_AND) | BM(TK_SEMICOLON))
 
 #define ARGV(cmd, i) (*a_arr_ccharp_index(&(cmd)->sc_argv, i))
-#define ARGC(cmd)    a_arr_ccharp_len(&(cmd)->sc_argv)
+#define ARGC(cmd)    a_arr_len((cmd)->sc_argv)
 
 ARRAY_NEW(a_arr_ccharp, const char *)
 
@@ -35,11 +36,11 @@ enum a_redirect_op {
 };
 
 struct a_redirect {
-	ssize rd_lhsfd; /* lhs file descriptor */
-	ssize rd_rhsfd; /* rhs file descriptor */
+	a_ssize rd_lhsfd; /* lhs file descriptor */
+	a_ssize rd_rhsfd; /* rhs file descriptor */
 	const char *rd_fname; /* filepath */
 	enum a_redirect_op rd_op; /* redirection op */
-	byte rd_append; /* append flag */
+	a_byte rd_append; /* append flag */
 };
 
 ARRAY_NEW(a_arr_redirect, struct a_redirect)
@@ -62,7 +63,7 @@ ARRAY_NEW(a_arr_cmd, struct a_cmd)
 struct a_pipeline {
 	a_arr_cmd pl_cmds; /* commands */
 	enum a_connect pl_con; /* connection type */
-	ubyte pl_bg; /* run in background */
+	a_ubyte pl_bg; /* run in background */
 	const char *pl_input; /* debug */
 };
 
@@ -76,11 +77,11 @@ ARRAY_NEW(a_arr_list, struct a_list)
 
 struct a_block {
 	a_arr_list bl_lists;
-	memmax bl_subst; /* recursion depth '()' */
+	a_memmax bl_subst; /* recursion depth '()' */
 };
 
 void a_block_init(struct a_block *block);
 void a_block_free(struct a_block *block);
-int32 a_parse_block(const char *cstr);
+a_int32 ashe_parse(const char *cstr);
 
 #endif

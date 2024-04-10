@@ -29,7 +29,7 @@ static const char *perrors[] = {
 	"can't have command substitution here.",
 };
 
-static const ubyte is_redirection[TK_NUMBER + 1] = {
+static const a_ubyte is_redirection[TK_NUMBER + 1] = {
 	0, 0, 1, /* TK_LESS_AND '<&' */
 	1, /* TK_GREATER_AND '>&' */
 	1, /* TK_GREATER_PIPE '>|' */
@@ -52,7 +52,7 @@ ASHE_PRIVATE void nexttok(struct a_lexer *lexer)
 #endif
 }
 
-ASHE_PRIVATE ubyte match(memmax bitmask)
+ASHE_PRIVATE a_ubyte match(a_memmax bitmask)
 {
 	if (BM(A_CTOK.type) & bitmask) {
 		nexttok(&A_LEX);
@@ -70,7 +70,7 @@ ASHE_PRIVATE void expect_error(const char *what)
 	jump_out(-1);
 }
 
-ASHE_PRIVATE inline void expect(ubyte next, memmax bitmask, const char *type)
+ASHE_PRIVATE inline void expect(a_ubyte next, a_memmax bitmask, const char *type)
 {
 	if (next)
 		nexttok(&A_LEX);
@@ -348,7 +348,7 @@ ASHE_PRIVATE inline void plist(struct a_block *block, struct a_list *list);
 ASHE_PRIVATE void block_subst(struct a_block *block)
 {
 	struct a_list list;
-	memmax insert;
+	a_memmax insert;
 
 	++block->bl_subst;
 	insert = block->bl_lists.len - block->bl_subst;
@@ -368,8 +368,7 @@ ASHE_PRIVATE void block_subst(struct a_block *block)
  *		       | block_subst
  *		       | simple_cmd_suffix block_subst
  */
-ASHE_PRIVATE void simple_cmd_suffix(struct a_block *block,
-				    struct a_simple_cmd *scmd)
+ASHE_PRIVATE void simple_cmd_suffix(struct a_block *block, struct a_simple_cmd *scmd)
 {
 	struct a_redirect rd;
 	const char *numstr;
@@ -424,7 +423,8 @@ ASHE_PRIVATE void simple_cmd(struct a_block *block, struct a_simple_cmd *scmd)
 		if (ARGC(scmd) == 0)
 			simple_cmd_command(scmd);
 		simple_cmd_suffix(block, scmd);
-	} else if (unlikely(scmd->sc_env.len == 0 && scmd->sc_rds.len == 0)) {
+	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 &&
+				 a_arr_len(scmd->sc_rds) == 0)) {
 		expect_error("string");
 	}
 }
@@ -447,12 +447,11 @@ ASHE_PRIVATE void command(struct a_block *block, struct a_cmd *cmd)
 /*
  * [SYNTAX]
  * pipe_seq ::= command
- *	      | pipe_seq '|' command
- *	      | pipe_seq '&'
+ *	      | command '|' pipe_seq
  */
 ASHE_PRIVATE void pipe_seq(struct a_block *block, struct a_pipeline *pipeline)
 {
-	const char *temp;
+	const char *temp, *end;
 	struct a_cmd cmd;
 
 	temp = A_CTOK.start;
@@ -462,18 +461,20 @@ ASHE_PRIVATE void pipe_seq(struct a_block *block, struct a_pipeline *pipeline)
 		command(block, a_arr_cmd_last(&pipeline->pl_cmds));
 	} while (match(BM(TK_PIPE)));
 
-	pipeline->pl_bg = match(BM(TK_AND));
-	pipeline->pl_input = ashe_dupstrn(temp, (A_PTOK.end - temp));
+	end = A_PTOK.end;
+	if (BM(A_CTOK.type) & BM_SEPARATOR) {
+		pipeline->pl_bg = (A_CTOK.type == TK_AND);
+		end = A_CTOK.end;
+	}
+	pipeline->pl_input = ashe_dupstrn(temp, (end - temp));
 	a_arr_ccharp_push(&ashe.sh_buffers, pipeline->pl_input);
 }
 
 /*
  * [SYNTAX]
  * plist ::= pipe_seq
- *	   | plist '&&' pipe_seq
- *	   | plist '||' pipe_seq
- *	   | plist '&' pipe_seq
- *	   | plist ';' pipe_seq
+ *	   | pipe_seq '&&' plist
+ *	   | pipe_seq '||' plist
  */
 ASHE_PRIVATE inline void plist(struct a_block *block, struct a_list *list)
 {
@@ -484,46 +485,45 @@ ASHE_PRIVATE inline void plist(struct a_block *block, struct a_list *list)
 		a_arr_pipeline_push(&list->ls_pipes, pipeline);
 		last = a_arr_pipeline_last(&list->ls_pipes);
 		pipe_seq(block, last);
+		if (BM(A_CTOK.type) & BM_SEPARATOR)
+			break;
 		if (match(BM(TK_AND_AND)))
 			last->pl_con = ACON_AND;
 		else if (match(BM(TK_PIPE_PIPE)))
 			last->pl_con = ACON_OR;
-		else
-			last->pl_con = ACON_NONE;
 	} while (last->pl_con != ACON_NONE);
 }
 
 /*
  * [SYNTAX]
  * ashe_block ::= plist
- *		| ashe_block plist
+ * 		| plist '&'
+ * 		| plist '&' ashe_block
+ *		| plist ';'
+ *		| plist ';' ashe_block
  */
-ASHE_PUBLIC int32 a_parse_block(const char *cstr)
+
+ASHE_PUBLIC void pblock(struct a_block *block)
 {
-	struct a_block *block;
 	struct a_list list;
-	struct a_lexer *lexer;
 
-	block = &ashe.sh_block;
-	lexer = &ashe.sh_lexer;
-	ashe.sh_buf.buf_code = 0;
-
-	a_lexer_init(lexer, cstr);
 	a_list_init(&list);
 
-	if (setjmp(ashe.sh_buf.buf_jmpbuf) == 0) {
-		nexttok(&A_LEX);
+	for (nexttok(&A_LEX); !match(BM(TK_EOL));) {
+		a_arr_list_push(&block->bl_lists, list);
+		plist(block, a_arr_list_last(&block->bl_lists));
+		ashe_assert(block->bl_subst == 0);
 		if (A_CTOK.type == TK_EOL)
-			return 0;
-		for (;;) {
-			a_arr_list_push(&block->bl_lists, list);
-			plist(block, a_arr_list_last(&block->bl_lists));
-			ashe_assert(block->bl_subst == 0);
-			if (A_CTOK.type == TK_EOL)
-				break;
-			nexttok(&A_LEX);
-		}
+			break;
+		ashe_assert(A_CTOK.type & BM_SEPARATOR);
 	}
+}
 
+ASHE_PUBLIC a_int32 ashe_parse(const char *cstr)
+{
+	a_lexer_init(&ashe.sh_lexer, cstr);
+	ashe.sh_buf.buf_code = 0;
+	if (setjmp(ashe.sh_buf.buf_jmpbuf) == 0)
+		pblock(&ashe.sh_block);
 	return ashe.sh_buf.buf_code;
 }

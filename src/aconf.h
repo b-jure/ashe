@@ -5,7 +5,7 @@
  * or are contributor... */
 #if defined(__linux__)
 #include <linux/limits.h>
-#define HOME	  "HOME"
+#define HOME "HOME"
 #else
 #error "Ashe is only compatible with linux platforms."
 #endif
@@ -44,7 +44,7 @@
 
 /* ---- Placeholders ---- */
 #define ASHE_PLH_SIGN '%'
-typedef const char *(*ashe_promptfn)(void);
+typedef const char *(*a_promptfn)(void);
 #ifdef ASHE_USE_PLACEHOLDERS_ARRAY /* include guard */
 extern const char *ashe_host(void);
 extern const char *ashe_user(void);
@@ -54,15 +54,15 @@ extern const char *ashe_adir(void);
 extern const char *ashe_time(void);
 extern const char *ashe_date(void);
 extern const char *ashe_uptime(void);
-static ashe_promptfn placeholders[] = {
+static a_promptfn placeholders[] = {
 	ashe_host, /* 0: hostname */
 	ashe_user, /* 1: username */
 	ashe_jobc, /* 2: background jobs count */
 	ashe_dir, /* 3: current directory (trimmed) */
 	ashe_adir, /* 4: current directory (absolute path) */
-	ashe_time, /* 5: current time (MM:HH) */
-	ashe_date, /* 6: current date (DD:MM:YY) */
-	ashe_uptime, /* 7: system uptime */
+	ashe_time, /* 5: current time (HH:MM) */
+	ashe_date, /* 6: current date (YYYY-MM-DD) */
+	ashe_uptime, /* 7: system uptime (HHh MMm) */
 };
 #endif
 

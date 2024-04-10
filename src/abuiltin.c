@@ -22,18 +22,17 @@
 #define ENV_PRINT_ALL 4 /* print all variables */
 
 /* help opt */
-#define is_help_opt(arg) \
-	(strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
+#define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
 #define HELPSTR \
 	"\r\nThe -h or --help options display help information for this command\r\n"
 #define print_help_opts(builtin) builtin_printf(builtin, HELPSTR)
 
 /* builtin function signature */
-typedef int32 (*builtinfn)(a_arr_ccharp *argv);
+typedef a_int32 (*builtinfn)(a_arr_ccharp *argv);
 
-ASHE_PRIVATE inline void print_rows(const char **rows, uint32 len)
+ASHE_PRIVATE inline void print_rows(const char **rows, a_uint32 len)
 {
-	uint32 i;
+	a_uint32 i;
 
 	for (i = 0; i < len; i++)
 		ashe_printf(stderr, "%s\r\n", rows[i]);
@@ -54,14 +53,14 @@ ASHE_PRIVATE inline void ashe_jobs_print_header(void)
 {
 	const char *fmt = "\r\n%-*s%-*s%-*s\r\n";
 
-	uint32 pad = 10;
+	a_uint32 pad = 10;
 	ashe_printf(stderr, fmt, pad, "Job", pad, "Group", pad, "State");
 }
 
 ASHE_PRIVATE void ashe_jobs_print_job(struct a_job *job)
 {
-	ubyte completed, stopped;
-	uint32 pad = 10;
+	a_ubyte completed, stopped;
+	a_uint32 pad = 10;
 	const char *state = NULL;
 
 	completed = a_job_is_completed(job);
@@ -70,20 +69,20 @@ ASHE_PRIVATE void ashe_jobs_print_job(struct a_job *job)
 		state = (stopped ? "stopped" : "running");
 	} else
 		state = "completed";
-	ashe_printf(stderr, "%-*ld %-*d %-*s\r\n", pad, job->id, pad, job->pgid,
-		    pad, state);
+	ashe_printf(stderr, "%-*ld %-*d %-*s\r\n", pad, job->id, pad, job->pgid, pad,
+		    state);
 }
 
-ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, int32 *nums)
+ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 {
 	const char *arg, *bin;
 	char *errstr;
-	ubyte id = 0;
-	int32 num;
-	memmax oklen, i;
+	a_ubyte id = 0;
+	a_int32 num;
+	a_memmax oklen, i;
 
-	bin = argv->data[0];
-	for (i = 1; i < argv->len; i++) {
+	bin = a_arrp_ptr(argv)[0];
+	for (i = 1; i < a_arrp_len(argv); i++) {
 		arg = *a_arr_ccharp_index(argv, i);
 		if (*arg == '%')
 			id = 1;
@@ -93,8 +92,7 @@ ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, int32 *nums)
 			ashe_eprintf(bin, "invalid %s provided, %*s'%s'",
 				     (id ? "id" : "pid"), oklen, arg, errstr);
 		} else if (errno == ERANGE || num > INT_MAX) {
-			builtin_printf(bin,
-				       "%s '%s' is too large, limit is %d.",
+			builtin_printf(bin, "%s '%s' is too large, limit is %d.",
 				       (id ? "id" : "pid"), arg, INT_MAX);
 		} else {
 			*nums++ = (id) ? FLIP_SIGN_BIT(num) : num;
@@ -106,24 +104,23 @@ ASHE_PRIVATE int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, int32 *nums)
 	return 0;
 }
 
-ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(int32 *nums, memmax len)
+ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(a_int32 *nums, a_memmax len)
 {
 	struct a_job *job;
-	memmax i;
+	a_memmax i;
 
 	for (i = 0; i < len; i++) {
 		if (nums[i] < 0)
 			job = a_jobcntl_get_job_with_id(&ashe.sh_jobcntl,
 							FLIP_SIGN_BIT(nums[i]));
 		else
-			job = a_jobcntl_get_job_with_pgid(&ashe.sh_jobcntl,
-							  nums[i]);
+			job = a_jobcntl_get_job_with_pgid(&ashe.sh_jobcntl, nums[i]);
 		if (job)
 			ashe_jobs_print_job(job);
 	}
 }
 
-ASHE_PRIVATE int32 ashe_bi_jobs(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"jobs - print currently running/stopped jobs.\r\n",
@@ -138,22 +135,22 @@ ASHE_PRIVATE int32 ashe_bi_jobs(a_arr_ccharp *argv)
 
 	struct a_jobcntl *jobcntl;
 	struct a_job *job;
-	memmax jobcnt, argc, i;
-	int32 *nums, status;
+	a_memmax jobcnt, argc, i;
+	a_int32 *nums, status;
 
 	jobcntl = &ashe.sh_jobcntl;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 	status = 0;
 
 	if (argc > 1)
-		nums = acalloc(sizeof(int32), argc - 1);
+		nums = acalloc(sizeof(a_int32), argc - 1);
 
 	switch (argc) {
 	case 1:
 		jobcnt = a_jobcntl_jobs(jobcntl);
 		if (jobcnt == 0) {
 			builtin_printf("jobs", "there are no jobs running.");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		ashe_jobs_print_header();
 		for (i = 0; i < jobcnt; i++) {
@@ -162,25 +159,25 @@ ASHE_PRIVATE int32 ashe_bi_jobs(a_arr_ccharp *argv)
 		}
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
 		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
-			defer(-1);
+			ASHE_DEFER(-1);
 		ashe_jobs_print_header();
 		ashe_jobs_print_filtered_jobs(nums, argc - 1);
 		break;
 	default:
 		print_help_opts("jobs");
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
 }
 
 /* Auxiliary to ashe_bg() */
-ASHE_PRIVATE int32 ashe_bg_last(void)
+ASHE_PRIVATE a_int32 ashe_bg_last(void)
 {
 	struct a_job *job = a_jobcntl_get_job_from(&ashe.sh_jobcntl, 1);
 
@@ -193,15 +190,14 @@ ASHE_PRIVATE int32 ashe_bg_last(void)
 }
 
 /* Auxiliary to ashe_bg() */
-ASHE_PRIVATE void ashe_bg_id(int32 id)
+ASHE_PRIVATE void ashe_bg_id(a_int32 id)
 {
 	struct a_job *job = a_jobcntl_get_job_with_id(&ashe.sh_jobcntl, id);
 
 	if (job) {
 		a_job_continue(job, 0);
 	} else
-		builtin_printf("bg", "there is no suitable job with id %d.",
-			       id);
+		builtin_printf("bg", "there is no suitable job with id %d.", id);
 }
 
 /* Auxiliary to ashe_bg() */
@@ -212,13 +208,12 @@ ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 	if (job)
 		a_job_mark_as_background(job, 1);
 	else
-		builtin_printf("bg", "there is no suitable job with pid %d.",
-			       pid);
+		builtin_printf("bg", "there is no suitable job with pid %d.", pid);
 }
 
-ASHE_PRIVATE void ashe_bg_background_filtered_jobs(int32 *nums, memmax len)
+ASHE_PRIVATE void ashe_bg_background_filtered_jobs(a_int32 *nums, a_memmax len)
 {
-	memmax i;
+	a_memmax i;
 
 	for (i = 0; i < len; i++) {
 		if (nums[i] < 0)
@@ -228,7 +223,7 @@ ASHE_PRIVATE void ashe_bg_background_filtered_jobs(int32 *nums, memmax len)
 	}
 }
 
-ASHE_PRIVATE int32 ashe_bi_bg(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"bg - sends jobs to background resuming them if they are paused.\n\r",
@@ -240,36 +235,36 @@ ASHE_PRIVATE int32 ashe_bi_bg(a_arr_ccharp *argv)
 		"used/created will be moved to background.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
 		status = ashe_bg_last();
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 		} else {
-			int32 nums[argc - 1];
+			a_int32 nums[argc - 1];
 			if (filter_jobs_by_pid_or_id(argv, nums) < 0)
-				defer(-1);
+				ASHE_DEFER(-1);
 			ashe_bg_background_filtered_jobs(nums, argc - 1);
 		}
 		break;
 	default:
 		print_help_opts("bg");
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
 }
 
 /* Auxiliary to ashe_fg() */
-ASHE_PRIVATE int32 ashe_fg_last(void)
+ASHE_PRIVATE a_int32 ashe_fg_last(void)
 {
 	struct a_job *job;
 
@@ -285,7 +280,7 @@ ASHE_PRIVATE int32 ashe_fg_last(void)
 }
 
 /* Auxiliary to ashe_fg() */
-ASHE_PRIVATE void ashe_fg_id(int32 id)
+ASHE_PRIVATE void ashe_fg_id(a_int32 id)
 {
 	struct a_job *job;
 
@@ -294,8 +289,7 @@ ASHE_PRIVATE void ashe_fg_id(int32 id)
 	if (job)
 		a_job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with id %d.",
-			       id);
+		builtin_printf("fg", "there is no suitable job with id %d.", id);
 }
 
 /* Auxiliary to ashe_fg() */
@@ -308,12 +302,11 @@ ASHE_PRIVATE void ashe_fg_pid(pid_t pid)
 	if (job)
 		a_job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with pid %d.",
-			       pid);
+		builtin_printf("fg", "there is no suitable job with pid %d.", pid);
 }
 
 /* Foreground a job */
-ASHE_PRIVATE int32 ashe_bi_fg(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_fg(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"fg - move job to foreground\n\r",
@@ -325,10 +318,10 @@ ASHE_PRIVATE int32 ashe_bi_fg(a_arr_ccharp *argv)
 		"User can provide PID or %ID to specify which job to foreground.",
 	};
 
-	memmax argc;
-	int32 status, n;
+	a_memmax argc;
+	a_int32 status, n;
 
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 	status = 0;
 	n = 0;
 
@@ -337,11 +330,11 @@ ASHE_PRIVATE int32 ashe_bi_fg(a_arr_ccharp *argv)
 		status = ashe_fg_last();
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 		} else {
 			if (filter_jobs_by_pid_or_id(argv, &n) < 0)
-				defer(-1);
+				ASHE_DEFER(-1);
 			if (n < 0)
 				ashe_fg_id(FLIP_SIGN_BIT(n));
 			else
@@ -350,14 +343,14 @@ ASHE_PRIVATE int32 ashe_bi_fg(a_arr_ccharp *argv)
 		break;
 	default:
 		print_help_opts("fg");
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
 }
 
 /* Exit shell */
-ASHE_PRIVATE int32 ashe_bi_exit(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"exit - exits the shell\r\n",
@@ -370,12 +363,12 @@ ASHE_PRIVATE int32 ashe_bi_exit(a_arr_ccharp *argv)
 		"Running exit again will result in possible termination of these jobs.",
 	};
 
-	memmax jobcnt, argc;
+	a_memmax jobcnt, argc;
 	char *endptr;
-	int32 status;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
@@ -383,22 +376,22 @@ ASHE_PRIVATE int32 ashe_bi_exit(a_arr_ccharp *argv)
 		ashe.sh_flags.exit = (ashe.sh_flags.isfork || jobcnt == 0);
 		if (!ashe.sh_flags.exit) {
 			ashe.sh_flags.exit = 1;
-			print_rows(exit_warn, ELEMENTS(exit_warn));
+			print_rows(exit_warn, ASHE_ELEMENTS(exit_warn));
 		} else {
 			goto l_exit;
 		}
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
-		status = strtol(argv->data[1], &endptr, 10);
+		status = strtol(a_arrp_ptr(argv)[1], &endptr, 10);
 		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' ||
 		    status < 0) {
 			builtin_printf("exit", "invalid exit status CODE '%s'.",
-				       argv->data[1]);
-			defer(-1);
+				       a_arrp_ptr(argv)[1]);
+			ASHE_DEFER(-1);
 		} else {
 l_exit:
 			ashe_exit(status);
@@ -407,14 +400,14 @@ l_exit:
 	default:
 		print_help_opts("exit");
 		ashe.sh_flags.exit = 0;
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
 }
 
 /* Change working directory */
-ASHE_PRIVATE int32 ashe_bi_cd(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_cd(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"cd - change directory\r\n",
@@ -424,30 +417,30 @@ ASHE_PRIVATE int32 ashe_bi_cd(a_arr_ccharp *argv)
 		"is used as DIRNAME.",
 	};
 
-	int32 status;
-	memmax argc;
+	a_int32 status;
+	a_memmax argc;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
-		if (unlikely(chdir(getenv(HOME)) < 0)) {
+		if (ASHE_UNLIKELY(chdir(getenv(HOME)) < 0)) {
 			ashe_perrno("chdir");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
-		} else if (chdir(argv->data[1]) < 0) {
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
+		} else if (chdir(a_arrp_ptr(argv)[1]) < 0) {
 			ashe_perrno("chdir");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		break;
 	default:
 		print_help_opts("cd");
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
@@ -456,7 +449,7 @@ defer:
 /* Auxiliary to envcmd() */
 ASHE_PRIVATE inline void print_environ(void)
 {
-	int32 i = 0;
+	a_int32 i = 0;
 
 	while (__environ[i] != NULL)
 		ashe_printf(stdout, "%s\r\n", __environ[i++]);
@@ -464,34 +457,34 @@ ASHE_PRIVATE inline void print_environ(void)
 
 // clang-format off
 /* Auxiliary function for handling environment variables */
-ASHE_PRIVATE int32 envcmd(a_arr_ccharp *argv, int32 option)
+ASHE_PRIVATE a_int32 envcmd(a_arr_ccharp *argv, a_int32 option)
 {
 	const char *temp;
-	int32 status;
+	a_int32 status;
 
 	status = 0;
 
 	switch (option) {
 	case ENV_ADD:
 	case ENV_SET:
-		if (setenv(argv->data[1], argv->data[2], option != ENV_ADD) < 0) {
+		if (setenv(a_arrp_ptr(argv)[1], a_arrp_ptr(argv)[2], option != ENV_ADD) < 0) {
 			ashe_perrno("setenv");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		break;
 	case ENV_REMOVE:
-		if (unlikely(unsetenv(argv->data[1]) < 0)) {
+		if (ASHE_UNLIKELY(unsetenv(a_arrp_ptr(argv)[1]) < 0)) {
 			ashe_perrno("unsetenv");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		break;
 	case ENV_PRINT:
-		if ((temp = getenv(argv->data[1])) != NULL) {
+		if ((temp = getenv(a_arrp_ptr(argv)[1])) != NULL) {
 			ashe_printf(stdout, "%s\r\n", temp);
 			break;
 		} else {
-			builtin_printf("penv", "variable '%s' doesn't exist.", argv->data[1]);
-			defer(-1);
+			builtin_printf("penv", "variable '%s' doesn't exist.", a_arrp_ptr(argv)[1]);
+			ASHE_DEFER(-1);
 		}
 	case ENV_PRINT_ALL:
 		print_environ();
@@ -504,7 +497,7 @@ defer:
 }
 // clang-format on
 
-ASHE_PRIVATE int32 ashe_bi_penv(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_penv(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"penv - print environment variable\r\n",
@@ -513,19 +506,19 @@ ASHE_PRIVATE int32 ashe_bi_penv(a_arr_ccharp *argv)
 		"specify NAME, then all of the variables are printed.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
 		status = envcmd(NULL, ENV_PRINT_ALL);
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1]))
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1]))
+			print_rows(usage, ASHE_ELEMENTS(usage));
 		else
 			status = envcmd(argv, ENV_PRINT);
 		break;
@@ -537,7 +530,7 @@ ASHE_PRIVATE int32 ashe_bi_penv(a_arr_ccharp *argv)
 	return status;
 }
 
-ASHE_PRIVATE int32 ashe_bi_senv(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_senv(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"senv - set environment variable\r\n",
@@ -552,16 +545,16 @@ ASHE_PRIVATE int32 ashe_bi_senv(a_arr_ccharp *argv)
 		"of that variable will be an emtpy string.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 2:
-		if (is_help_opt(argv->data[1]))
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1]))
+			print_rows(usage, ASHE_ELEMENTS(usage));
 		else
 			status = envcmd(argv, ENV_SET);
 		break;
@@ -576,7 +569,7 @@ ASHE_PRIVATE int32 ashe_bi_senv(a_arr_ccharp *argv)
 	return status;
 }
 
-ASHE_PRIVATE int32 ashe_bi_renv(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_renv(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"renv - remove environment variable\r\n",
@@ -584,16 +577,16 @@ ASHE_PRIVATE int32 ashe_bi_renv(a_arr_ccharp *argv)
 		"Removes variable NAME from the environment.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 2:
-		if (is_help_opt(argv->data[1]))
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1]))
+			print_rows(usage, ASHE_ELEMENTS(usage));
 		else
 			status = envcmd(argv, ENV_REMOVE);
 		break;
@@ -604,7 +597,7 @@ ASHE_PRIVATE int32 ashe_bi_renv(a_arr_ccharp *argv)
 	return status;
 }
 
-ASHE_PRIVATE int32 ashe_bi_pwd(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_pwd(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"pwd - print current working directory\r\n",
@@ -613,35 +606,35 @@ ASHE_PRIVATE int32 ashe_bi_pwd(a_arr_ccharp *argv)
 	};
 
 	char buff[PATH_MAX];
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
-		if (unlikely(!getcwd(buff, PATH_MAX))) {
+		if (ASHE_UNLIKELY(!getcwd(buff, PATH_MAX))) {
 			ashe_perrno("getcwd");
-			defer(-1);
+			ASHE_DEFER(-1);
 		}
 		ashe_printf(stdout, "%s\r\n", buff);
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
 		/* FALLTHRU */
 	default:
 		print_help_opts("pwd");
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 defer:
 	return status;
 }
 
-ASHE_PRIVATE int32 ashe_bi_clear(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_clear(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"clear - clears the screen\r\n",
@@ -649,19 +642,19 @@ ASHE_PRIVATE int32 ashe_bi_clear(a_arr_ccharp *argv)
 		"Clears the terminal screen including scrollback.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
 		ashe_clear_screen_raw();
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
 		/* FALLTHRU */
@@ -679,13 +672,13 @@ ASHE_PRIVATE void print_builtins(void)
 		"cd",	"pwd",	"clear", "builtin", "fg",   "bg",
 		"jobs", "exec", "exit",	 "penv",    "senv", "renv",
 	};
-	memmax i;
+	a_memmax i;
 
-	for (i = 0; i < ELEMENTS(builtin); i++)
+	for (i = 0; i < ASHE_ELEMENTS(builtin); i++)
 		ashe_printf(stdout, "%s\r\n", builtin[i]);
 }
 
-ASHE_PRIVATE int32 ashe_bi_builtin(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_builtin(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"builtin - lists all builtin commands\r\n",
@@ -693,19 +686,19 @@ ASHE_PRIVATE int32 ashe_bi_builtin(a_arr_ccharp *argv)
 		"Prints all of the builtin commands.",
 	};
 
-	memmax argc;
-	int32 status;
+	a_memmax argc;
+	a_int32 status;
 
 	status = 0;
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	switch (argc) {
 	case 1:
 		print_builtins();
 		break;
 	case 2:
-		if (is_help_opt(argv->data[1])) {
-			print_rows(usage, ELEMENTS(usage));
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
 		/* FALLTHRU */
@@ -717,7 +710,7 @@ ASHE_PRIVATE int32 ashe_bi_builtin(a_arr_ccharp *argv)
 	return status;
 }
 
-ASHE_PRIVATE int32 ashe_bi_exec(a_arr_ccharp *argv)
+ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
 {
 	static const char *usage[] = {
 		"exec - execute a command and open, close or copy file descriptors\r\n",
@@ -732,15 +725,15 @@ ASHE_PRIVATE int32 ashe_bi_exec(a_arr_ccharp *argv)
 	};
 
 	const char **execargs;
-	memmax argc;
-	uint32 i;
+	a_memmax argc;
+	a_uint32 i;
 
-	argc = a_arr_ccharp_len(argv);
+	argc = a_arrp_len(argv);
 
 	if (argc == 1)
 		return 0;
 	if (is_help_opt(*a_arr_ccharp_index(argv, 1))) {
-		print_rows(usage, ELEMENTS(usage));
+		print_rows(usage, ASHE_ELEMENTS(usage));
 		return 0;
 	}
 
@@ -749,7 +742,7 @@ ASHE_PRIVATE int32 ashe_bi_exec(a_arr_ccharp *argv)
 		execargs[i] = *a_arr_ccharp_index(argv, i + 1);
 	execargs[argc - 1] = NULL;
 
-	if (unlikely(execvp(execargs[0], (char *const *)execargs) < 0)) {
+	if (ASHE_UNLIKELY(execvp(execargs[0], (char *const *)execargs) < 0)) {
 		afree(execargs);
 		ashe_perrno("execvp");
 		return -1;
@@ -759,21 +752,20 @@ ASHE_PRIVATE int32 ashe_bi_exec(a_arr_ccharp *argv)
 	return 0;
 }
 
-ASHE_PRIVATE inline int32 builtin_match(const char *str, uint32 start,
-					uint32 len, const char *pattern,
-					enum a_builtin_type type)
+ASHE_PRIVATE inline a_int32 builtin_match(const char *str, a_uint32 start,
+					  a_uint32 len, const char *pattern,
+					  enum a_builtin_type type)
 {
-	if (strlen(str) == start + len &&
-	    memcmp(str + start, pattern, len) == 0)
+	if (strlen(str) == start + len && memcmp(str + start, pattern, len) == 0)
 		return type;
 	return -1;
 }
 
 /* Check if the 'command' is builtin command and
  * return the 'builtin' enum value of it or -1. */
-ASHE_PUBLIC int32 ashe_isbin(const char *command)
+ASHE_PUBLIC a_int32 ashe_isbin(const char *command)
 {
-	int32 bi = -1;
+	a_int32 bi = -1;
 
 	ashe_assert(command != NULL);
 
@@ -781,8 +773,7 @@ ASHE_PUBLIC int32 ashe_isbin(const char *command)
 	case 'b':
 		switch (command[1]) {
 		case 'u':
-			return builtin_match(command, 2, 5, "iltin",
-					     TBI_BUILTIN);
+			return builtin_match(command, 2, 5, "iltin", TBI_BUILTIN);
 		case 'g':
 			if (command[2] == '\0')
 				return TBI_BG;
@@ -810,11 +801,9 @@ ASHE_PUBLIC int32 ashe_isbin(const char *command)
 		case 'x':
 			switch (command[2]) {
 			case 'e':
-				return builtin_match(command, 2, 2, "ec",
-						     TBI_EXEC);
+				return builtin_match(command, 2, 2, "ec", TBI_EXEC);
 			case 'i':
-				return builtin_match(command, 2, 2, "it",
-						     TBI_EXIT);
+				return builtin_match(command, 2, 2, "it", TBI_EXIT);
 			default:
 				break;
 			}
@@ -848,18 +837,16 @@ ASHE_PUBLIC int32 ashe_isbin(const char *command)
 }
 
 /* Runs builting function 'bi'. */
-ASHE_PUBLIC int32 ashe_runbin(struct a_simple_cmd *scmd,
-			      enum a_builtin_type tbi)
+ASHE_PUBLIC a_int32 ashe_runbin(struct a_simple_cmd *scmd, enum a_builtin_type tbi)
 {
 	static const builtinfn table[] = {
-		ashe_bi_builtin, ashe_bi_bg,   ashe_bi_cd,
-		ashe_bi_clear,	 ashe_bi_fg,   ashe_bi_jobs,
-		ashe_bi_penv,	 ashe_bi_pwd,  ashe_bi_renv,
-		ashe_bi_senv,	 ashe_bi_exec, NULL /* ashe_bi_exit */,
+		ashe_bi_builtin, ashe_bi_bg,   ashe_bi_cd,   ashe_bi_clear,
+		ashe_bi_fg,	 ashe_bi_jobs, ashe_bi_penv, ashe_bi_pwd,
+		ashe_bi_renv,	 ashe_bi_senv, ashe_bi_exec, NULL /* ashe_bi_exit */,
 	};
 
 	ashe_assertf(tbi >= TBI_BUILTIN && tbi <= TBI_EXIT, "invalid tbi");
-	if (unlikely(tbi == TBI_EXIT))
+	if (ASHE_UNLIKELY(tbi == TBI_EXIT))
 		return ashe_bi_exit(&scmd->sc_argv);
 	ashe.sh_flags.exit = 0;
 	return table[tbi](&scmd->sc_argv);

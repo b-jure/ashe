@@ -16,9 +16,9 @@
 
 /* push tabs for proper indentation */
 #define ASHE_TAB 4
-#define pushtabs(out, tabs)                           \
-	for (uint32 i = 0; i < tabs; i++)             \
-		for (uint32 j = 0; j < ASHE_TAB; j++) \
+#define pushtabs(out, tabs)                             \
+	for (a_uint32 i = 0; i < tabs; i++)             \
+		for (a_uint32 j = 0; j < ASHE_TAB; j++) \
 			a_arr_char_push(out, ' ');
 
 /* push struct/array value separator */
@@ -38,9 +38,9 @@
 	debug_arr_internal(type, ptr, name, tabs, out, idxfn)
 #define debug_arr_internal(type, ptr, name, tabs, out, idxfn)           \
 	do {                                                            \
-		uint32 len, i;                                          \
+		a_uint32 len, i;                                        \
                                                                         \
-		len = a_arr_##type##_len(ptr);                          \
+		len = a_arrp_len(ptr);                                  \
 		debug_arr_prefix("a_arr_" #type, name, len, tabs, out); \
 		++tabs;                                                 \
 		for (i = 0; i < len; i++) {                             \
@@ -90,11 +90,14 @@ static const char *tokenstr[] = {
  */
 
 /* Auxiliary to 'a_token_debug()' */
-ASHE_PRIVATE inline const char *num2str(memmax n)
+ASHE_PRIVATE inline const char *num2str(a_memmax n)
 {
-	static char buffer[UINT_DIGITS + 1];
+	static char buffer[ASHE_INT64_DIGITS + 1];
 
-	snprintf(buffer, UINT_DIGITS + 1, "%lu", n);
+	if (ASHE_UNLIKELY(snprintf(buffer, sizeof(buffer) - 1, "%lu", n))) {
+		ashe_perrno("snprintf");
+		ashe_panic(NULL);
+	}
 	return buffer;
 }
 
@@ -137,7 +140,7 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
  *
  */
 
-ASHE_PRIVATE void debug_prefix(const char *type, const char *name, uint32 tabs,
+ASHE_PRIVATE void debug_prefix(const char *type, const char *name, a_uint32 tabs,
 			       a_arr_char *out)
 {
 	pushtabs(out, tabs);
@@ -149,7 +152,7 @@ ASHE_PRIVATE void debug_prefix(const char *type, const char *name, uint32 tabs,
 	}
 }
 
-ASHE_PRIVATE void debug_suffix(uint32 tabs, a_arr_char *out)
+ASHE_PRIVATE void debug_suffix(a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	a_arr_char_push(out, '}');
@@ -157,7 +160,7 @@ ASHE_PRIVATE void debug_suffix(uint32 tabs, a_arr_char *out)
 
 /*			TERMS				*/
 
-ASHE_PUBLIC void debug_number(ssize n, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_number(a_ssize n, const char *name, a_uint32 tabs,
 			      a_arr_char *out)
 {
 	pushtabs(out, tabs);
@@ -166,7 +169,7 @@ ASHE_PUBLIC void debug_number(ssize n, const char *name, uint32 tabs,
 	a_arr_char_push_num(out, n);
 }
 
-ASHE_PUBLIC void debug_boolean(ubyte b, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_boolean(a_ubyte b, const char *name, a_uint32 tabs,
 			       a_arr_char *out)
 {
 	const char *boolean;
@@ -178,7 +181,7 @@ ASHE_PUBLIC void debug_boolean(ubyte b, const char *name, uint32 tabs,
 	a_arr_char_push_str(out, boolean, strlen(boolean));
 }
 
-ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, a_uint32 tabs,
 			   a_arr_char *out)
 {
 	pushtabs(out, tabs);
@@ -187,8 +190,8 @@ ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, uint32 tabs,
 	a_arr_char_push_ptr(out, ptr);
 }
 
-ASHE_PUBLIC void debug_string(const char *str, memmax len, const char *name,
-			      uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_string(const char *str, a_memmax len, const char *name,
+			      a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	if (name != NULL)
@@ -196,7 +199,7 @@ ASHE_PUBLIC void debug_string(const char *str, memmax len, const char *name,
 	a_arr_char_push_str(out, str, len);
 }
 
-ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, a_uint32 tabs,
 			      a_arr_char *out)
 {
 	const char *string;
@@ -212,8 +215,8 @@ ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, uint32 tabs,
 
 /*			ENUMS				*/
 
-ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name,
-			       uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name, a_uint32 tabs,
+			       a_arr_char *out)
 {
 	const char *suffix;
 
@@ -293,8 +296,8 @@ ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name,
 	a_arr_char_push_str(out, suffix, strlen(suffix));
 }
 
-ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name,
-			       uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 tabs,
+			       a_arr_char *out)
 {
 	const char *suffix;
 
@@ -320,7 +323,7 @@ ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name,
 }
 
 ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name,
-				   uint32 tabs, a_arr_char *out)
+				   a_uint32 tabs, a_arr_char *out)
 {
 	const char *suffix;
 
@@ -363,13 +366,13 @@ ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name,
 /*			STRUCTS				 */
 
 ASHE_PRIVATE void debug_struct_prefix(const char *type, const char *name,
-				      uint32 tabs, a_arr_char *out)
+				      a_uint32 tabs, a_arr_char *out)
 {
 	debug_prefix(type, name, tabs, out);
 	a_arr_char_push_strlit(out, "{\n");
 }
 
-ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, a_uint32 tabs,
 			     a_arr_char *out)
 {
 	/* prefix */
@@ -395,7 +398,7 @@ ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, uint32 tabs,
 }
 
 ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
-				uint32 tabs, a_arr_char *out)
+				a_uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_redirect", name, tabs, out);
@@ -417,7 +420,7 @@ ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
 }
 
 ASHE_PUBLIC void debug_simple_cmd(struct a_simple_cmd *scmd, const char *name,
-				  uint32 tabs, a_arr_char *out)
+				  a_uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_simple_cmd", name, tabs, out);
@@ -434,7 +437,7 @@ ASHE_PUBLIC void debug_simple_cmd(struct a_simple_cmd *scmd, const char *name,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, a_uint32 tabs,
 			   a_arr_char *out)
 {
 	switch (cmd->c_type) {
@@ -449,7 +452,7 @@ ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, uint32 tabs,
 }
 
 ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name,
-				uint32 tabs, a_arr_char *out)
+				a_uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_pipeline", name, tabs, out);
@@ -468,7 +471,7 @@ ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_list(struct a_list *list, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_list(struct a_list *list, const char *name, a_uint32 tabs,
 			    a_arr_char *out)
 {
 	/* prefix */
@@ -482,8 +485,8 @@ ASHE_PUBLIC void debug_list(struct a_list *list, const char *name, uint32 tabs,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_block(struct a_block *block, const char *name,
-			     uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_block(struct a_block *block, const char *name, a_uint32 tabs,
+			     a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_block", name, tabs, out);
@@ -502,8 +505,8 @@ ASHE_PUBLIC void debug_block(struct a_block *block, const char *name,
  *			ARRAYS
  */
 
-ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name,
-				   uint32 len, uint32 tabs, a_arr_char *out)
+ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name, a_uint32 len,
+				   a_uint32 tabs, a_arr_char *out)
 {
 	debug_prefix(type, name, tabs, out);
 	a_arr_char_push(out, '[');
@@ -512,31 +515,31 @@ ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name,
 }
 
 ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *ccharps, const char *name,
-				  uint32 tabs, a_arr_char *out)
+				  a_uint32 tabs, a_arr_char *out)
 {
 	debug_arr(ccharp, ccharps, name, tabs, out, derefidxfn(ccharp));
 }
 
 ASHE_PUBLIC void debug_arr_redirect(a_arr_redirect *rds, const char *name,
-				    uint32 tabs, a_arr_char *out)
+				    a_uint32 tabs, a_arr_char *out)
 {
 	debug_arr(redirect, rds, name, tabs, out, refidxfn(redirect));
 }
 
-ASHE_PUBLIC void debug_arr_cmd(a_arr_cmd *cmds, const char *name, uint32 tabs,
+ASHE_PUBLIC void debug_arr_cmd(a_arr_cmd *cmds, const char *name, a_uint32 tabs,
 			       a_arr_char *out)
 {
 	debug_arr(cmd, cmds, name, tabs, out, refidxfn(cmd));
 }
 
 ASHE_PUBLIC void debug_arr_pipeline(a_arr_pipeline *pipes, const char *name,
-				    uint32 tabs, a_arr_char *out)
+				    a_uint32 tabs, a_arr_char *out)
 {
 	debug_arr(pipeline, pipes, name, tabs, out, refidxfn(pipeline));
 }
 
-ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name,
-				uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name, a_uint32 tabs,
+				a_arr_char *out)
 {
 	debug_arr(list, lists, name, tabs, out, refidxfn(list));
 }
@@ -576,29 +579,29 @@ ASHE_PUBLIC void debug_cursor(void)
 {
 	static char buffer[1028];
 	FILE *fp = NULL;
-	memmax len = 0;
-	ssize temp = 0;
-	int32 status;
+	a_memmax len = 0;
+	a_ssize temp = 0;
+	a_int32 status;
 
 	status = 0;
 	errno = 0;
-	if (unlikely((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
-		defer(-1);
+	if (ASHE_UNLIKELY((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
+		ASHE_DEFER(-1);
 
 	temp = snprintf(
 		buffer, sizeof(buffer),
 		"[A_TCOLMAX:%u][A_TCOL:%u][A_ROW:%u][LINE_LEN:%lu][A_COL:%u][A_IBFIDX:%lu]\r\n",
 		A_TCOLMAX, A_TCOL, A_ROW, A_LINE.len, A_COL, A_IBFIDX);
 
-	if (unlikely(temp < 0 || temp > BUFSIZ))
-		defer(-1);
+	if (ASHE_UNLIKELY(temp < 0 || temp > BUFSIZ))
+		ASHE_DEFER(-1);
 
 	len += temp;
 
-	if (unlikely(fwrite(buffer, sizeof(byte), len, fp) != len))
-		defer(-1);
-	if (unlikely(fclose(fp) == EOF))
-		defer(-1);
+	if (ASHE_UNLIKELY(fwrite(buffer, sizeof(a_byte), len, fp) != len))
+		ASHE_DEFER(-1);
+	if (ASHE_UNLIKELY(fclose(fp) == EOF))
+		ASHE_DEFER(-1);
 defer:
 	if (status == -1) {
 		if (fp)
@@ -608,66 +611,67 @@ defer:
 	}
 }
 
+// clang-format off
 /* Debug each row and its line (contents) */
 ASHE_PUBLIC void debug_lines(void)
 {
 	static char temp[128];
 	a_arr_char buffer;
 	FILE *fp = NULL;
-	uint32 i, idx;
-	int32 status;
-	ssize len;
+	a_uint32 i, idx;
+	a_int32 status;
+	a_ssize len;
 
 	status = 0;
 	errno = 0;
 	a_arr_char_init(&buffer);
 
-	if (unlikely((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
-		defer(-1);
+	if (ASHE_UNLIKELY((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
+		ASHE_DEFER(-1);
 
-	/* Log prompt */
-	if (unlikely((len = snprintf(temp, sizeof(temp), "[A_PLEN:%lu] -> [",
-				     A_PLEN)) < 0 ||
-		     (memmax)len > sizeof(temp)))
-		defer(-1);
+	if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp), "[A_PLEN:%lu] -> [", A_PLEN)) < 0
+				|| (a_memmax)len > sizeof(temp))) {
+		ASHE_DEFER(-1);
+	}
+
 	a_arr_char_push_str(&buffer, temp, len);
-	a_arr_char_push_str(&buffer, ashe.sh_prompt.data,
-			    ashe.sh_prompt.len - 1);
+	a_arr_char_push_str(&buffer, a_arr_ptr(ashe.sh_prompt), a_arr_len(ashe.sh_prompt) - 1);
 	a_arr_char_push_strlit(&buffer, "]\r\n");
 
-	/* Log buffer */
-	if (unlikely((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
-				     A_IBF.len)) < 0 ||
-		     (memmax)len > sizeof(temp)))
-		defer(-1);
+	if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
+					  a_arr_len(A_IBF))) < 0 || (a_memmax)len > sizeof(temp))) {
+		ASHE_DEFER(-1);
+	}
+
 	a_arr_char_push_str(&buffer, temp, len);
-	idx = buffer.len;
-	a_arr_char_push_str(&buffer, A_IBF.data, A_IBF.len);
-	ashe_unescape(&buffer, idx, buffer.len);
+	idx = a_arr_len(buffer);
+	a_arr_char_push_str(&buffer, a_arr_ptr(A_IBF), a_arr_len(A_IBF));
+	ashe_unescape(&buffer, idx, a_arr_len(buffer));
 	a_arr_char_push_strlit(&buffer, "]\r\n");
 
 	/* Log lines */
-	for (i = 0; i < A_LINES.len; i++) {
-		if (unlikely((len = snprintf(temp, sizeof(temp),
-					     "[A_LINE:%4u][LEN:%4lu] -> [", i,
-					     A_LINES.data[i].len)) < 0 ||
-			     (memmax)len > sizeof(temp)))
-			defer(-1);
+	for (i = 0; i < a_arr_len(A_LINES); i++) {
+		if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp),
+					"[A_LINE:%4u][LEN:%4lu] -> [", i,
+					a_arr_ptr(A_LINES)[i].len)) < 0 ||
+				  	(a_memmax)len > sizeof(temp))) {
+			ASHE_DEFER(-1);
+		}
+
 		a_arr_char_push_str(&buffer, temp, len);
-		idx = buffer.len;
-		a_arr_char_push_str(&buffer, A_LINES.data[i].start,
-				    A_LINES.data[i].len);
-		ashe_unescape(&buffer, idx, buffer.len);
+		idx = a_arr_len(buffer);
+		a_arr_char_push_str(&buffer, a_arr_ptr(A_LINES)[i].start, a_arr_ptr(A_LINES)[i].len);
+		ashe_unescape(&buffer, idx, a_arr_len(buffer));
 		a_arr_char_push_strlit(&buffer, "]\r\n");
 	}
 
 	/* Write log file */
-	if (unlikely(fwrite(buffer.data, sizeof(byte), buffer.len, fp) <
-		     buffer.len))
-		defer(-1);
-	if (unlikely(fclose(fp) == EOF)) {
+	if (ASHE_UNLIKELY(fwrite(buffer.data, sizeof(a_byte), a_arr_len(buffer), fp) < a_arr_len(buffer)))
+		ASHE_DEFER(-1);
+
+	if (ASHE_UNLIKELY(fclose(fp) == EOF)) {
 		fp = NULL;
-		defer(-1);
+		ASHE_DEFER(-1);
 	}
 
 	a_arr_char_free(&buffer, NULL);
@@ -681,28 +685,31 @@ defer:
 	}
 }
 
-// clang-format off
 ASHE_PUBLIC void remove_logfiles(void)
 {
 	DIR *root;
 	struct dirent *entry;
-	int32 status;
+	a_int32 status;
 
 	errno = 0;
 	status = 0;
 	root = NULL;
+
 	if ((root = opendir(".")) == NULL)
-		defer(-1);
+		ASHE_DEFER(-1);
+
 	for (errno = 0; (entry = readdir(root)) != NULL;) {
-		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0 ||
-		     strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0) &&
-		    entry->d_type == DT_REG) {
+		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0
+			|| strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0)
+			&& entry->d_type == DT_REG)
+		{
 			if (unlink(entry->d_name) < 0)
 				ashe_perrno("couldn't unlink %d", entry->d_name);
 		}
 	}
-	if (unlikely(errno != 0 || closedir(root) < 0))
-		defer(-1);
+
+	if (ASHE_UNLIKELY(errno != 0 || closedir(root) < 0))
+		ASHE_DEFER(-1);
 defer:
 	if (root)
 		closedir(root);
@@ -714,10 +721,10 @@ defer:
 }
 // clang-format on
 
-ASHE_PUBLIC void logfile_create(const char *logfile, int32 which)
+ASHE_PUBLIC void logfile_create(const char *logfile, a_int32 which)
 {
 	logfiles[which] = logfile;
-	if (unlikely(fopen(logfile, "w") == NULL)) {
+	if (ASHE_UNLIKELY(fopen(logfile, "w") == NULL)) {
 		ashe_perrno("failed opening %s file", logfile);
 		ashe_panic(NULL);
 	}

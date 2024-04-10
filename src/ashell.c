@@ -1,3 +1,4 @@
+#include "acommon.h"
 #include "aconf.h"
 #include "aasync.h"
 #include "ashell.h"
@@ -14,19 +15,19 @@
 /* global shell */
 struct a_shell ashe = { 0 };
 
-static int32 init_ashe_vars(void)
+static a_int32 init_ashe_vars(void)
 {
-	char buffer[INT_DIGITS + 1];
+	char buffer[ASHE_INT32_DIGITS + 1];
 	int status;
 
 	status = 0;
 
-	if (unlikely(setenv(ASHE_VAR_STATUS, "0", 1) < 0))
-		defer(-1);
-	if (unlikely(snprintf(buffer, INT_DIGITS, "%d", getpid()) < 0))
-		defer(-1);
-	if (unlikely(setenv(ASHE_VAR_PID, buffer, 1) < 0))
-		defer(-1);
+	if (ASHE_UNLIKELY(setenv(ASHE_VAR_STATUS, "0", 1) < 0))
+		ASHE_DEFER(-1);
+	if (ASHE_UNLIKELY(snprintf(buffer, ASHE_INT32_DIGITS, "%d", getpid()) < 0))
+		ASHE_DEFER(-1);
+	if (ASHE_UNLIKELY(setenv(ASHE_VAR_PID, buffer, 1) < 0))
+		ASHE_DEFER(-1);
 defer:
 	return status;
 }
@@ -59,24 +60,24 @@ get_terminal:
 	if (sh->sh_flags.interactive) {
 		a_term_init();
 		while (tcgetpgrp(STDIN_FILENO) != (sh_pgid = getpgrp())) {
-			if (unlikely(kill(-sh_pgid, SIGTTIN) < 0)) {
+			if (ASHE_UNLIKELY(kill(-sh_pgid, SIGTTIN) < 0)) {
 				ashe_perrno("can't send signal %d to pgid %d",
 					    SIGTTIN, sh_pgid);
 				goto panic;
 			}
 		}
-		if (unlikely(setpgid(getpid(), sh_pgid) < 0)) {
+		if (ASHE_UNLIKELY(setpgid(getpid(), sh_pgid) < 0)) {
 			ashe_perrno("can't set shell process group");
 			goto panic;
 		}
-		if (unlikely(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0)) {
+		if (ASHE_UNLIKELY(tcsetpgrp(STDIN_FILENO, sh_pgid) < 0)) {
 			ashe_perrno("can't set terminal foreground process group");
 			goto panic;
 		}
 		ashe_init_sighandlers();
 		ashe_pwelcome();
 	} else {
-		if (unlikely(kill(-sh_pgid, SIGTTIN) < 0)) {
+		if (ASHE_UNLIKELY(kill(-sh_pgid, SIGTTIN) < 0)) {
 			ashe_perrno("can't send signal %d to pgid %d", SIGTTIN, sh_pgid);
 			goto panic;
 		}

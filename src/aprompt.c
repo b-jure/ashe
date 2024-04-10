@@ -1,4 +1,5 @@
 #define ASHE_USE_PLACEHOLDERS_ARRAY
+#include "acommon.h"
 #include "atoken.h"
 #include "aprompt.h"
 #include "ajobcntl.h"
@@ -18,7 +19,7 @@ static char ashe_plhbuf[BUFSIZ];
 
 ASHE_PUBLIC const char *ashe_host(void)
 {
-	if (unlikely(gethostname(ashe_plhbuf, BUFSIZ) < 0))
+	if (ASHE_UNLIKELY(gethostname(ashe_plhbuf, BUFSIZ) < 0))
 		return NULL;
 	return ashe_plhbuf;
 }
@@ -30,12 +31,12 @@ ASHE_PUBLIC const char *ashe_user(void)
 
 	errno = 0;
 	uid = getuid();
-	if (unlikely(!(record = getpwuid(uid)))) {
+	if (ASHE_UNLIKELY(!(record = getpwuid(uid)))) {
 		ashe_perrno("getpwuid");
 		goto error;
 	}
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%s", record->pw_name) <
-		     0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%s", record->pw_name) <
+			  0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -47,10 +48,10 @@ error:
 
 ASHE_PUBLIC const char *ashe_jobc(void)
 {
-	uint32 jobc = a_jobcntl_jobs(&ashe.sh_jobcntl);
+	a_uint32 jobc = a_jobcntl_jobs(&ashe.sh_jobcntl);
 	const char *fmt = (jobc ? "%u" : "");
 
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, fmt, jobc) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, fmt, jobc) < 0)) {
 		ashe_perrno("snprintf");
 		return NULL;
 	}
@@ -61,13 +62,13 @@ ASHE_PUBLIC const char *ashe_dir(void)
 {
 	const char *ptr;
 
-	if (unlikely(!getcwd(ashe_plhbuf, BUFSIZ))) {
+	if (ASHE_UNLIKELY(!getcwd(ashe_plhbuf, BUFSIZ))) {
 		ashe_perrno("getcwd");
 		goto error;
 	}
 	if ((ptr = strrchr(ashe_plhbuf, '/'))) {
 		ptr++;
-		if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%s", ptr) < 0)) {
+		if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%s", ptr) < 0)) {
 			ashe_perrno("snprintf");
 			goto error;
 		}
@@ -79,7 +80,7 @@ error:
 
 ASHE_PUBLIC const char *ashe_adir(void)
 {
-	if (unlikely(!getcwd(ashe_plhbuf, BUFSIZ))) {
+	if (ASHE_UNLIKELY(!getcwd(ashe_plhbuf, BUFSIZ))) {
 		ashe_perrno("getcwd");
 		return NULL;
 	}
@@ -91,16 +92,16 @@ ASHE_PUBLIC const char *ashe_time(void)
 	time_t t;
 	struct tm *lt;
 
-	if (unlikely(time(&t) < 0)) {
+	if (ASHE_UNLIKELY(time(&t) < 0)) {
 		ashe_perrno("time");
 		goto error;
 	}
-	if (unlikely((lt = localtime(&t)) == NULL)) {
+	if (ASHE_UNLIKELY((lt = localtime(&t)) == NULL)) {
 		ashe_perrno("localtime");
 		goto error;
 	}
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_hour,
-			      lt->tm_min) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_hour,
+				   lt->tm_min) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -115,17 +116,17 @@ ASHE_PUBLIC const char *ashe_date(void)
 	struct tm *lt;
 	time_t t;
 
-	if (unlikely(time(&t) < 0)) {
+	if (ASHE_UNLIKELY(time(&t) < 0)) {
 		ashe_perrno("time");
 		goto error;
 	}
-	if (unlikely((lt = localtime(&t)) == NULL)) {
+	if (ASHE_UNLIKELY((lt = localtime(&t)) == NULL)) {
 		ashe_perrno("localtime");
 		goto error;
 	}
-	if (unlikely(snprintf(ashe_plhbuf, BUFSIZ, "%d-%02d-%02d",
-			      lt->tm_year + 1900, lt->tm_mon + 1,
-			      lt->tm_mday) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%d-%02d-%02d",
+				   lt->tm_year + 1900, lt->tm_mon + 1,
+				   lt->tm_mday) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -139,12 +140,12 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 {
 	struct sysinfo si;
 
-	if (unlikely(sysinfo(&si) < 0)) {
+	if (ASHE_UNLIKELY(sysinfo(&si) < 0)) {
 		ashe_perrno("sysinfo");
 		goto error;
 	}
-	if (unlikely(snprintf(ashe_plhbuf, UINT_DIGITS, "%ldh %ldm",
-			      (si.uptime / 3600), (si.uptime / 60) % 60) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, ASHE_INT64_DIGITS, "%ldh %ldm",
+				   (si.uptime / 3600), (si.uptime / 60) % 60) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -153,22 +154,22 @@ error:
 	return NULL;
 }
 
-/* expand p...laaaceholder you dirty dog */
+/* expand p...laaaceholder */
 ASHE_PRIVATE void expandp(a_arr_char *out, const char **ptr)
 {
 	const char *p = *ptr;
 	const char *res;
-	memmax n = 0;
-	uint32 i;
-	int32 c;
+	a_memmax n = 0;
+	a_uint32 i;
+	a_int32 c;
 
 	if (!isdigit(*++p))
 		goto push_plh_sign;
-	for (i = 0; i < UINT_DIGITS && isdigit((c = *p)); i++, p++)
+	for (i = 0; i < ASHE_INT64_DIGITS && isdigit((c = *p)); i++, p++)
 		n = n * 10 + (c - '0');
-	if (unlikely(n >= ELEMENTS(placeholders)))
+	if (ASHE_UNLIKELY(n >= ASHE_ELEMENTS(placeholders)))
 		goto push_plh_sign;
-	if (likely((res = placeholders[n]()) != NULL)) {
+	if (ASHE_LIKELY((res = placeholders[n]()) != NULL)) {
 		a_arr_char_push_str(out, res, strlen(res));
 		*ptr = p;
 	} else {
@@ -181,7 +182,7 @@ push_plh_sign:
 /* parses 'str' by expanding all placeholders */
 ASHE_PRIVATE void parseps(a_arr_char *out, const char *str)
 {
-	int32 c;
+	a_int32 c;
 
 	while ((c = *str)) {
 		if (c != ASHE_PLH_SIGN) {
@@ -191,33 +192,36 @@ ASHE_PRIVATE void parseps(a_arr_char *out, const char *str)
 			expandp(out, &str);
 		}
 	}
-	out->len = ((ASHE_PROMPT_LEN_MAX - 1) *
-		    (out->len >= ASHE_PROMPT_LEN_MAX)) +
-		   (out->len * (out->len < ASHE_PROMPT_LEN_MAX));
+
+	a_arrp_len(out) =
+		((ASHE_PROMPT_LEN_MAX - 1) *
+		 (a_arrp_len(out) >= ASHE_PROMPT_LEN_MAX)) +
+		(a_arrp_len(out) * (a_arrp_len(out) < ASHE_PROMPT_LEN_MAX));
+
 	a_arr_char_push(out, '\0');
 }
 
-ASHE_PUBLIC void userstr_print(const char *str, memmax len)
+ASHE_PUBLIC void userstr_print(const char *str, a_memmax len)
 {
 	a_arr_char buffer;
 
 	a_arr_char_init_cap(&buffer, len);
 	parseps(&buffer, str);
-	ashe_print(buffer.data, stderr);
+	ashe_print(a_arr_ptr(buffer), stderr);
 	a_arr_char_free(&buffer, NULL);
 }
 
 ASHE_PUBLIC void ashe_pwelcome(void)
 {
-	ashe.sh_welcome.len = 0;
+	a_arr_len(ashe.sh_welcome) = 0;
 	parseps(&ashe.sh_welcome, ASHE_WELCOME);
-	ashe_print(ashe.sh_welcome.data, stderr);
+	ashe_print(a_arr_ptr(ashe.sh_welcome), stderr);
 }
 
 ASHE_PUBLIC void ashe_pprompt(void)
 {
-	ashe.sh_prompt.len = 0;
+	a_arr_len(ashe.sh_prompt) = 0;
 	parseps(&ashe.sh_prompt, ASHE_PROMPT);
-	ashe.sh_term.tm_promptlen = ashe.sh_prompt.len - 1;
-	ashe_print(ashe.sh_prompt.data, stderr);
+	ashe.sh_term.tm_promptlen = a_arr_len(ashe.sh_prompt) - 1;
+	ashe_print(a_arr_ptr(ashe.sh_prompt), stderr);
 }

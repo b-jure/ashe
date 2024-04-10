@@ -73,8 +73,8 @@
 /* defines to insure these are inlined */
 #define init_dflterm(term) tcgetattr(STDIN_FILENO, term);
 
-#define set_terminal_mode(tmode)                                     \
-	if (unlikely(tcsetattr(STDIN_FILENO, TCSAFLUSH, tmode) < 0)) \
+#define set_terminal_mode(tmode)                                          \
+	if (ASHE_UNLIKELY(tcsetattr(STDIN_FILENO, TCSAFLUSH, tmode) < 0)) \
 		ashe_panic("can't set terminal settings");
 
 #define opost_on()                                              \
@@ -89,13 +89,9 @@
 		set_terminal_mode(&ashe.sh_term.tm_rawtermios); \
 	} while (0)
 
-#define shift_lines_right(row)                     \
-	for (uint32 i = row; i < A_LINES.len; i++) \
-		A_LINES.data[i].start++;
-
-#define shift_lines_left(row)                      \
-	for (uint32 i = row; i < A_LINES.len; i++) \
-		A_LINES.data[i].start--;
+#define shift_lines(row, sign)                              \
+	for (a_uint32 i = row; i < a_arr_len(A_LINES); i++) \
+		a_arr_line_index(&A_LINES, i)->start sign##sign;
 
 /* Implemented keys */
 enum termkey {
@@ -109,23 +105,24 @@ enum termkey {
 	DEL_KEY
 };
 
-ASHE_PRIVATE inline void write_or_panic(const char *ptr, memmax n)
+ASHE_PRIVATE inline void write_or_panic(const char *ptr, a_memmax n)
 {
-	if (unlikely(ashe_write(STDERR_FILENO, ptr, n) < 0))
+	if (ASHE_UNLIKELY(ashe_write(STDERR_FILENO, ptr, n) < 0))
 		ashe_panic(NULL);
 	fflush(stderr);
-	if (unlikely(ferror(stderr))) {
+	if (ASHE_UNLIKELY(ferror(stderr))) {
 		ashe_perrno("stderr");
 		ashe_panic(NULL);
 	}
 }
 
-ASHE_PRIVATE inline void dbf_push_unum(memmax n)
+ASHE_PRIVATE inline void dbf_push_unum(a_memmax n)
 {
-	char temp[UINT_DIGITS];
-	int32 chars;
+	char temp[ASHE_INT64_DIGITS];
+	a_int32 chars;
 
-	if (unlikely((chars = snprintf(temp, UINT_DIGITS, "%zu", n)) < 0)) {
+	if (ASHE_UNLIKELY((chars = snprintf(temp, ASHE_INT64_DIGITS, "%zu", n)) <
+			  0)) {
 		ashe_perrno("snprintf");
 		ashe_panic(NULL);
 	}
@@ -134,16 +131,15 @@ ASHE_PRIVATE inline void dbf_push_unum(memmax n)
 
 ASHE_PRIVATE inline void dbf_flush()
 {
-	a_arr_char *drawbuf = &A_DBF;
 	opost_on();
-	write_or_panic(drawbuf->data, drawbuf->len);
+	write_or_panic(a_arr_ptr(A_DBF), a_arr_len(A_DBF));
 	opost_off();
-	drawbuf->len = 0;
+	a_arr_len(A_DBF) = 0;
 }
 
-ASHE_PRIVATE int32 get_winsize_fallback(uint32 *height, uint32 *width)
+ASHE_PRIVATE a_int32 get_winsize_fallback(a_uint32 *height, a_uint32 *width)
 {
-	int32 res;
+	a_int32 res;
 
 	dbf_draw_lit(c_si_cursor_save c_si_cursor_right(99999)
 			     c_si_cursor_down(99999));
@@ -152,12 +148,12 @@ ASHE_PRIVATE int32 get_winsize_fallback(uint32 *height, uint32 *width)
 	return res;
 }
 
-ASHE_PUBLIC int32 ashe_get_winsize(uint32 *height, uint32 *width)
+ASHE_PUBLIC a_int32 ashe_get_winsize(a_uint32 *height, a_uint32 *width)
 {
 	struct winsize ws;
 
-	if (unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 ||
-		     ws.ws_col == 0)) {
+	if (ASHE_UNLIKELY(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 ||
+			  ws.ws_col == 0)) {
 		return get_winsize_fallback(height, width);
 	}
 	if (height)
@@ -167,13 +163,13 @@ ASHE_PUBLIC int32 ashe_get_winsize(uint32 *height, uint32 *width)
 	return 0;
 }
 
-ASHE_PUBLIC int32 ashe_get_curpos(uint32 *row, uint32 *col)
+ASHE_PUBLIC a_int32 ashe_get_curpos(a_uint32 *row, a_uint32 *col)
 {
 	char c;
-	memmax i = 0;
-	int32 nread;
-	uint32 srow, scol;
-	char buf[INT_DIGITS * 2 + sizeof(A_CSI ";")]; /* A_ESC [ Pn ; Pn R */
+	a_memmax i = 0;
+	a_int32 nread;
+	a_uint32 srow, scol;
+	char buf[ASHE_INT32_DIGITS * 2 + sizeof(A_CSI ";")]; /* A_ESC [ Pn ; Pn R */
 
 	dbf_draw_lit(c_si_cursor_position);
 	while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
@@ -210,7 +206,7 @@ ASHE_PUBLIC void a_terminput_init(void)
 	a_arr_char_init_cap(&A_DBF, 8);
 	a_arr_line_init(&A_LINES);
 	a_arr_line_push(&A_LINES,
-			(struct a_line){ .len = 0, .start = A_IBF.data });
+			(struct a_line){ .len = 0, .start = a_arr_ptr(A_IBF) });
 	A_IBFIDX = 0;
 	A_COL = 0;
 	A_ROW = 0;
@@ -234,20 +230,20 @@ ASHE_PUBLIC void a_term_init(void)
 	A_TM.tm_reading = 0;
 }
 
-ASHE_PUBLIC ubyte ashe_cursor_up(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_up(void)
 {
-	uint32 extra = ((A_ROW == 0) * A_PLEN);
-	uint32 len = A_COL + 1 + extra;
-	uint32 pwraps = (A_PLEN != 0) * ((A_PLEN - 1) / A_TCOLMAX);
-	uint32 lwraps = (len - 1) / A_TCOLMAX;
-	uint32 temp;
+	a_uint32 extra = ((A_ROW == 0) * A_PLEN);
+	a_uint32 len = A_COL + 1 + extra;
+	a_uint32 pwraps = (A_PLEN != 0) * ((A_PLEN - 1) / A_TCOLMAX);
+	a_uint32 lwraps = (len - 1) / A_TCOLMAX;
+	a_uint32 temp;
 
 	temp = lwraps - pwraps;
 	if (A_ROW == 0 && (temp == 0 || (temp < 2 && len % A_TCOLMAX == 0)))
 		return 0;
 	if (A_ROW == 0) {
-		if (temp == 1 && (temp = modlen(A_PLEN, A_TCOLMAX)) >=
-					 modlen(len, A_TCOLMAX)) {
+		if (temp == 1 &&
+		    (temp = modlen(A_PLEN, A_TCOLMAX)) >= modlen(len, A_TCOLMAX)) {
 start:
 			A_COL = 0;
 			A_IBFIDX = 0;
@@ -260,10 +256,10 @@ start:
 		A_IBFIDX -= A_COL + 1; /* end of the line above */
 		A_ROW--;
 		extra = (A_ROW == 0) * A_PLEN;
-		len = A_LINE.len + extra;
+		len = a_arr_len(A_LINE) + extra;
 		lwraps = (len - 1) / A_TCOLMAX;
 		if ((temp = modlen(len, A_TCOLMAX)) <= A_COL + 1) {
-			A_COL = A_LINE.len - 1;
+			A_COL = a_arr_len(A_LINE) - 1;
 			A_TCOL = temp;
 			goto uptocol_draw;
 		} else {
@@ -274,7 +270,7 @@ start:
 				goto start;
 			}
 			temp = modlen(len, A_TCOLMAX) - temp;
-			A_COL = A_LINE.len - temp - 1;
+			A_COL = a_arr_len(A_LINE) - temp - 1;
 			A_IBFIDX -= temp;
 			goto up_draw;
 		}
@@ -295,40 +291,40 @@ flush:
 }
 
 // clang-format off
-ASHE_PUBLIC ubyte ashe_cursor_down(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_down(void)
 {
-	uint32 extra = (A_ROW == 0) * A_PLEN;
-	uint32 linewraps = (A_LINE.len != 0) * ((A_LINE.len - 1 + extra) / A_TCOLMAX);
-	uint32 colwraps = (A_COL != 0) * ((A_COL + extra) / A_TCOLMAX);
-	ssize wrapdepth = linewraps - colwraps;
-	ubyte temp; /* for edge cases */
+	a_uint32 extra = (A_ROW == 0) * A_PLEN;
+	a_uint32 linewraps = (a_arr_len(A_LINE) != 0) * ((a_arr_len(A_LINE) - 1 + extra) / A_TCOLMAX);
+	a_uint32 colwraps = (A_COL != 0) * ((A_COL + extra) / A_TCOLMAX);
+	a_ssize wrapdepth = linewraps - colwraps;
+	a_ubyte temp; /* for edge cases */
 
 	if (wrapdepth > 0) {
-		if (wrapdepth > 1 || A_COL + extra + A_TCOLMAX <= A_LINE.len + extra - 1) {
+		if (wrapdepth > 1 || A_COL + extra + A_TCOLMAX <= a_arr_len(A_LINE) + extra - 1) {
 			A_COL += A_TCOLMAX;
 			A_IBFIDX += A_TCOLMAX;
 			goto down;
 		} else {
-			temp = (A_ROW != A_LINES.len - 1);
-			A_IBFIDX += A_LINE.len - A_COL - temp;
-			A_COL = A_LINE.len - temp;
-			A_TCOL = modlen(A_LINE.len + extra + !temp, A_TCOLMAX);
+			temp = (A_ROW != a_arr_len(A_LINES) - 1);
+			A_IBFIDX += a_arr_len(A_LINE) - A_COL - temp;
+			A_COL = a_arr_len(A_LINE) - temp;
+			A_TCOL = modlen(a_arr_len(A_LINE) + extra + !temp, A_TCOLMAX);
 			goto downtocol;
 		}
-	} else if (A_ROW < A_LINES.len - 1) {
-		A_IBFIDX += A_LINE.len - A_COL; /* start of new line */
+	} else if (A_ROW < a_arr_len(A_LINES) - 1) {
+		A_IBFIDX += a_arr_len(A_LINE) - A_COL; /* start of new line */
 		A_ROW++;
-		if (A_LINE.len >= A_TCOLMAX || A_LINE.len >= modlen(A_COL + 1 + extra, A_TCOLMAX)) {
+		if (a_arr_len(A_LINE) >= A_TCOLMAX || a_arr_len(A_LINE) >= modlen(A_COL + 1 + extra, A_TCOLMAX)) {
 			A_IBFIDX += A_TCOL - 1;
 			A_COL = A_TCOL - 1;
 down:
 			dbf_pushlit(c_si_cursor_down(1));
 			goto flush;
 		} else {
-			temp = (A_ROW != A_LINES.len - 1);
-			A_IBFIDX += A_LINE.len - temp;
-			A_COL = A_LINE.len - temp;
-			A_TCOL = A_LINE.len + !temp;
+			temp = (A_ROW != a_arr_len(A_LINES) - 1);
+			A_IBFIDX += a_arr_len(A_LINE) - temp;
+			A_COL = a_arr_len(A_LINE) - temp;
+			A_TCOL = a_arr_len(A_LINE) + !temp;
 downtocol:
 			dbf_pushlit(c_si_cursor_down(1));
 			dbf_push_movecol(A_TCOL);
@@ -339,9 +335,8 @@ flush:
 	}
 	return 0;
 }
-// clang-format on
 
-ASHE_PUBLIC ubyte ashe_cursor_left(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_left(void)
 {
 	if (A_COL > 0) {
 		A_COL--;
@@ -354,9 +349,8 @@ ASHE_PUBLIC ubyte ashe_cursor_left(void)
 		}
 	} else if (A_ROW > 0) {
 		A_ROW--;
-		A_COL = A_LINE.len - 1;
-		A_TCOL =
-			modlen(A_LINE.len + ((A_ROW == 0) * A_PLEN), A_TCOLMAX);
+		A_COL = a_arr_len(A_LINE) - 1;
+		A_TCOL = modlen(a_arr_len(A_LINE) + ((A_ROW == 0) * A_PLEN), A_TCOLMAX);
 lineuptocol:
 		dbf_pushlit(c_si_cursor_up(1));
 		dbf_push_movecol(A_TCOL);
@@ -367,11 +361,12 @@ lineuptocol:
 	A_IBFIDX--;
 	return 1;
 }
+// clang-format on
 
-ASHE_PUBLIC ubyte ashe_cursor_right(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_right(void)
 {
-	if (A_COL <
-	    A_LINE.len - (A_LINES.len != 0 && A_ROW != A_LINES.len - 1)) {
+	if (A_COL < a_arr_len(A_LINE) - (a_arr_len(A_LINES) != 0 &&
+					 A_ROW != a_arr_len(A_LINES) - 1)) {
 		A_COL++;
 		if (A_TCOL < A_TCOLMAX) {
 			A_TCOL++;
@@ -379,7 +374,7 @@ ASHE_PUBLIC ubyte ashe_cursor_right(void)
 		} else {
 			goto firstcoldown;
 		}
-	} else if (A_ROW < (A_LINES.len - 1)) {
+	} else if (A_ROW < (a_arr_len(A_LINES) - 1)) {
 		A_ROW++;
 		A_COL = 0;
 firstcoldown:
@@ -392,35 +387,34 @@ firstcoldown:
 	return 1;
 }
 
-ASHE_PUBLIC ubyte ashe_insert(int32 c)
+ASHE_PUBLIC a_ubyte ashe_insert(a_int32 c)
 {
-	memmax i;
-	uint32 idx;
-	ubyte relink;
+	a_uint32 idx, i;
+	a_ubyte relink;
 	struct a_line *prev = NULL;
 	struct a_line *curr = NULL;
 
-	if (A_IBF.len >= ARG_MAX - 1)
+	if (a_arr_len(A_IBF) >= ARG_MAX - 1)
 		return 0;
 	idx = A_IBFIDX;
-	relink = (A_IBF.len >= A_IBF.cap);
+	relink = (a_arr_len(A_IBF) >= a_arr_cap(A_IBF));
 	a_arr_char_insert(&A_IBF, A_IBFIDX, c);
-	A_LINE.len++;
+	a_arr_len(A_LINE)++;
 	prev = &A_LINES.data[0];
-	prev->start = A_IBF.data;
-	for (i = 1; i < relink * A_LINES.len; i++) {
+	prev->start = a_arr_ptr(A_IBF);
+	for (i = 1; i < relink * a_arr_len(A_LINES); i++) {
 		curr = a_arr_line_index(&A_LINES, i);
 		curr->start = prev->start + prev->len;
 		prev = curr;
 	}
-	shift_lines_right(A_ROW + 1);
+	shift_lines(A_ROW + 1, +); /* shift right */
 	dbf_pushlit(c_si_clear_line_right c_si_clear_down);
 	if (c == '\n' && A_TCOL < A_TCOLMAX) {
 		dbf_pushc('\n');
 		idx++;
 	}
 	dbf_pushlit(c_si_cursor_save);
-	dbf_push_len(&A_IBF.data[idx], A_IBF.len - idx);
+	dbf_push_len(&a_arr_ptr(A_IBF)[idx], a_arr_len(A_IBF) - idx);
 	dbf_pushlit(c_si_cursor_load);
 	dbf_flush();
 	if (c != '\n') /* otherwise we are in 'a_terminput_cr()' */
@@ -428,16 +422,16 @@ ASHE_PUBLIC ubyte ashe_insert(int32 c)
 	return 1;
 }
 
-ASHE_PUBLIC ubyte ashe_cr(void)
+ASHE_PUBLIC a_ubyte ashe_cr(void)
 {
 	struct a_line newline = { 0 };
 
-	if (ashe_isescaped(A_IBF.data, A_IBFIDX) ||
-	    ashe_indq(A_IBF.data, A_IBFIDX)) {
+	if (ashe_isescaped(a_arr_ptr(A_IBF), A_IBFIDX) ||
+	    ashe_indq(a_arr_ptr(A_IBF), A_IBFIDX)) {
 		ashe_insert('\n');
 		newline.start = A_LINE.start + A_COL + 1;
-		newline.len = A_LINE.len - (A_COL + 1);
-		A_LINE.len = A_COL + 1;
+		newline.len = a_arr_len(A_LINE) - (A_COL + 1);
+		a_arr_len(A_LINE) = A_COL + 1;
 		A_ROW++;
 		A_IBFIDX++;
 		A_COL = 0;
@@ -448,53 +442,51 @@ ASHE_PUBLIC ubyte ashe_cr(void)
 	return 0;
 }
 
-ASHE_PUBLIC ubyte ashe_remove(void)
+// clang-format off
+ASHE_PUBLIC a_ubyte ashe_remove(void)
 {
 	struct a_line *l;
-	ubyte coalesce;
+	a_ubyte coalesce;
 
 	if (A_IBFIDX <= 0)
 		return 0;
 	a_arr_char_remove(&A_IBF, A_IBFIDX - 1);
-	shift_lines_left(A_ROW + 1);
-	A_LINE.len -= !(coalesce = (A_COL == 0));
+	shift_lines(A_ROW + 1, -); /* shift left */
+	a_arr_len(A_LINE) -= !(coalesce = (A_COL == 0));
 	l = &A_LINE; /* cache current line */
 	ashe_cursor_left();
 	if (coalesce) {
-		A_LINE.len--; /* '\n' */
-		A_LINE.len += l->len;
-		ashe_assert(l == &A_LINES.data[A_ROW + 1]);
-		ashe_assert(l->start == A_LINES.data[A_ROW + 1].start);
-		ashe_assert(l->len == A_LINES.data[A_ROW + 1].len);
+		a_arr_len(A_LINE)--; /* '\n' */
+		a_arr_len(A_LINE) += l->len;
 		a_arr_line_remove(&A_LINES, A_ROW + 1);
 	}
-	dbf_pushlit(c_si_cursor_hide c_si_clear_line_right c_si_clear_down
-			    c_si_cursor_save);
-	dbf_push_len(A_IBF.data + A_IBFIDX, A_IBF.len - A_IBFIDX);
+	dbf_pushlit(c_si_cursor_hide c_si_clear_line_right c_si_clear_down c_si_cursor_save);
+	dbf_push_len(a_arr_ptr(A_IBF) + A_IBFIDX, a_arr_len(A_IBF) - A_IBFIDX);
 	dbf_pushlit(c_si_cursor_load c_si_cursor_show);
 	dbf_flush();
 	return 1;
 }
+// clang-format on
 
-ASHE_PUBLIC ubyte ashe_cursor_lineend(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_lineend(void)
 {
-	uint32 extra = (A_ROW == 0) * A_PLEN;
-	uint32 col = A_COL + extra;
-	uint32 len = A_LINE.len + extra;
-	uint32 temp;
-	ubyte lastrow = (A_ROW == A_LINES.len - 1);
+	a_uint32 extra = (A_ROW == 0) * A_PLEN;
+	a_uint32 col = A_COL + extra;
+	a_uint32 len = a_arr_len(A_LINE) + extra;
+	a_uint32 temp;
+	a_ubyte lastrow = (A_ROW == a_arr_len(A_LINES) - 1);
 
-	if (A_LINE.len > 0 &&
+	if (a_arr_len(A_LINE) > 0 &&
 	    ((temp = modlen(col + 1, A_TCOLMAX)) != A_TCOLMAX ||
-	     A_COL != A_LINE.len - !lastrow)) {
+	     A_COL != a_arr_len(A_LINE) - !lastrow)) {
 		if (col / A_TCOLMAX < (len - 1) / A_TCOLMAX) {
 			A_TCOL = A_TCOLMAX;
 			A_COL += A_TCOLMAX - temp;
 			A_IBFIDX += A_TCOLMAX - temp;
 		} else {
 			A_TCOL = (len % A_TCOLMAX) + lastrow;
-			A_IBFIDX += A_LINE.len - A_COL - !lastrow;
-			A_COL = A_LINE.len - !lastrow;
+			A_IBFIDX += a_arr_len(A_LINE) - A_COL - !lastrow;
+			A_COL = a_arr_len(A_LINE) - !lastrow;
 		}
 		dbf_push_movecol(A_TCOL);
 		dbf_flush();
@@ -503,11 +495,11 @@ ASHE_PUBLIC ubyte ashe_cursor_lineend(void)
 	return 0;
 }
 
-ASHE_PUBLIC ubyte ashe_cursor_linestart(void)
+ASHE_PUBLIC a_ubyte ashe_cursor_linestart(void)
 {
-	uint32 extra = (A_ROW == 0) * A_PLEN;
-	uint32 col = A_COL + extra;
-	ssize temp;
+	a_uint32 extra = (A_ROW == 0) * A_PLEN;
+	a_uint32 col = A_COL + extra;
+	a_ssize temp;
 
 	if (A_COL != 0 && (temp = modlen(col + 1, A_TCOLMAX)) != 1) {
 		if (col < A_TCOLMAX) {
@@ -529,13 +521,13 @@ ASHE_PUBLIC ubyte ashe_cursor_linestart(void)
 
 ASHE_PUBLIC void ashe_redraw(void)
 {
-	uint32 col = A_COL + (A_ROW == 0) * A_PLEN;
+	a_uint32 col = A_COL + (A_ROW == 0) * A_PLEN;
 
 	A_TCOL = modlen(col + 1, A_TCOLMAX);
 	dbf_pushlit(c_si_cursor_hide);
-	dbf_push_len(A_IBF.data, A_IBFIDX);
+	dbf_push_len(a_arr_ptr(A_IBF), A_IBFIDX);
 	dbf_pushlit(c_si_cursor_save);
-	dbf_push_len(A_IBF.data + A_IBFIDX, A_IBF.len - A_IBFIDX);
+	dbf_push_len(a_arr_ptr(A_IBF) + A_IBFIDX, a_arr_len(A_IBF) - A_IBFIDX);
 	dbf_pushlit(c_si_cursor_load c_si_cursor_show);
 	dbf_flush();
 }
@@ -562,13 +554,13 @@ ASHE_PUBLIC void ashe_cursor_end(void)
 
 ASHE_PRIVATE enum termkey read_key(void)
 {
-	ubyte seq[3];
-	int32 nread;
-	byte c;
+	a_ubyte seq[3];
+	a_int32 nread;
+	a_byte c;
 
 	ashe_mask_signals(SIG_UNBLOCK);
 	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-		if (unlikely(nread == -1 && (errno != EINTR && !ashe.sh_int))) {
+		if (ASHE_UNLIKELY(nread == -1 && (errno != EINTR && !ashe.sh_int))) {
 			ashe_mask_signals(SIG_BLOCK);
 			ashe_panic("couldn't read terminal input.");
 		}
@@ -633,9 +625,9 @@ ASHE_PRIVATE enum termkey read_key(void)
 	}
 }
 
-ASHE_PRIVATE ubyte process_key(void)
+ASHE_PRIVATE a_ubyte process_key(void)
 {
-	int32 c;
+	a_int32 c;
 
 	if (IMPLEMENTED((c = read_key()))) {
 		switch (c) {
@@ -670,7 +662,6 @@ ASHE_PRIVATE ubyte process_key(void)
 			break;
 		// case CTRL_KEY('h'): // TODO: Uncomment after testing
 		case CTRL_KEY('x'):
-			_exit(255); // TODO: Remove this after testing
 		case CTRL_KEY('j'):
 		case CTRL_KEY('k'):
 		case CTRL_KEY('i'):
@@ -693,8 +684,8 @@ ASHE_PRIVATE ubyte process_key(void)
 /* Read input from STDIN_FILENO. */
 ASHE_PUBLIC void a_terminput_read(void)
 {
-	ashe_assert(A_IBF.data != NULL);
-	ashe_assert(A_DBF.data != NULL);
+	ashe_assert(a_arr_ptr(A_IBF) != NULL);
+	ashe_assert(a_arr_ptr(A_DBF) != NULL);
 	ashe_mask_signals(SIG_BLOCK);
 	A_TM.tm_reading = 1;
 	set_terminal_mode(&A_TM.tm_rawtermios);

@@ -11,21 +11,21 @@
 
 struct a_jmpbuf {
 	jmp_buf buf_jmpbuf;
-	volatile int32 buf_code;
+	volatile a_int32 buf_code;
 };
 
 enum a_setting_type {
-	ASETTING_NOCLOBBER = (1 << 1),
+	ASETTING_NOCLOBBER = (1 << 0),
 };
 
 struct a_settings {
-	ubyte sett_noclobber : 1; /* do not overwrite existing file */
+	a_ubyte sett_noclobber : 1; /* do not overwrite existing file */
 }; /* shell settings */
 
 struct a_flags {
-	volatile ubyte exit : 1; /* warned before exiting */
-	volatile ubyte isfork : 1; /* set if this is a forked shell process */
-	volatile ubyte interactive : 1; /* set if shell is interactive */
+	volatile a_ubyte exit : 1; /* warned before exiting */
+	volatile a_ubyte isfork : 1; /* set if this is a forked shell process */
+	volatile a_ubyte interactive : 1; /* set if shell is interactive */
 };
 
 struct a_shell {
@@ -40,6 +40,7 @@ struct a_shell {
 	struct a_flags sh_flags;
 	struct a_settings sh_settings;
 	volatile sig_atomic_t sh_int; /* set if we got interrupted */
+	a_ubyte sh_dirtyfd[3]; /* fd flags */
 };
 
 extern struct a_shell ashe; /* global */

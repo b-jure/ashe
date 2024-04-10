@@ -12,7 +12,7 @@
 #endif
 
 /* Signals which we handle and block/unblock. */
-static const int32 signals[] = {
+static const a_int32 signals[] = {
 	SIGINT,
 	SIGCHLD,
 	SIGWINCH,
@@ -22,7 +22,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum);
 ASHE_PRIVATE void SIGCHLD_handler(int signum);
 ASHE_PRIVATE void SIGWINCH_handler(int signum);
 
-static sighandler handlers[] = {
+static a_sighandler handlers[] = {
 	SIGINT_handler,
 	SIGCHLD_handler,
 	SIGWINCH_handler,
@@ -34,9 +34,9 @@ ASHE_PUBLIC void ashe_mask_signal(int signum, int how)
 {
 	sigset_t signal;
 
-	if (unlikely(sigemptyset(&signal) < 0 ||
-		     sigaddset(&signal, signum) < 0 ||
-		     sigprocmask(how, &signal, NULL) < 0)) {
+	if (ASHE_UNLIKELY(sigemptyset(&signal) < 0 ||
+			  sigaddset(&signal, signum) < 0 ||
+			  sigprocmask(how, &signal, NULL) < 0)) {
 		ashe_perrno("failed masking (how=%d) signal %d", how, signum);
 		ashe_panic(NULL);
 	}
@@ -45,11 +45,11 @@ ASHE_PUBLIC void ashe_mask_signal(int signum, int how)
 /* SIGWINCH signal handler */
 ASHE_PRIVATE void SIGWINCH_handler(int signum)
 {
-	unused(signum);
+	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
 	ashe_get_winsize_or_panic(&ashe.sh_term.tm_rows, &A_TCOLMAX);
-	if (unlikely(ashe_get_curpos(NULL, &A_TCOL)))
+	if (ASHE_UNLIKELY(ashe_get_curpos(NULL, &A_TCOL)))
 		ashe_panic("couldn't get cursor position.");
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
@@ -63,14 +63,14 @@ ASHE_PRIVATE void SIGWINCH_handler(int signum)
 /* SIGINT signal handler */
 ASHE_PRIVATE void SIGINT_handler(int signum)
 {
-	unused(signum);
+	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
 	ashe_cursor_end();
 	ashe_print("\r\n", stderr);
 	ashe_pprompt();
 	a_terminput_clear();
-	if (unlikely(ashe_get_curpos(NULL, &A_TCOL)) < 0)
+	if (ASHE_UNLIKELY(ashe_get_curpos(NULL, &A_TCOL)) < 0)
 		ashe_panic("couldn't get cursor position.");
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
@@ -84,7 +84,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 /* SIGCHLD signal handler */
 ASHE_PRIVATE void SIGCHLD_handler(int signum)
 {
-	unused(signum);
+	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
 	a_jobcntl_update_and_notify(&ashe.sh_jobcntl);
@@ -98,9 +98,9 @@ ASHE_PRIVATE void SIGCHLD_handler(int signum)
 }
 
 /* Masks signals in 'signals' array. */
-ASHE_PUBLIC void ashe_mask_signals(int32 how)
+ASHE_PUBLIC void ashe_mask_signals(a_int32 how)
 {
-	for (uint32 i = 0; i < ELEMENTS(signals); i++)
+	for (a_uint32 i = 0; i < ASHE_ELEMENTS(signals); i++)
 		ashe_mask_signal(signals[i], how);
 }
 
@@ -122,31 +122,35 @@ ASHE_PUBLIC void ashe_disable_jobcntl_updates(void)
 	sigaction(SIGCHLD, &old_action, NULL);
 }
 
+// clang-format off
 /* Initializes signal handlers. */
 ASHE_PUBLIC void ashe_init_sighandlers(void)
 {
-	sighandler handler;
+	a_sighandler handler;
 	struct sigaction default_action;
+	a_uint32 i;
 
 	sigemptyset(&default_action.sa_mask);
 	default_action.sa_flags = 0;
 
-	for (uint32 i = 0; i < ELEMENTS(signals); i++) {
+	for (i = 0; i < ASHE_ELEMENTS(signals); i++) {
 		handler = handlers[i];
 		if (signals[i] == SIGCHLD)
 			handler = SIG_DFL;
 		default_action.sa_handler = handler;
-		if (unlikely(sigaction(signals[i], &default_action, NULL) < 0))
-			goto l_error;
+		if (ASHE_UNLIKELY(sigaction(signals[i], &default_action, NULL) < 0))
+			ASHE_DEFER_NO_STATUS();
 	}
 
 	default_action.sa_handler = SIG_IGN;
-	if (unlikely(sigaction(SIGTTIN, &default_action, NULL) < 0 ||
-		     sigaction(SIGTTOU, &default_action, NULL) < 0 ||
-		     sigaction(SIGTSTP, &default_action, NULL) < 0 ||
-		     sigaction(SIGQUIT, &default_action, NULL) < 0)) {
-l_error:
-		ashe_perrno("failed setting SIG_IGN handler");
-		ashe_panic(NULL);
-	}
+	if (ASHE_UNLIKELY(sigaction(SIGTTIN, &default_action, NULL) < 0 ||
+			  sigaction(SIGTTOU, &default_action, NULL) < 0 ||
+			  sigaction(SIGTSTP, &default_action, NULL) < 0 ||
+			  sigaction(SIGQUIT, &default_action, NULL) < 0))
+		ASHE_DEFER_NO_STATUS();
+
+	return;
+defer:
+	ashe_perrno("sigaction");
+	ashe_panic(NULL);
 }

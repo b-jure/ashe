@@ -11,7 +11,7 @@ enum a_toktype {
 	TK_PIPE_PIPE, /* '||' */
 	TK_LESS_AND, /* '<&' */
 	TK_GREATER_AND, /* '>&' */
-	TK_GREATER_PIPE, /* '>|' */
+	TK_GREATER_PIPE, /* TODO: Implement... '>|' */
 	TK_GREATER_GREATER, /* '>>' */
 	TK_AND_GREATER, /* '&>' */
 	TK_AND_GREATER_GREATER, /* '&>>' */
@@ -34,7 +34,7 @@ struct a_token {
 	enum a_toktype type;
 	union {
 		a_arr_char string;
-		memmax number;
+		a_memmax number;
 	} u;
 	const char *start; /* debug */
 	const char *end; /* debug */

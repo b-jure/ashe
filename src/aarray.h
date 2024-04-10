@@ -32,11 +32,18 @@
 
 typedef void (*FreeFn)(void *value);
 
+#define a_arrp_cap(arrp) (arrp)->cap
+#define a_arr_cap(arr)	 (arr).cap
+#define a_arrp_len(arrp) (arrp)->len
+#define a_arr_len(arr)	 (arr).len
+#define a_arrp_ptr(arrp) (arrp)->data
+#define a_arr_ptr(arr)	 (arr).data
+
 /* Create new 'name' array with 'type' elements */
 #define ARRAY_NEW(name, type)                                                         \
 	typedef struct {                                                              \
-		uint32 cap;                                                           \
-		uint32 len;                                                           \
+		a_uint32 cap;                                                         \
+		a_uint32 len;                                                         \
 		type *data;                                                           \
 	} name;                                                                       \
                                                                                       \
@@ -47,17 +54,7 @@ typedef void (*FreeFn)(void *value);
 		self->data = NULL;                                                    \
 	}                                                                             \
                                                                                       \
-	static inline uint32 _ARRAY_METHOD(name, len)                                 \
-	{                                                                             \
-		return self->len;                                                     \
-	}                                                                             \
-                                                                                      \
-	static inline uint32 _ARRAY_METHOD(name, cap)                                 \
-	{                                                                             \
-		return self->cap;                                                     \
-	}                                                                             \
-                                                                                      \
-	static inline void _ARRAY_METHOD_VARARG(name, init_cap, uint32 cap)           \
+	static inline void _ARRAY_METHOD_VARARG(name, init_cap, a_uint32 cap)         \
 	{                                                                             \
 		_CALL_ARRAY_METHOD(name, init);                                       \
 		self->data = (type *)arealloc(self->data, cap * sizeof(type));        \
@@ -66,13 +63,13 @@ typedef void (*FreeFn)(void *value);
                                                                                       \
 	static void _ARRAY_METHOD(name, grow)                                         \
 	{                                                                             \
-		uint32 oldcap = self->cap;                                            \
-		if (unlikely(oldcap >= UINT_MAX)) {                                   \
+		a_uint32 oldcap = self->cap;                                          \
+		if (ASHE_UNLIKELY(oldcap >= UINT_MAX)) {                              \
 			ashe_panicf(                                                  \
 				"%d:%s: capacity limit of %u reached in array '%s'!", \
 				__LINE__, __FILE__, #name, UINT_MAX);                 \
 		}                                                                     \
-		if (oldcap != 0 && !ispow2(oldcap)) {                                 \
+		if (oldcap != 0 && !ASHE_ISPOW2(oldcap)) {                            \
 			oldcap |= (oldcap >> 1);                                      \
 			oldcap |= (oldcap >> 2);                                      \
 			oldcap |= (oldcap >> 4);                                      \
@@ -81,12 +78,12 @@ typedef void (*FreeFn)(void *value);
 			oldcap++;                                                     \
 			oldcap >>= 1;                                                 \
 		}                                                                     \
-		self->cap = MIN(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);               \
-		self->data = (type *)arealloc(self->data,                             \
-					      self->cap * sizeof(type));              \
+		self->cap = ASHE_MIN(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);          \
+		self->data =                                                          \
+			(type *)arealloc(self->data, self->cap * sizeof(type));       \
 	}                                                                             \
                                                                                       \
-	static inline uint32 _ARRAY_METHOD_VARARG(name, push, type value)             \
+	static inline a_uint32 _ARRAY_METHOD_VARARG(name, push, type value)           \
 	{                                                                             \
 		if (self->cap <= self->len)                                           \
 			_CALL_ARRAY_METHOD(name, grow);                               \
@@ -99,8 +96,7 @@ typedef void (*FreeFn)(void *value);
 		return self->data[--self->len];                                       \
 	}                                                                             \
                                                                                       \
-	static inline type *_ARRAY_METHOD_CONST_VARARG(name, index,                   \
-						       uint32 idx)                    \
+	static inline type *_ARRAY_METHOD_CONST_VARARG(name, index, a_uint32 idx)     \
 	{                                                                             \
 		return &self->data[idx];                                              \
 	}                                                                             \
@@ -115,9 +111,9 @@ typedef void (*FreeFn)(void *value);
 		return &self->data[0];                                                \
 	}                                                                             \
                                                                                       \
-	static inline ubyte _ARRAY_METHOD_VARARG(name, ensure, uint32 len)            \
+	static inline a_ubyte _ARRAY_METHOD_VARARG(name, ensure, a_uint32 len)        \
 	{                                                                             \
-		ubyte grew;                                                           \
+		a_ubyte grew;                                                         \
                                                                                       \
 		grew = 0;                                                             \
 		while (self->cap < self->len + len) {                                 \
@@ -127,7 +123,7 @@ typedef void (*FreeFn)(void *value);
 		return grew;                                                          \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(name, insert, uint32 index,           \
+	static inline void _ARRAY_METHOD_VARARG(name, insert, a_uint32 index,         \
 						type value)                           \
 	{                                                                             \
 		if (index == self->len) {                                             \
@@ -141,8 +137,8 @@ typedef void (*FreeFn)(void *value);
 		self->data[index] = value;                                            \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(                                      \
-		name, insert_str, uint32 index, const char *str, memmax len)          \
+	static inline void _ARRAY_METHOD_VARARG(name, insert_str, a_uint32 index,     \
+						const char *str, a_memmax len)        \
 	{                                                                             \
 		type *arr;                                                            \
                                                                                       \
@@ -154,7 +150,7 @@ typedef void (*FreeFn)(void *value);
 		self->len += len;                                                     \
 	}                                                                             \
                                                                                       \
-	static inline type _ARRAY_METHOD_VARARG(name, remove, uint32 index)           \
+	static inline type _ARRAY_METHOD_VARARG(name, remove, a_uint32 index)         \
 	{                                                                             \
 		type *dest;                                                           \
 		type retval;                                                          \
@@ -162,30 +158,28 @@ typedef void (*FreeFn)(void *value);
 			return _CALL_ARRAY_METHOD(name, pop);                         \
 		dest = self->data + index;                                            \
 		retval = *dest;                                                       \
-		memmove(dest, dest + 1,                                               \
-			(self->len - index - 1) * sizeof(type));                      \
+		memmove(dest, dest + 1, (self->len - index - 1) * sizeof(type));      \
 		self->len--;                                                          \
 		return retval;                                                        \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(name, remove_str,                     \
-						uint32 index, memmax len)             \
+	static inline void _ARRAY_METHOD_VARARG(name, remove_str, a_uint32 index,     \
+						a_memmax len)                         \
 	{                                                                             \
 		type *arr;                                                            \
                                                                                       \
 		ashe_assert(sizeof(type) == sizeof(char));                            \
 		ashe_assert(self->len >= len);                                        \
-		if (unlikely(len == 0))                                               \
+		if (ASHE_UNLIKELY(len == 0))                                          \
 			return;                                                       \
 		arr = self->data + index;                                             \
-		memmove(arr, arr + len,                                               \
-			(self->len - index - len) * sizeof(type));                    \
+		memmove(arr, arr + len, (self->len - index - len) * sizeof(type));    \
 		self->len -= len;                                                     \
 	}                                                                             \
                                                                                       \
 	static inline void _ARRAY_METHOD_VARARG(name, free, FreeFn fn)                \
 	{                                                                             \
-		uint32 i;                                                             \
+		a_uint32 i;                                                           \
                                                                                       \
 		if (fn != NULL)                                                       \
 			for (i = 0; i < self->len; i++)                               \
@@ -196,11 +190,11 @@ typedef void (*FreeFn)(void *value);
 		}                                                                     \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(name, push_str,                       \
-						const char *str, memmax len)          \
+	static inline void _ARRAY_METHOD_VARARG(name, push_str, const char *str,      \
+						a_memmax len)                         \
 	{                                                                             \
 		ashe_assert(sizeof(type) == sizeof(char));                            \
-		if (unlikely(len <= 0))                                               \
+		if (ASHE_UNLIKELY(len <= 0))                                          \
 			return;                                                       \
 		_CALL_ARRAY_METHOD_VARARG(name, ensure, len);                         \
 		type *dest = self->data + self->len;                                  \
@@ -208,27 +202,26 @@ typedef void (*FreeFn)(void *value);
 		self->len += len;                                                     \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(name, push_ptr,                       \
-						const void *ptr)                      \
+	static inline void _ARRAY_METHOD_VARARG(name, push_ptr, const void *ptr)      \
 	{                                                                             \
-		char temp[UINT_DIGITS];                                               \
-		ssize chars;                                                          \
+		char temp[ASHE_INT64_DIGITS];                                         \
+		a_ssize chars;                                                        \
                                                                                       \
 		ashe_assert(sizeof(type) == sizeof(char));                            \
 		chars = snprintf(temp, sizeof(temp), "%p", ptr);                      \
-		if (unlikely(chars < 0 || (memmax)chars > sizeof(temp)))              \
+		if (ASHE_UNLIKELY(chars < 0 || (a_memmax)chars > sizeof(temp)))       \
 			ashe_panicf(#name "_puhs_ptr(%p) failed.", ptr);              \
 		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);               \
 	}                                                                             \
                                                                                       \
-	static inline void _ARRAY_METHOD_VARARG(name, push_num, ssize n)              \
+	static inline void _ARRAY_METHOD_VARARG(name, push_num, a_ssize n)            \
 	{                                                                             \
-		char temp[UINT_DIGITS];                                               \
-		ssize chars;                                                          \
+		char temp[ASHE_INT64_DIGITS];                                         \
+		a_ssize chars;                                                        \
                                                                                       \
 		ashe_assert(sizeof(type) == sizeof(char));                            \
 		chars = snprintf(temp, sizeof(temp), "%ld", n);                       \
-		if (unlikely(chars < 0 || (memmax)chars > sizeof(temp)))              \
+		if (ASHE_UNLIKELY(chars < 0 || (a_memmax)chars > sizeof(temp)))       \
 			ashe_panicf(#name "_puhs_num(%u) failed.", n);                \
 		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);               \
 	}

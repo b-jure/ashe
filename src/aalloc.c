@@ -33,7 +33,8 @@ ASHE_PRIVATE void vprintf_panic(const char *errmsg, va_list argp)
 	ashe_print("\r\n", stderr);
 }
 
-ASHE_PUBLIC a_noret ashe_internal_panic(ubyte direct, const char *errmsg, ...)
+ASHE_PUBLIC ASHE_NORET ashe_internal_panic(a_ubyte direct, const char *errmsg,
+					   ...)
 {
 	va_list argp;
 
@@ -51,21 +52,21 @@ ASHE_PUBLIC a_noret ashe_internal_panic(ubyte direct, const char *errmsg, ...)
 	}
 }
 
-ASHE_PUBLIC void *arealloc(void *ptr, memmax size)
+ASHE_PUBLIC void *arealloc(void *ptr, a_memmax size)
 {
 	if (size == 0) {
 		free(ptr);
 		return NULL;
 	}
 	ptr = realloc(ptr, size);
-	if (unlikely(ptr == NULL)) {
+	if (ASHE_UNLIKELY(ptr == NULL)) {
 		ashe_perrno(NULL);
 		ashe_internal_panic(1, NULL);
 	}
 	return ptr;
 }
 
-ASHE_PUBLIC void *acalloc(memmax elem, memmax size)
+ASHE_PUBLIC void *acalloc(a_memmax elem, a_memmax size)
 {
 	void *ptr;
 

@@ -10,27 +10,27 @@
 
 /* compiler defines */
 #if defined(__GNUC__)
-#define a_noret	       void __attribute__((noreturn))
-#define likely(expr)   __glibc_likely(expr)
-#define unlikely(expr) __glibc_unlikely(expr)
-#define MAX(a, b)                       \
+#define ASHE_NORET	    void __attribute__((noreturn))
+#define ASHE_LIKELY(expr)   __glibc_likely(expr)
+#define ASHE_UNLIKELY(expr) __glibc_unlikely(expr)
+#define ASHE_MAX(a, b)                  \
 	__extension__({                 \
 		__typeof__(a) _a = (a); \
 		__typeof__(b) _b = (b); \
 		_a > _b ? _a : _b;      \
 	})
-#define MIN(a, b)                       \
+#define ASHE_MIN(a, b)                  \
 	__extension__({                 \
 		__typeof__(a) _a = (a); \
 		__typeof__(b) _b = (b); \
 		_a > _b ? _b : _a;      \
 	})
 #else
-#define a_noret	       void
-#define likely(expr)   (expr)
-#define unlikely(expr) (expr)
-#define MAX(a, b)      ((a) > (b) ? (a) : (b))
-#define MIN(a, b)      ((a) > (b) ? (b) : (a))
+#define ASHE_NORET	    void
+#define ASHE_LIKELY(expr)   (expr)
+#define ASHE_UNLIKELY(expr) (expr)
+#define ASHE_MAX(a, b)	    ((a) > (b) ? (a) : (b))
+#define ASHE_MIN(a, b)	    ((a) > (b) ? (b) : (a))
 #endif // __GNUC__
 
 #if __STDC_VERSION__ < 199901L
@@ -53,20 +53,25 @@
 /* -------------------------------- */
 
 /* ------ integer typedefs ------ */
-typedef int8_t byte;
-typedef uint8_t ubyte;
-typedef int16_t int16;
-typedef uint16_t uint16;
-typedef int32_t int32;
-typedef uint32_t uint32;
-typedef int64_t int64;
-typedef uint64_t uint64;
+typedef int8_t a_byte;
+typedef uint8_t a_ubyte;
+typedef int16_t a_int16;
+typedef uint16_t a_uint16;
+typedef int32_t a_int32;
+typedef uint32_t a_uint32;
+typedef int64_t a_int64;
+typedef uint64_t a_uint64;
 
-typedef size_t memmax;
-typedef ssize_t ssize;
+typedef size_t a_memmax;
+typedef ssize_t a_ssize;
+/* -------------------------------- */
 
-typedef pid_t pid;
-typedef void (*sighandler)(int);
+/* process ID */
+typedef pid_t a_pid;
+/* -------------------------------- */
+
+/* signal handler signature */
+typedef void (*a_sighandler)(int);
 /* -------------------------------- */
 
 /* Environment variable valid name characters (subset of PCS) */
@@ -75,25 +80,27 @@ typedef void (*sighandler)(int);
 /* -------------------------------- */
 
 /* elements of array */
-#define ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
+#define ASHE_ELEMENTS(arr) (sizeof(arr) / sizeof(arr[0]))
 /* -------------------------------- */
 
 /* 'mark' variable as unused */
-#define unused(x) (void)(x)
+#define ASHE_UNUSED(x) (void)(x)
 /* -------------------------------- */
 
 /* check if 'x' is power of 2 */
-#define ispow2(x) (((x) & ((x)-1)) == 0)
+#define ASHE_ISPOW2(x) (((x) & ((x)-1)) == 0)
 /* -------------------------------- */
 
-/* 64-bit signed/unsigned integer digits */
-#define UINT_DIGITS 20
-#define INT_DIGITS  10
+/* max digits */
+#define ASHE_INT64_DIGITS 20
+#define ASHE_INT32_DIGITS 10
+#define ASHE_INT16_DIGITS 5
+#define ASHE_INT8_DIGITS  3
 /* -------------------------------- */
 
 /* defer */
-#define defer_no_status() goto defer;
-#define defer(n)            \
+#define ASHE_DEFER_NO_STATUS() goto defer;
+#define ASHE_DEFER(n)       \
 	do {                \
 		status = n; \
 		goto defer; \
