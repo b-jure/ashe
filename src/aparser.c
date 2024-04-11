@@ -387,9 +387,9 @@ ASHE_PRIVATE void simple_cmd_suffix(struct a_block *block, struct a_simple_cmd *
 			a_arr_ccharp_push(&scmd->sc_argv, A_CTOK_STR());
 			break;
 		case TK_NUMBER:
+			numstr = *a_arr_ccharp_last(&ashe.sh_buffers);
 			nexttok(&A_LEX);
 			if (!is_redirection[A_CTOK.type]) {
-				numstr = *a_arr_ccharp_last(&ashe.sh_buffers);
 				a_arr_ccharp_push(&scmd->sc_argv, numstr);
 				continue;
 			}

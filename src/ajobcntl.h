@@ -52,7 +52,7 @@ a_memmax a_jobcntl_jobs(struct a_jobcntl *jobcntl);
 struct a_job *a_jobcntl_get_job_at(struct a_jobcntl *jobcntl, a_uint32 i);
 void a_jobcntl_add_job(struct a_jobcntl *jobcntl, struct a_job *job);
 a_ubyte a_jobcntl_remove_job(struct a_jobcntl *jobcntl, struct a_job *job,
-			   struct a_job *out);
+			     struct a_job *out);
 void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl);
 
 struct a_job *a_jobcntl_get_job_with_id(struct a_jobcntl *jobcntl, a_memmax id);
@@ -60,12 +60,14 @@ struct a_job *a_jobcntl_get_job_with_pid(struct a_jobcntl *jobcntl, a_pid pid);
 struct a_job *a_jobcntl_get_job_with_pgid(struct a_jobcntl *jobcntl, a_pid gpid);
 
 struct a_job *a_jobcntl_get_job_from(struct a_jobcntl *jobcntl, a_ubyte where);
-struct a_job *a_jobcntl_get_job_with_id_from(struct a_jobcntl *jobcntl,
-					     a_memmax id, a_ubyte where);
-struct a_job *a_jobcntl_get_job_with_pid_from(struct a_jobcntl *jobcntl,
-					      a_pid pid, a_ubyte where);
-struct a_job *a_jobcntl_get_job_with_pgid_from(struct a_jobcntl *jobcntl,
-					       a_pid pgid, a_ubyte where);
+#define a_jobcntl_get_job_from_foreground(jobcntl) a_jobcntl_get_job_from(jobcntl, 1)
+#define a_jobcntl_get_job_from_background(jobcntl) a_jobcntl_get_job_from(jobcntl, 0)
+struct a_job *a_jobcntl_get_job_with_id_from(struct a_jobcntl *jobcntl, a_memmax id,
+					     a_ubyte where);
+struct a_job *a_jobcntl_get_job_with_pid_from(struct a_jobcntl *jobcntl, a_pid pid,
+					      a_ubyte where);
+struct a_job *a_jobcntl_get_job_with_pgid_from(struct a_jobcntl *jobcntl, a_pid pgid,
+					       a_ubyte where);
 
 struct a_job *a_jobcntl_get_job_with_id(struct a_jobcntl *jobcntl, a_memmax id);
 struct a_job *a_jobcntl_get_job_with_pid(struct a_jobcntl *jobcntl, a_pid pid);

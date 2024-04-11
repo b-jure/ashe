@@ -574,7 +574,7 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 	a_ubyte stopped;
 
 	cmds = &pipeline->pl_cmds;
-	a_job_init(&job, pipeline->pl_input, pipeline->pl_bg);
+	a_job_init(&job, ashe_dupstr(pipeline->pl_input), pipeline->pl_bg);
 
 	ashe_assert(job.foreground == !pipeline->pl_bg);
 	ashe_assert(job.input != NULL);

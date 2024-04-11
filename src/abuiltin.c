@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #include "abuiltin.h"
 #include "autils.h"
@@ -12,7 +13,7 @@
 #include "ainput.h"
 #include "ashell.h"
 
-#define FLIP_SIGN_BIT(n) ((n) ^ (1 << (sizeof(n) * 8 - 1)))
+#define FLIP_SIGN_BIT(n) ((n) ^ ((a_uint32)1 << ((sizeof(n) * 8) - 1)))
 
 /* options for envcmd function */
 #define ENV_ADD	      0 /* add variable name/value */
@@ -23,9 +24,10 @@
 
 /* help opt */
 #define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
-#define HELPSTR \
-	"\r\nThe -h or --help options display help information for this command\r\n"
-#define print_help_opts(builtin) builtin_printf(builtin, HELPSTR)
+#define print_help_opts(bin)                                                        \
+	ashe_printf(stderr,                                                         \
+		    "%s: use -h or --help options to display help information\r\n", \
+		    bin);
 
 /* builtin function signature */
 typedef a_int32 (*builtinfn)(a_arr_ccharp *argv);
@@ -38,39 +40,32 @@ ASHE_PRIVATE inline void print_rows(const char **rows, a_uint32 len)
 		ashe_printf(stderr, "%s\r\n", rows[i]);
 }
 
-ASHE_PRIVATE void builtin_printf(const char *bi, const char *fmt, ...)
-{
-	va_list argp;
-
-	va_start(argp, fmt);
-	ashe_printf(stderr, "[%s]: ", bi);
-	ashe_vprintf(stderr, fmt, argp);
-	va_end(argp);
-	ashe_print("\r\n", stderr);
-}
-
 ASHE_PRIVATE inline void ashe_jobs_print_header(void)
 {
 	const char *fmt = "\r\n%-*s%-*s%-*s\r\n";
+	a_uint32 pad;
 
-	a_uint32 pad = 10;
+	pad = 10;
 	ashe_printf(stderr, fmt, pad, "Job", pad, "Group", pad, "State");
 }
 
 ASHE_PRIVATE void ashe_jobs_print_job(struct a_job *job)
 {
+	const char *fmt = "%-*ld %-*d %-*s\r\n";
+	const char *state;
+	a_uint32 pad;
 	a_ubyte completed, stopped;
-	a_uint32 pad = 10;
-	const char *state = NULL;
 
+	pad = 10;
 	completed = a_job_is_completed(job);
+
 	if (!completed) {
 		stopped = a_job_is_stopped(job);
 		state = (stopped ? "stopped" : "running");
 	} else
 		state = "completed";
-	ashe_printf(stderr, "%-*ld %-*d %-*s\r\n", pad, job->id, pad, job->pgid, pad,
-		    state);
+
+	ashe_printf(stderr, fmt, pad, job->id, pad, job->pgid, pad, state);
 }
 
 ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
@@ -78,30 +73,44 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 	const char *arg, *bin;
 	char *errstr;
 	a_ubyte id = 0;
-	a_int32 num;
+	a_int32 num, status;
 	a_memmax oklen, i;
 
+	status = 0;
 	bin = a_arrp_ptr(argv)[0];
+
 	for (i = 1; i < a_arrp_len(argv); i++) {
 		arg = *a_arr_ccharp_index(argv, i);
-		if (*arg == '%')
-			id = 1;
-		num = strtol(arg, &errstr, 10);
+
+		if ((id = (*arg == '%')))
+			arg++;
+
+		if (!isdigit(*arg)) {
+			ashe_eprintf("%s: expected number, instead got '%s'.", bin, arg);
+			print_help_opts(bin);
+			ASHE_DEFER(-1);
+		}
+
+		errno = 0;
+		num = strtoul(arg, &errstr, 10);
+
 		if (*errstr != '\0') {
 			oklen = errstr - arg;
-			ashe_eprintf(bin, "invalid %s provided, %*s'%s'",
+			ashe_eprintf("%s: invalid %s provided, %*s'%s'", bin,
 				     (id ? "id" : "pid"), oklen, arg, errstr);
 		} else if (errno == ERANGE || num > INT_MAX) {
-			builtin_printf(bin, "%s '%s' is too large, limit is %d.",
-				       (id ? "id" : "pid"), arg, INT_MAX);
+			ashe_eprintf("%s: '%s '%s' too large, limit is %d.", bin,
+				     (id ? "id" : "pid"), arg, INT_MAX);
 		} else {
-			*nums++ = (id) ? FLIP_SIGN_BIT(num) : num;
+			*nums++ = (id ? (a_int32)FLIP_SIGN_BIT(num) : num);
 			continue;
 		}
+
 		print_help_opts(bin);
-		return -1;
+		ASHE_DEFER(-1);
 	}
-	return 0;
+defer:
+	return status;
 }
 
 ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(a_int32 *nums, a_memmax len)
@@ -127,9 +136,9 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 		"jobs [PID | %ID, [PID | %ID]]\r\n",
 		"Prints all currently running jobs and their status.",
 		"This command can accept arguments in the form of PID or ID (job id).",
-		"If the PID is supplied then the output is restricted to jobs",
+		"If the PID is supplied then the output is restricted to jobs "
 		"that contain the selected process ID.",
-		"In case job ID is used, then the output will contain only the",
+		"In case job ID is used, then the output will contain only the "
 		"job with the matching job ID.",
 	};
 
@@ -140,6 +149,7 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 
 	jobcntl = &ashe.sh_jobcntl;
 	argc = a_arrp_len(argv);
+	nums = NULL;
 	status = 0;
 
 	if (argc > 1)
@@ -149,7 +159,7 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 	case 1:
 		jobcnt = a_jobcntl_jobs(jobcntl);
 		if (jobcnt == 0) {
-			builtin_printf("jobs", "there are no jobs running.");
+			ashe_eprintf("jobs: there are no jobs running.");
 			ASHE_DEFER(-1);
 		}
 		ashe_jobs_print_header();
@@ -163,29 +173,30 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 			print_rows(usage, ASHE_ELEMENTS(usage));
 			break;
 		}
+		/* FALLTHRU */
+	default:
 		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
 			ASHE_DEFER(-1);
 		ashe_jobs_print_header();
 		ashe_jobs_print_filtered_jobs(nums, argc - 1);
 		break;
-	default:
-		print_help_opts("jobs");
-		ASHE_DEFER(-1);
 	}
 defer:
+	if (nums)
+		afree(nums);
 	return status;
 }
 
 /* Auxiliary to ashe_bg() */
 ASHE_PRIVATE a_int32 ashe_bg_last(void)
 {
-	struct a_job *job = a_jobcntl_get_job_from(&ashe.sh_jobcntl, 1);
+	struct a_job *job = a_jobcntl_get_job_from_background(&ashe.sh_jobcntl);
 
 	if (job) {
 		a_job_continue(job, 0);
 		return 0;
 	}
-	builtin_printf("bg", "there is no suitable job.");
+	ashe_eprintf("bg: there is no suitable job.");
 	return -1;
 }
 
@@ -197,7 +208,7 @@ ASHE_PRIVATE void ashe_bg_id(a_int32 id)
 	if (job) {
 		a_job_continue(job, 0);
 	} else
-		builtin_printf("bg", "there is no suitable job with id %d.", id);
+		ashe_eprintf("bg: there is no suitable job with id %d.", id);
 }
 
 /* Auxiliary to ashe_bg() */
@@ -206,9 +217,9 @@ ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 	struct a_job *job = a_jobcntl_get_job_with_pid(&ashe.sh_jobcntl, pid);
 
 	if (job)
-		a_job_mark_as_background(job, 1);
+		a_job_continue(job, 0);
 	else
-		builtin_printf("bg", "there is no suitable job with pid %d.", pid);
+		ashe_eprintf("bg: there is no suitable job with pid %d.", pid);
 }
 
 ASHE_PRIVATE void ashe_bg_background_filtered_jobs(a_int32 *nums, a_memmax len)
@@ -228,38 +239,41 @@ ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 	static const char *usage[] = {
 		"bg - sends jobs to background resuming them if they are paused.\n\r",
 		"bg [PID | '%'ID [PID | '%'ID]]\n\r",
-		"There are multiple ways of specifying which job to move, either by PID,",
+		"There are multiple ways of specifying which job to move, either by PID, "
 		"%ID or by not giving any arguments to the command.",
 		"Multiple PIDs can be provided at once, same holds for %ID.",
-		"By not specifying any arguments then the last jobs that was",
-		"used/created will be moved to background.",
+		"By not specifying any arguments then the last jobs that was "
+		"created (the highest ID) will be moved to background.",
 	};
 
 	a_memmax argc;
 	a_int32 status;
+	a_int32 *nums;
 
 	status = 0;
 	argc = a_arrp_len(argv);
+	nums = 0;
 
 	switch (argc) {
 	case 1:
 		status = ashe_bg_last();
 		break;
 	case 2:
-		if (is_help_opt(a_arrp_ptr(argv)[1])) {
+		if (is_help_opt(*a_arr_ccharp_index(argv, 1))) {
 			print_rows(usage, ASHE_ELEMENTS(usage));
-		} else {
-			a_int32 nums[argc - 1];
-			if (filter_jobs_by_pid_or_id(argv, nums) < 0)
-				ASHE_DEFER(-1);
-			ashe_bg_background_filtered_jobs(nums, argc - 1);
+			break;
 		}
-		break;
+		/* FALLTHRU */
 	default:
-		print_help_opts("bg");
-		ASHE_DEFER(-1);
+		nums = acalloc(argc - 1, sizeof(a_int32));
+		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
+			ASHE_DEFER(-1);
+		ashe_bg_background_filtered_jobs(nums, argc - 1);
+		break;
 	}
 defer:
+	if (nums)
+		afree(nums);
 	return status;
 }
 
@@ -268,12 +282,12 @@ ASHE_PRIVATE a_int32 ashe_fg_last(void)
 {
 	struct a_job *job;
 
-	job = a_jobcntl_get_job_from(&ashe.sh_jobcntl, 0);
+	job = a_jobcntl_get_job_from_background(&ashe.sh_jobcntl);
 
 	if (job) {
 		a_job_continue(job, 1);
 	} else {
-		builtin_printf("fg", "there is no suitable job.");
+		ashe_eprintf("fg: there is no suitable job.");
 		return -1;
 	}
 	return 0;
@@ -289,7 +303,7 @@ ASHE_PRIVATE void ashe_fg_id(a_int32 id)
 	if (job)
 		a_job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with id %d.", id);
+		ashe_eprintf("fg: there is no suitable job with id %d.", id);
 }
 
 /* Auxiliary to ashe_fg() */
@@ -302,7 +316,7 @@ ASHE_PRIVATE void ashe_fg_pid(pid_t pid)
 	if (job)
 		a_job_continue(job, 1);
 	else
-		builtin_printf("fg", "there is no suitable job with pid %d.", pid);
+		ashe_eprintf("fg: there is no suitable job with pid %d.", pid);
 }
 
 /* Foreground a job */
@@ -311,10 +325,8 @@ ASHE_PRIVATE a_int32 ashe_bi_fg(a_arr_ccharp *argv)
 	static const char *usage[] = {
 		"fg - move job to foreground\n\r",
 		"fg [PID | %ID]\r\n",
-		"Moves the job into the foreground additionally resuming it",
-		"if it was stopped.",
-		"If no arguments were supplied then the last job that was",
-		"created or moved to background is used.",
+		"Moves the job into the foreground additionally resuming it if it was stopped.",
+		"If no arguments were supplied then the last job that was created (highest ID) is used.",
 		"User can provide PID or %ID to specify which job to foreground.",
 	};
 
@@ -355,8 +367,8 @@ ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 	static const char *usage[] = {
 		"exit - exits the shell\r\n",
 		"exit [CODE]\r\n",
-		"Exits the shell with the supplied CODE, if no code was",
-		"provided, then the default 0 is used.\r\n",
+		"Exits the shell with the supplied CODE, if no code "
+		"was provided, then the default 0 is used.",
 	};
 	static const char *exit_warn[] = {
 		"There are background jobs that are still running or are stopped!",
@@ -373,7 +385,7 @@ ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 	switch (argc) {
 	case 1:
 		jobcnt = a_jobcntl_jobs(&ashe.sh_jobcntl);
-		ashe.sh_flags.exit = (ashe.sh_flags.isfork || jobcnt == 0);
+		ashe.sh_flags.exit |= (ashe.sh_flags.isfork || jobcnt == 0);
 		if (!ashe.sh_flags.exit) {
 			ashe.sh_flags.exit = 1;
 			print_rows(exit_warn, ASHE_ELEMENTS(exit_warn));
@@ -387,10 +399,9 @@ ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 			break;
 		}
 		status = strtol(a_arrp_ptr(argv)[1], &endptr, 10);
-		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' ||
-		    status < 0) {
-			builtin_printf("exit", "invalid exit status CODE '%s'.",
-				       a_arrp_ptr(argv)[1]);
+		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' || status < 0) {
+			ashe_eprintf("exit: invalid exit status CODE '%s'.",
+				     a_arrp_ptr(argv)[1]);
 			ASHE_DEFER(-1);
 		} else {
 l_exit:
@@ -413,8 +424,8 @@ ASHE_PRIVATE a_int32 ashe_bi_cd(a_arr_ccharp *argv)
 		"cd - change directory\r\n",
 		"cd [DIRNAME]\r\n",
 		"Changes current working directory.",
-		"If no DIRNAME is given, then the $HOME environment variable\r\n"
-		"is used as DIRNAME.",
+		"If no DIRNAME is given, then the $HOME environment "
+		"variable is used as DIRNAME.",
 	};
 
 	a_int32 status;
@@ -426,7 +437,7 @@ ASHE_PRIVATE a_int32 ashe_bi_cd(a_arr_ccharp *argv)
 	switch (argc) {
 	case 1:
 		if (ASHE_UNLIKELY(chdir(getenv(HOME)) < 0)) {
-			ashe_perrno("chdir");
+			ashe_perrno("cd");
 			ASHE_DEFER(-1);
 		}
 		break;
@@ -468,13 +479,13 @@ ASHE_PRIVATE a_int32 envcmd(a_arr_ccharp *argv, a_int32 option)
 	case ENV_ADD:
 	case ENV_SET:
 		if (setenv(a_arrp_ptr(argv)[1], a_arrp_ptr(argv)[2], option != ENV_ADD) < 0) {
-			ashe_perrno("setenv");
+			ashe_perrno("senv");
 			ASHE_DEFER(-1);
 		}
 		break;
 	case ENV_REMOVE:
 		if (ASHE_UNLIKELY(unsetenv(a_arrp_ptr(argv)[1]) < 0)) {
-			ashe_perrno("unsetenv");
+			ashe_perrno("renv");
 			ASHE_DEFER(-1);
 		}
 		break;
@@ -483,14 +494,15 @@ ASHE_PRIVATE a_int32 envcmd(a_arr_ccharp *argv, a_int32 option)
 			ashe_printf(stdout, "%s\r\n", temp);
 			break;
 		} else {
-			builtin_printf("penv", "variable '%s' doesn't exist.", a_arrp_ptr(argv)[1]);
+			ashe_eprintf("penv: variable '%s' doesn't exist.", a_arrp_ptr(argv)[1]);
 			ASHE_DEFER(-1);
 		}
 	case ENV_PRINT_ALL:
 		print_environ();
 		break;
 	default: /* UNREACHED */
-		ashe_assertf(0, "unreachable");
+		ashe_assert(0);
+		break;
 	}
 defer:
 	return status;
@@ -502,7 +514,7 @@ ASHE_PRIVATE a_int32 ashe_bi_penv(a_arr_ccharp *argv)
 	static const char *usage[] = {
 		"penv - print environment variable\r\n",
 		"penv [NAME]\r\n",
-		"Prints environment variable NAME; in case user didn't\r\n"
+		"Prints environment variable NAME; in case user didn't "
 		"specify NAME, then all of the variables are printed.",
 	};
 
@@ -536,12 +548,12 @@ ASHE_PRIVATE a_int32 ashe_bi_senv(a_arr_ccharp *argv)
 		"senv - set environment variable\r\n",
 		"senv NAME VALUE\r\n",
 		"Sets or adds variable in the environment.",
-		"If variable with NAME already exists then its VALUE",
-		"is overwritten.",
-		"In case variable with NAME is not found, then it is newly",
-		"created and added into the environment with the value set",
+		"If variable with NAME already exists then its VALUE is "
+		"overwritten.",
+		"In case variable with NAME is not found, then it is newly "
+		"created and added into the environment with the value set "
 		"to match VALUE.",
-		"If the NAME was provided but not the VALUE then the value",
+		"If the NAME was provided but not the VALUE then the value "
 		"of that variable will be an emtpy string.",
 	};
 
@@ -553,11 +565,11 @@ ASHE_PRIVATE a_int32 ashe_bi_senv(a_arr_ccharp *argv)
 
 	switch (argc) {
 	case 2:
-		if (is_help_opt(a_arrp_ptr(argv)[1]))
+		if (is_help_opt(a_arrp_ptr(argv)[1])) {
 			print_rows(usage, ASHE_ELEMENTS(usage));
-		else
-			status = envcmd(argv, ENV_SET);
-		break;
+			break;
+		}
+		/* FALLTHRU */
 	case 3:
 		status = envcmd(argv, ENV_SET);
 		break;
@@ -687,9 +699,7 @@ ASHE_PRIVATE a_int32 ashe_bi_builtin(a_arr_ccharp *argv)
 	};
 
 	a_memmax argc;
-	a_int32 status;
 
-	status = 0;
 	argc = a_arrp_len(argv);
 
 	switch (argc) {
@@ -704,10 +714,9 @@ ASHE_PRIVATE a_int32 ashe_bi_builtin(a_arr_ccharp *argv)
 		/* FALLTHRU */
 	default:
 		print_help_opts("builtin");
-		status = -1;
-		break;
+		return -1;
 	}
-	return status;
+	return 0;
 }
 
 ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
@@ -717,11 +726,12 @@ ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
 		"exec [command [argument...]]\r\n",
 		"Exec will open, close and/or copy file descriptors as specified",
 		"by any redirection as part of the command.\r\n",
-		"If exec is specified with 'command' then it will replace the shell",
+		"If exec is specified with 'command' then it will replace the shell "
 		"with that 'command' without creating a new process.",
-		"Additionally if any arguments were specified they will be arguments",
+		"Additionally if any arguments were specified they will be arguments "
 		"to the 'command'.",
-		"Redirections will persist in a new process image (if exec was invoked with a 'command')",
+		"Redirections will persist in a new process image (if exec was invoked "
+		"with a 'command')",
 	};
 
 	const char **execargs;
@@ -752,9 +762,8 @@ ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
 	return 0;
 }
 
-ASHE_PRIVATE inline a_int32 builtin_match(const char *str, a_uint32 start,
-					  a_uint32 len, const char *pattern,
-					  enum a_builtin_type type)
+ASHE_PRIVATE inline a_int32 builtin_match(const char *str, a_uint32 start, a_uint32 len,
+					  const char *pattern, enum a_builtin_type type)
 {
 	if (strlen(str) == start + len && memcmp(str + start, pattern, len) == 0)
 		return type;
