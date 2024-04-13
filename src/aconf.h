@@ -31,7 +31,7 @@
 
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */
-#define ASHE_PANIC_PREFIX "[ashe ~ panic]: "
+#define ASHE_PANIC_PREFIX "PANIC "
 #define ASHE_INFO_PREFIX  "[ashe ~ info]: "
 #define ASHE_ERR_PREFIX	  "[ashe ~ error]: "
 

@@ -18,7 +18,7 @@ struct a_lexer {
 /* current token number */
 #define A_CTOK_NUM() (A_CTOK.u.number)
 /* previous token number */
-#define A_PTOK_NUM() (A_PTOK.u.number);
+#define A_PTOK_NUM() (A_PTOK.u.number)
 /* current token cstring */
 #define A_CTOK_STR() (A_CTOK.u.string.data)
 /* previous token cstring */

@@ -28,112 +28,83 @@ struct a_pipectx {
 	a_int32 closefd;
 };
 
-ASHE_PRIVATE inline void a_pipectx_init(struct a_pipectx *ctx)
+ASHE_PRIVATE inline void a_pipectx_init(struct a_pipectx *restrict ctx)
 {
 	ctx->pipefd[0] = STDIN_FILENO;
 	ctx->pipefd[1] = STDOUT_FILENO;
 	ctx->closefd = -1;
 }
 
-ASHE_PRIVATE a_int32 conf_pipe(a_int32 *pipes, a_memmax len, a_memmax i,
-			       struct a_pipectx *ctx)
+ASHE_PRIVATE void conf_pipe(a_int32 *restrict pipes, a_memmax len, a_memmax i,
+			    struct a_pipectx *restrict ctx)
 {
-	a_int32 status;
 	a_int32 *poffset;
 
-	status = 0;
 	if (i == 0) {
 		poffset = pipes;
-		if (ASHE_UNLIKELY(pipe(poffset) < 0)) {
-			ASHE_DEFER(-1);
-		} else {
-			ctx->pipefd[PIPE_W] = poffset[PIPE_W];
-			ctx->closefd = poffset[PIPE_R];
-		}
+		ashe_pipe(poffset);
+		ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+		ctx->closefd = poffset[PIPE_R];
 	} else if (i != len - 1) {
 		poffset = &pipes[i * 2];
-		if (ASHE_UNLIKELY(pipe(poffset) < 0)) {
-			ASHE_DEFER(-1);
-		} else {
-			ctx->pipefd[PIPE_R] = poffset[-2];
-			ctx->pipefd[PIPE_W] = poffset[PIPE_W];
-			ctx->closefd = poffset[PIPE_R];
-		}
+		ashe_pipe(poffset);
+		ctx->pipefd[PIPE_R] = poffset[-2];
+		ctx->pipefd[PIPE_W] = poffset[PIPE_W];
+		ctx->closefd = poffset[PIPE_R];
 	} else {
 		poffset = &pipes[--i * 2];
 		ctx->pipefd[PIPE_R] = poffset[PIPE_R];
 		ctx->closefd = poffset[PIPE_W];
 	}
-
-defer:
-	if (ASHE_UNLIKELY(status == -1))
-		ashe_perrno("can't create pipe");
-	return status;
 }
 
-ASHE_PRIVATE a_int32 add_envs(a_arr_ccharp *env)
+ASHE_PRIVATE void add_envs(const a_arr_ccharp *restrict env)
 {
 	char *name, *sep, *value;
 	a_memmax len, i;
-	a_int32 status;
 
-	status = 0;
 	len = env->len;
 	for (i = 0; i < len; i++) {
 		name = ashe_dupstr(*a_arr_ccharp_index(env, i));
 		sep = strchr(name, '=');
 		value = sep + 1;
 		*sep = '\0';
-		if (ASHE_UNLIKELY(setenv(name, value, 1) < 0))
-			ASHE_DEFER(-1);
+		ashe_setenv(name, value, 1);
 		*a_arr_ccharp_index(env, i) = name;
 		a_arr_ccharp_push(&ashe.sh_buffers, name);
 	}
-
-defer:
-	if (ASHE_UNLIKELY(status == -1)) {
-		ashe_perrno("setenv");
-		afree(name);
-	}
-	return status;
 }
 
-ASHE_PRIVATE a_int32 rm_envs(a_arr_ccharp *env)
+ASHE_PRIVATE void rm_envs(const a_arr_ccharp *restrict env)
 {
 	const char *key;
 	a_memmax len, i;
-	a_int32 status;
 
-	status = 0;
-	len = env->len;
+	len = a_arrp_len(env);
+
 	for (i = 0; i < len; i++) {
-		key = env->data[i];
+		key = *a_arr_ccharp_index(env, i);
+		ashe_assert(key != NULL);
+		ashe_assert(strchr(key, '=') == NULL);
 		/* env is already in format 'key\0value', check add_envs()*/
-		if (ASHE_UNLIKELY(unsetenv(key) < 0))
-			status = -1;
+		unsetenv(key); /* can't fail */
 	}
-
-	if (ASHE_UNLIKELY(status != 0))
-		ashe_perrno("unsetenv");
-	return status;
 }
 
-ASHE_PRIVATE inline a_int32 redirect_op(a_int32 oldfd, a_int32 newfd)
+ASHE_PRIVATE inline void redirect(a_int32 oldfd, a_int32 newfd)
 {
-	if (ASHE_UNLIKELY(ashe_dup2(oldfd, newfd) < 0 || ashe_close(oldfd) < 0))
-		return -1;
-	return 0;
+	ashe_dup2(oldfd, newfd);
+	ashe_close(oldfd);
 }
 
-ASHE_PRIVATE inline a_int32 redirect_op_errout(a_int32 fd)
+ASHE_PRIVATE inline void redirect_errout(a_int32 fd)
 {
-	if (ASHE_UNLIKELY(ashe_dup2(fd, STDERR_FILENO) < 0 ||
-			  ashe_dup2(fd, STDOUT_FILENO) < 0 || ashe_close(fd) < 0))
-		return -1;
-	return 0;
+	ashe_dup2(fd, STDERR_FILENO);
+	ashe_dup2(fd, STDOUT_FILENO);
+	ashe_close(fd);
 }
 
-ASHE_PRIVATE inline void set_if_dirty(a_int32 fd)
+ASHE_PRIVATE inline void setdirty(a_int32 fd)
 {
 	switch (fd) {
 	case STDIN_FILENO:
@@ -178,7 +149,7 @@ ASHE_PRIVATE inline a_int32 fd_assert_valid(a_int32 fd)
 	return 0;
 }
 
-ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *rds, a_ubyte exec)
+ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *restrict rds, a_ubyte exec)
 {
 	a_ssize fd;
 	struct a_redirect *rdp;
@@ -186,6 +157,7 @@ ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *rds, a_ubyte exec)
 	a_int32 status;
 	a_ubyte how;
 
+	status = 0;
 	len = rds->len;
 
 	for (i = 0; i < len; i++) {
@@ -198,35 +170,29 @@ ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *rds, a_ubyte exec)
 			ashe_assert(rdp->rd_lhsfd == -1);
 			ashe_assert(rdp->rd_rhsfd == -1);
 			ashe_assert(rdp->rd_fname);
-
-			fd = ashe_open(rdp->rd_fname, AHOW_W, rdp->rd_append);
-			if (fd < 0 || ASHE_UNLIKELY(redirect_op_errout(fd) < 0))
+			if ((fd = ashe_open(rdp->rd_fname, AHOW_W, rdp->rd_append)) < 0)
 				ASHE_DEFER(-1);
+			redirect_errout(fd);
 			break;
 		case ARDOP_REDIRECT_INOUT:
 			ashe_assert(rdp->rd_append == 0);
 			ashe_assert(rdp->rd_rhsfd == -1);
 			ashe_assert(rdp->rd_lhsfd != -1);
 			ashe_assert(rdp->rd_fname);
-
 			fd = ashe_open(rdp->rd_fname, AHOW_RW, rdp->rd_append);
 			if (fd < 0 || fd_assert_bounds(rdp->rd_lhsfd) < 0)
 				ASHE_DEFER(-1);
 			if (!exec) {
-				if (ASHE_UNLIKELY(ashe_close(fd) < 0))
-					ASHE_DEFER(-1);
+				ashe_close(fd);
 				break;
 			}
-			if (fd_assert_valid(rdp->rd_lhsfd) < 0 ||
-			    ASHE_UNLIKELY(redirect_op(fd, rdp->rd_lhsfd) < 0)) {
-				ashe_close(fd);
+			if (fd_assert_valid(rdp->rd_lhsfd) < 0)
 				ASHE_DEFER(-1);
-			}
-			set_if_dirty(rdp->rd_lhsfd);
+			redirect(fd, rdp->rd_lhsfd);
+			setdirty(rdp->rd_lhsfd);
 			break;
 		case ARDOP_REDIRECT_IN:
 			ashe_assert(rdp->rd_append == 0);
-
 			how = AHOW_R;
 			goto redirect;
 		case ARDOP_REDIRECT_OUT:
@@ -235,19 +201,16 @@ redirect:
 			ashe_assert(rdp->rd_rhsfd == -1);
 			ashe_assert(rdp->rd_lhsfd != -1);
 			ashe_assert(rdp->rd_fname);
-
 			fd = ashe_open(rdp->rd_fname, how, rdp->rd_append);
 			if (fd < 0 || fd_assert_bounds(rdp->rd_lhsfd) < 0)
 				ASHE_DEFER(-1);
-			if (ASHE_UNLIKELY(redirect_op(fd, rdp->rd_lhsfd) < 0))
-				ASHE_DEFER(-1);
+			redirect(fd, rdp->rd_lhsfd);
 			break;
 		case ARDOP_DUP_IN:
 		case ARDOP_DUP_OUT:
 			ashe_assert(rdp->rd_lhsfd != -1);
 			ashe_assert(rdp->rd_rhsfd != -1);
 			ashe_assert(rdp->rd_fname == NULL);
-
 			if (fd_assert_bounds(rdp->rd_rhsfd) < 0)
 				ASHE_DEFER(-1);
 			/* FALLTHRU */
@@ -265,20 +228,16 @@ redirect:
 assertperms:
 				if (fd_assert_perms(rdp->rd_rhsfd, perms) < 0)
 					ASHE_DEFER(-1);
-				if (ASHE_UNLIKELY(ashe_dup2(rdp->rd_rhsfd,
-							    rdp->rd_lhsfd) < 0))
-					ASHE_DEFER(-1);
-				set_if_dirty(rdp->rd_lhsfd);
+				ashe_dup2(rdp->rd_rhsfd, rdp->rd_lhsfd);
+				setdirty(rdp->rd_lhsfd);
 				break;
 			default:
 				ashe_assert(rdp->rd_op == ARDOP_CLOSE);
 				ashe_assert(rdp->rd_lhsfd != -1);
 				ashe_assert(rdp->rd_rhsfd == -1);
 				ashe_assert(rdp->rd_fname == NULL);
-
-				if (ASHE_UNLIKELY(ashe_close(rdp->rd_lhsfd) < 0))
-					ASHE_DEFER(-1);
-				set_if_dirty(rdp->rd_lhsfd);
+				ashe_close(rdp->rd_lhsfd);
+				setdirty(rdp->rd_lhsfd);
 				break;
 			}
 			break;
@@ -292,57 +251,37 @@ defer:
 	return status;
 }
 
-ASHE_PRIVATE inline void stdfds_backup(a_int32 in, a_int32 out, a_int32 err)
+ASHE_PRIVATE inline void stdfd_backup(a_int32 in, a_int32 out, a_int32 err)
 {
-	if (ASHE_UNLIKELY(ashe_dup2(STDIN_FILENO, in) < 0 ||
-			  ashe_dup2(STDOUT_FILENO, out) < 0 ||
-			  ashe_dup2(STDERR_FILENO, err) < 0))
-		ashe_panic("can't backup file standard descriptors");
+	ashe_dup2(STDIN_FILENO, in);
+	ashe_dup2(STDOUT_FILENO, out);
+	ashe_dup2(STDERR_FILENO, err);
 }
 
-ASHE_PRIVATE inline void stdfds_restore(a_int32 in, a_int32 out, a_int32 err)
+ASHE_PRIVATE inline void stdfd_restore(a_int32 in, a_int32 out, a_int32 err)
 {
-	const char *errfd;
-
-	if (ASHE_UNLIKELY(!ashe.sh_dirtyfd[STDIN_FILENO] &&
-			  ashe_dup2(in, STDIN_FILENO) < 0)) {
-		errfd = "can't restore stdin";
-		goto panic;
-	}
-	if (ASHE_UNLIKELY(!ashe.sh_dirtyfd[STDOUT_FILENO] &&
-			  ashe_dup2(out, STDOUT_FILENO) < 0)) {
-		errfd = "can't restore stdout";
-		goto panic;
-	}
-	if (ASHE_UNLIKELY(!ashe.sh_dirtyfd[STDERR_FILENO] &&
-			  ashe_dup2(err, STDERR_FILENO) < 0)) {
-		errfd = "can't restore stderr";
-		goto panic;
-	}
-	return;
-panic:
-	ashe_panic(errfd);
+	if (!ashe.sh_dirtyfd[STDIN_FILENO])
+		ashe_dup2(in, STDIN_FILENO);
+	if (!ashe.sh_dirtyfd[STDOUT_FILENO])
+		ashe_dup2(out, STDOUT_FILENO);
+	if (!ashe.sh_dirtyfd[STDERR_FILENO])
+		ashe_dup2(err, STDERR_FILENO);
 }
 
-// clang-format off
 ASHE_PRIVATE inline void extrafds_close(a_int32 fd1, a_int32 fd2, a_int32 fd3)
 {
-	if (ASHE_UNLIKELY(
-		(!ashe.sh_dirtyfd[STDIN_FILENO] && ashe_close(fd1) < 0) ||
-		(!ashe.sh_dirtyfd[STDOUT_FILENO] && ashe_close(fd2) < 0) ||
-	    	(!ashe.sh_dirtyfd[STDERR_FILENO] && ashe_close(fd3) < 0)))
-		goto panic;
+	if (!ashe.sh_dirtyfd[STDIN_FILENO])
+		ashe_close(fd1);
+	if (!ashe.sh_dirtyfd[STDOUT_FILENO])
+		ashe_close(fd2);
+	if (!ashe.sh_dirtyfd[STDERR_FILENO])
+		ashe_close(fd3);
 	reset_dirtyfd();
-	return;
-panic:
-	ashe_panic("can't close extra file descriptors");
 }
-// clang-format on
 
 /* This runs a built-in command or puts
  * environment variables into 'environ' or both. */
-ASHE_PRIVATE a_int32 run_scmd_nofork(struct a_simple_cmd *scmd,
-				     enum a_builtin_type type)
+ASHE_PRIVATE a_int32 run_scmd_nofork(struct a_simple_cmd *restrict scmd, enum a_builtin_type type)
 {
 	a_int32 status;
 	a_int32 in, out, err;
@@ -352,10 +291,8 @@ ASHE_PRIVATE a_int32 run_scmd_nofork(struct a_simple_cmd *scmd,
 	out = ASHE_FD_1;
 	err = ASHE_FD_2;
 
-	if (ASHE_UNLIKELY(add_envs(&scmd->sc_env) == -1))
-		ASHE_DEFER(-1);
-
-	stdfds_backup(in, out, err);
+	add_envs(&scmd->sc_env);
+	stdfd_backup(in, out, err);
 
 	if (resolve_redirections(&scmd->sc_rds, type == TBI_EXEC) < 0) {
 		reset_dirtyfd();
@@ -364,134 +301,114 @@ ASHE_PRIVATE a_int32 run_scmd_nofork(struct a_simple_cmd *scmd,
 		status = ashe_runbin(scmd, type);
 	}
 
-	stdfds_restore(in, out, err);
+	stdfd_restore(in, out, err);
 	extrafds_close(in, out, err);
-
-	if (ASHE_UNLIKELY(rm_envs(&scmd->sc_env) < 0))
-		status = -1;
-defer:
+	rm_envs(&scmd->sc_env);
 	return status;
 }
 
-ASHE_PRIVATE a_int32 reset_signal_handling(void)
+ASHE_PRIVATE void reset_signal_handling(void)
 {
 	struct sigaction sigdfl_ac;
 
 	sigemptyset(&sigdfl_ac.sa_mask);
 	sigdfl_ac.sa_flags = 0;
 	sigdfl_ac.sa_handler = SIG_DFL;
-	if (ASHE_UNLIKELY(sigaction(SIGINT, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGCHLD, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGWINCH, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGQUIT, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGTSTP, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGTTIN, &sigdfl_ac, NULL) < 0 ||
-			  sigaction(SIGTTOU, &sigdfl_ac, NULL) < 0)) {
-		ashe_perrno("can't reset signal handlers");
-		return -1;
-	}
+	ashe_sigaction(SIGINT, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGCHLD, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGWINCH, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGQUIT, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGTSTP, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGTTIN, &sigdfl_ac, NULL);
+	ashe_sigaction(SIGTTOU, &sigdfl_ac, NULL);
 	ashe_mask_signals(SIG_UNBLOCK);
-	return 0;
 }
 
-ASHE_PRIVATE inline a_int32 connect_pipe(struct a_pipectx *ctx)
+ASHE_PRIVATE inline void connect_pipe(struct a_pipectx *restrict ctx)
 {
-	if (ASHE_UNLIKELY(ashe_dup2(ctx->pipefd[PIPE_R], STDIN_FILENO) < 0 ||
-			  ashe_dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO) < 0 ||
-			  (ctx->closefd != -1 && ashe_close(ctx->closefd) < 0)))
-		return -1;
-	return 0;
+	ashe_dup2(ctx->pipefd[PIPE_R], STDIN_FILENO);
+	ashe_dup2(ctx->pipefd[PIPE_W], STDOUT_FILENO);
+	if (ctx->closefd != -1)
+		ashe_close(ctx->closefd);
 }
 
-ASHE_PRIVATE inline a_int32 scmd_exec(struct a_simple_cmd *scmd)
+ASHE_PRIVATE inline a_int32 scmd_exec(struct a_simple_cmd *restrict scmd)
 {
 	char **argv;
 
-	argv = acalloc(ARGC(scmd) + 1, sizeof(char *));
-	memcpy(argv, scmd->sc_argv.data, sizeof(char *) * ARGC(scmd));
-	argv[a_arr_len(scmd->sc_argv)] = NULL;
+	argv = ashe_calloc(ARGC(scmd) + 1, sizeof(char *));
+	memcpy(argv, a_arr_ptr(scmd->sc_argv), sizeof(char *) * ARGC(scmd));
+	argv[ARGC(scmd)] = NULL;
 
 	if (execvp(argv[0], argv) < 0) {
 		if (errno == ENOENT)
 			ashe_eprintf("unknown command '%s'", argv[0]);
 		else
 			ashe_perrno("execvp");
-		afree(argv);
+		ashe_free(argv);
 		return -1;
 	}
 
 	return 0;
 }
 
-/*
- * 'pipes' are passed just to cleanup them up in case
- * of errors inside the forked process.
- */
-// clang-format off
-ASHE_PRIVATE a_int32 run_scmd_fork(struct a_simple_cmd *scmd, struct a_pipectx *ctx,
-				   struct a_job *job, a_int32 *pipes)
+/* 'pipes' are passed just to cleanup them up in fork if possible */
+ASHE_PRIVATE a_int32 run_scmd_fork(struct a_simple_cmd *restrict scmd,
+				   struct a_pipectx *restrict ctx, struct a_job *restrict job,
+				   a_int32 *restrict pipes)
 {
 	a_arr_ccharp *aargv = &scmd->sc_argv;
 	a_arr_ccharp *aenv = &scmd->sc_env;
 	a_uint32 argc;
 	a_int32 type;
-	a_pid PID;
+	a_pid pid;
 
-	PID = fork();
+	pid = ashe_fork();
 
-	if (ASHE_UNLIKELY(PID < 0)) {
-		ashe_perrno("fork failed");
-		return -1;
-	} else if (PID != 0) {
+	if (pid > 0) {
+		ashe_assert(pid > 0);
 		if (job->pgid == 0)
-			job->pgid = PID;
+			job->pgid = pid;
 		/* This is also done in the fork to prevent race. */
-		if (ASHE_UNLIKELY(setpgid(PID, job->pgid) < 0)) {
-			ashe_perrno("failed setting process group ID (%d)", job->pgid);
-			return -1;
-		}
-		return PID;
-	}
-	/* fork */
+		ashe_setpgid(pid, job->pgid);
+		return pid;
+	} /* else fork */
+
+	ashe_assert(pid == 0);
 	ashe.sh_flags.isfork = 1;
 	argc = a_arrp_len(aargv);
 
-	if (ASHE_UNLIKELY(argc == 0 || add_envs(aenv) < 0))
-		ASHE_DEFER_NO_STATUS();
+	if (argc == 0)
+		add_envs(aenv);
 
-	PID = getpid();
+	pid = getpid();
 
 	if (job->pgid == 0) {
-		job->pgid = PID;
-		if (ASHE_UNLIKELY(job->foreground && tcsetpgrp(STDIN_FILENO, job->pgid) < 0)) {
-			ashe_perrno("tcsetpgrp(%d, %d) failed", STDIN_FILENO, job->pgid);
-			ASHE_DEFER_NO_STATUS();
-		}
+		job->pgid = pid;
+		if (job->foreground)
+			ashe_tcsetpgrp(job->pgid);
 	}
 
-	if (ASHE_UNLIKELY(setpgid(PID, job->pgid) < 0)) {
-		ashe_perrno("failed setting process pgid (%d)", job->pgid);
-		ASHE_DEFER_NO_STATUS();
-	}
-	if (ASHE_UNLIKELY(reset_signal_handling() < 0))
-		ASHE_DEFER_NO_STATUS();
+	ashe_setpgid(pid, job->pgid);
+	reset_signal_handling();
+	connect_pipe(ctx);
 
 	type = ashe_isbin(ARGV(scmd, 0));
 
-	if (connect_pipe(ctx) < 0 || resolve_redirections(&scmd->sc_rds, type == TBI_EXEC) < 0)
-		ASHE_DEFER_NO_STATUS();
+	if (resolve_redirections(&scmd->sc_rds, type == TBI_EXEC) < 0)
+		goto cleanup;
 
 	if (type != -1) {
 		if (pipes)
-			afree(pipes);
+			ashe_free(pipes);
 		a_job_free(job);
-		_exit(ashe_runbin(scmd, type));
+		ashe_exit(ashe_runbin(scmd, type));
 	}
 
 	if (scmd_exec(scmd) < 0) {
-defer:
-		if (pipes != NULL)
-			afree(pipes);
+cleanup:
+		if (pipes)
+			ashe_free(pipes);
 		a_job_free(job);
 		ashe_exit(EXIT_FAILURE);
 	}
@@ -499,56 +416,44 @@ defer:
 	ashe_assert(0);
 	return 0;
 }
-// clang-format on
 
-ASHE_PRIVATE inline a_int32 close_pipe(a_int32 *pipe)
+ASHE_PRIVATE inline void close_pipe(a_int32 *restrict pipe)
 {
-	if (ASHE_UNLIKELY(ashe_close(pipe[PIPE_R]) < 0 ||
-			  ashe_close(pipe[PIPE_W]) < 0))
-		return -1;
-	return 0;
+	ashe_close(pipe[PIPE_R]);
+	ashe_close(pipe[PIPE_W]);
 }
 
-ASHE_PRIVATE a_int32 a_run_simple_cmd(struct a_simple_cmd *scmd, struct a_job *job,
-				      a_uint32 i, a_int32 *pipes, a_uint32 cmdcnt)
+ASHE_PRIVATE a_int32 a_run_simple_cmd(struct a_simple_cmd *restrict scmd,
+				      struct a_job *restrict job, a_uint32 i, a_int32 *pipes,
+				      a_uint32 cmdcnt)
 {
 	struct a_process proc;
 	struct a_pipectx ctx;
-	a_int32 type, status;
-	a_pid PID;
+	a_int32 type;
+	a_pid pid;
 
-	status = 1;
 	a_pipectx_init(&ctx);
 
 	if (cmdcnt > 1) {
 		ashe_assert(pipes != NULL);
-		if (ASHE_UNLIKELY(conf_pipe(pipes, cmdcnt, i, &ctx) < 0))
-			ASHE_DEFER(-1);
+		conf_pipe(pipes, cmdcnt, i, &ctx);
 	} else if (job->foreground &&
 		   (ARGC(scmd) == 0 || (type = ashe_isbin(ARGV(scmd, 0))) >= 0)) {
 		a_job_free(job);
 		return run_scmd_nofork(scmd, type);
 	}
 
-	if (ASHE_UNLIKELY((PID = run_scmd_fork(scmd, &ctx, job, pipes)) < 0))
-		ASHE_DEFER(-1);
-
-	a_process_init(&proc, PID);
+	pid = run_scmd_fork(scmd, &ctx, job, pipes);
+	a_process_init(&proc, pid);
 	a_job_add_process(job, proc);
 
-	if (ASHE_UNLIKELY(i != 0 && close_pipe(&pipes[(i - 1) * 2]) < 0))
-		ASHE_DEFER(-1);
-defer:
-	if (ASHE_UNLIKELY(status < 0)) {
-		a_job_free(job);
-		if (pipes)
-			afree(pipes);
-		ashe_panic(NULL);
-	}
-	return status;
+	if (i != 0)
+		close_pipe(&pipes[(i - 1) * 2]);
+
+	return 1; /* 1 if forked */
 }
 
-ASHE_PRIVATE a_int32 a_run_cmd(struct a_cmd *cmd, struct a_job *job, a_uint32 i,
+ASHE_PRIVATE a_int32 a_run_cmd(struct a_cmd *restrict cmd, struct a_job *restrict job, a_uint32 i,
 			       a_int32 *pipes, a_uint32 cmdcnt)
 {
 	ashe_assert(cmd != NULL);
@@ -573,6 +478,7 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 	a_uint32 cmdcnt, pn, i;
 	a_ubyte stopped;
 
+	pipes = NULL;
 	cmds = &pipeline->pl_cmds;
 	a_job_init(&job, ashe_dupstr(pipeline->pl_input), pipeline->pl_bg);
 
@@ -581,9 +487,7 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 
 	if ((cmdcnt = a_arrp_len(cmds)) > 1) {
 		pn = ((cmdcnt - 1) * 2);
-		pipes = amalloc(sizeof(a_int32) * pn);
-	} else {
-		pipes = NULL;
+		pipes = ashe_malloc(sizeof(a_int32) * pn);
 	}
 
 	ashe_assert(cmdcnt >= 1);
@@ -591,15 +495,17 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 	for (i = 0; i < cmdcnt; i++) {
 		cmd = a_arr_cmd_index(cmds, i);
 		status = a_run_cmd(cmd, &job, i, pipes, cmdcnt);
-		if (status >= 1) { /* forked ? */
+
+		if (ASHE_LIKELY(status == 1)) { /* forked ? */
 			status = 0;
-		} else { /* otherwise it must be builtin command */
-			ashe_assert(i == 0 && cmdcnt == 1);
+		} else { /* else single builtin foreground command */
+			ashe_assert(status <= 0 && i == 0 && cmdcnt == 1);
 			return status;
 		}
 	}
 
 	if (job.foreground) {
+		stopped = 0;
 		status = a_job_move_to_foreground(&job, 0, &stopped);
 		if (!stopped) /* job done ? */
 			a_job_free(&job);
@@ -609,7 +515,7 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 	}
 
 	if (cmdcnt > 1)
-		afree(pipes);
+		ashe_free(pipes);
 
 	return status;
 }

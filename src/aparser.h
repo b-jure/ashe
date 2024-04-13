@@ -40,7 +40,7 @@ struct a_redirect {
 	a_ssize rd_rhsfd; /* rhs file descriptor */
 	const char *rd_fname; /* filepath */
 	enum a_redirect_op rd_op; /* redirection op */
-	a_byte rd_append; /* append flag */
+	volatile a_byte rd_append; /* append flag */
 };
 
 ARRAY_NEW(a_arr_redirect, struct a_redirect)

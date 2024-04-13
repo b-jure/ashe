@@ -22,12 +22,6 @@
 
 #define a_terminput_clear() (a_terminput_free(), a_terminput_init())
 
-#define ashe_get_winsize_or_panic(row, col)                              \
-	do {                                                             \
-		if (ASHE_UNLIKELY(ashe_get_winsize((row), (col)) < 0))   \
-			ashe_panic("couldn't get terminal window size"); \
-	} while (0)
-
 struct a_cursor {
 	a_uint32 cr_col; /* current column */
 	a_uint32 cr_row; /* current row */
@@ -67,8 +61,8 @@ void a_term_init(void);
 #define a_term_free() a_terminput_free()
 
 /* public only for signal handlers (SIGCHLD and SIGIWNCH) */
-a_int32 ashe_get_winsize(a_uint32 *height, a_uint32 *width);
-a_int32 ashe_get_curpos(a_uint32 *row, a_uint32 *col);
+void ashe_get_winsize(a_uint32 *height, a_uint32 *width);
+void ashe_get_curpos(a_uint32 *row, a_uint32 *col);
 
 /* === public API === */
 a_ubyte ashe_insert(a_int32 c);

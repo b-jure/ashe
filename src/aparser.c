@@ -43,11 +43,11 @@ static const a_ubyte is_redirection[TK_NUMBER + 1] = {
 };
 
 /* Advance to the next token. */
-ASHE_PRIVATE void nexttok(struct a_lexer *lexer)
+ASHE_PRIVATE void nexttok(struct a_lexer *restrict lexer)
 {
 	lexer->prev = lexer->curr;
 	lexer->curr = a_lexer_next(lexer);
-#ifdef ASHE_DBG_LEX
+#if defined(ASHE_DBG_LEX) && defined(ASHE_DBG)
 	debug_current_token(&A_CTOK);
 #endif
 }
@@ -61,7 +61,7 @@ ASHE_PRIVATE a_ubyte match(a_memmax bitmask)
 	return 0;
 }
 
-ASHE_PRIVATE void expect_error(const char *what)
+ASHE_PRIVATE void expect_error(const char *restrict what)
 {
 	const char *invalid;
 
@@ -70,7 +70,7 @@ ASHE_PRIVATE void expect_error(const char *what)
 	jump_out(-1);
 }
 
-ASHE_PRIVATE inline void expect(a_ubyte next, a_memmax bitmask, const char *type)
+ASHE_PRIVATE inline void expect(a_ubyte next, a_memmax bitmask, const char *restrict type)
 {
 	if (next)
 		nexttok(&A_LEX);
@@ -79,7 +79,7 @@ ASHE_PRIVATE inline void expect(a_ubyte next, a_memmax bitmask, const char *type
 	expect_error(type);
 }
 
-ASHE_PRIVATE inline void a_redirect_init(struct a_redirect *rd)
+ASHE_PRIVATE inline void a_redirect_init(struct a_redirect *restrict rd)
 {
 	rd->rd_lhsfd = -1;
 	rd->rd_rhsfd = -1;
@@ -87,21 +87,21 @@ ASHE_PRIVATE inline void a_redirect_init(struct a_redirect *rd)
 	rd->rd_op = 0;
 }
 
-ASHE_PRIVATE inline void a_simple_cmd_init(struct a_simple_cmd *scmd)
+ASHE_PRIVATE inline void a_simple_cmd_init(struct a_simple_cmd *restrict scmd)
 {
 	a_arr_ccharp_init(&scmd->sc_argv);
 	a_arr_ccharp_init(&scmd->sc_env);
 	a_arr_redirect_init(&scmd->sc_rds);
 }
 
-ASHE_PRIVATE inline void a_simple_cmd_free(struct a_simple_cmd *scmd)
+ASHE_PRIVATE inline void a_simple_cmd_free(struct a_simple_cmd *restrict scmd)
 {
 	a_arr_ccharp_free(&scmd->sc_argv, NULL);
 	a_arr_ccharp_free(&scmd->sc_env, NULL);
 	a_arr_redirect_free(&scmd->sc_rds, NULL);
 }
 
-ASHE_PRIVATE inline void a_cmd_free(struct a_cmd *cmd)
+ASHE_PRIVATE inline void a_cmd_free(struct a_cmd *restrict cmd)
 {
 	switch (cmd->c_type) {
 	case ACMD_SIMPLE:
@@ -113,7 +113,7 @@ ASHE_PRIVATE inline void a_cmd_free(struct a_cmd *cmd)
 	}
 }
 
-ASHE_PRIVATE inline void a_pipeline_init(struct a_pipeline *pipeline)
+ASHE_PRIVATE inline void a_pipeline_init(struct a_pipeline *restrict pipeline)
 {
 	a_arr_cmd_init(&pipeline->pl_cmds);
 	pipeline->pl_con = ACON_NONE;
@@ -121,28 +121,28 @@ ASHE_PRIVATE inline void a_pipeline_init(struct a_pipeline *pipeline)
 	pipeline->pl_input = NULL;
 }
 
-ASHE_PRIVATE inline void a_pipeline_free(struct a_pipeline *pipeline)
+ASHE_PRIVATE inline void a_pipeline_free(struct a_pipeline *restrict pipeline)
 {
 	a_arr_cmd_free(&pipeline->pl_cmds, (FreeFn)a_cmd_free);
 }
 
-ASHE_PRIVATE inline void a_list_init(struct a_list *list)
+ASHE_PRIVATE inline void a_list_init(struct a_list *restrict list)
 {
 	a_arr_pipeline_init(&list->ls_pipes);
 }
 
-ASHE_PRIVATE inline void a_list_free(struct a_list *list)
+ASHE_PRIVATE inline void a_list_free(struct a_list *restrict list)
 {
 	a_arr_pipeline_free(&list->ls_pipes, (FreeFn)a_pipeline_free);
 }
 
-ASHE_PUBLIC void a_block_init(struct a_block *block)
+ASHE_PUBLIC void a_block_init(struct a_block *restrict block)
 {
 	a_arr_list_init(&block->bl_lists);
 	block->bl_subst = 0;
 }
 
-ASHE_PUBLIC void a_block_free(struct a_block *block)
+ASHE_PUBLIC void a_block_free(struct a_block *restrict block)
 {
 	a_arr_list_free(&block->bl_lists, (FreeFn)a_list_free);
 }
@@ -157,7 +157,7 @@ ASHE_PUBLIC void a_block_free(struct a_block *block)
  * [SYNTAX]
  * redirect_in ::= '<' filename
  */
-ASHE_PRIVATE void redirect_in(struct a_redirect *rdp)
+ASHE_PRIVATE void redirect_in(struct a_redirect *restrict rdp)
 {
 	if (rdp->rd_lhsfd == -1)
 		rdp->rd_lhsfd = 0;
@@ -172,7 +172,7 @@ ASHE_PRIVATE void redirect_in(struct a_redirect *rdp)
  *		  | '>>' filename
  *		  | '>|' filename
  */
-ASHE_PRIVATE void redirect_out(struct a_redirect *rdp)
+ASHE_PRIVATE void redirect_out(struct a_redirect *restrict rdp)
 {
 	if (rdp->rd_lhsfd == -1)
 		rdp->rd_lhsfd = 1;
@@ -184,42 +184,62 @@ ASHE_PRIVATE void redirect_out(struct a_redirect *rdp)
 
 /*
  * [SYNTAX]
- * redirect_dup ::= '>&' '-'
- *		  | '>&' NUMBER
- *		  | '&>' '-'
- *		  | '&>' NUMBER
+ * redirect_outerr ::= '>&' filename
+ *		     | '&>' filename
  */
-ASHE_PRIVATE void redirect_dup(struct a_redirect *rdp)
+ASHE_PRIVATE void redirect_outerr(struct a_redirect *restrict rdp, a_ubyte skipped)
 {
-	enum a_redirect_op op;
-
-	op = (A_CTOK.type == TK_GREATER_AND ? ARDOP_DUP_OUT : ARDOP_DUP_IN);
-	if (rdp->rd_lhsfd == -1)
-		rdp->rd_lhsfd = 1 * (op == ARDOP_DUP_OUT);
-	expect(1, BM(TK_NUMBER) | BM(TK_MINUS), "file descriptor or '-'");
-	if (A_CTOK.type == TK_MINUS)
-		rdp->rd_op = ARDOP_CLOSE;
-	else
-		rdp->rd_rhsfd = A_CTOK_NUM();
+	rdp->rd_op = ARDOP_REDIRECT_ERROUT;
+	if (!skipped)
+		nexttok(&A_LEX);
+	expect(0, BM_STRING, "filename (string)");
+	rdp->rd_fname = A_CTOK_STR();
 }
 
 /*
  * [SYNTAX]
- * redirect_outerr ::= '>&' filename
- *		     | '&>' filename
+ * dupin_or_close ::= '>&' '-'
+ * 		    | '>&' NUMBER
  */
-ASHE_PRIVATE void redirect_outerr(struct a_redirect *rdp)
+ASHE_PRIVATE a_ubyte is_dupout_or_close(struct a_redirect *restrict rdp)
 {
-	rdp->rd_op = ARDOP_REDIRECT_ERROUT;
-	expect(1, BM_STRING, "filename (string)");
-	rdp->rd_fname = A_CTOK_STR();
+	if (A_PTOK.type == TK_NUMBER)
+		rdp->rd_lhsfd = A_PTOK_NUM();
+	nexttok(&A_LEX);
+	if (A_CTOK.type == TK_NUMBER) {
+		rdp->rd_rhsfd = A_CTOK_NUM();
+		rdp->rd_op = ARDOP_DUP_OUT;
+		return 1;
+	} else if (A_CTOK.type == TK_MINUS) {
+		rdp->rd_op = ARDOP_CLOSE;
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * [SYNTAX]
+ * dupin_or_close ::= '<&' '-'
+ * 		    | '<&' NUMBER
+ */
+ASHE_PRIVATE void dupin_or_close(struct a_redirect *restrict rdp)
+{
+	if (A_PTOK.type == TK_NUMBER)
+		rdp->rd_lhsfd = A_PTOK_NUM();
+	expect(1, BM(TK_NUMBER) | BM(TK_MINUS), "file descriptor or '-'");
+	if (A_CTOK.type == TK_NUMBER) {
+		rdp->rd_rhsfd = A_CTOK_NUM();
+		rdp->rd_op = ARDOP_DUP_IN;
+	} else {
+		rdp->rd_op = ARDOP_CLOSE;
+	}
 }
 
 /*
  * [SYNTAX]
  * redirect_inout ::= '<>' filename
  */
-ASHE_PRIVATE void redirect_inout(struct a_redirect *rdp)
+ASHE_PRIVATE void redirect_inout(struct a_redirect *restrict rdp)
 {
 	if (rdp->rd_lhsfd == -1)
 		rdp->rd_lhsfd = 0;
@@ -238,13 +258,17 @@ ASHE_PRIVATE void redirect_inout(struct a_redirect *rdp)
  *		 | NUMBER redirect_outerr
  *		 | redirect_inout
  *		 | NUMBER redirect_inout
- *		 | redirect_dup
- *		 | NUMBER redirect_dup
+ *		 | dupin_or_close
+ *		 | NUMBER dupin_or_close
+ *		 | dupout_or_close
+ *		 | NUMBER dupout_or_close
  */
-ASHE_PRIVATE void redirection(struct a_simple_cmd *scmd)
+ASHE_PRIVATE void redirection(struct a_simple_cmd *restrict scmd)
 {
 	struct a_redirect *rdp;
+	a_ubyte skipped;
 
+	skipped = 0;
 	rdp = a_arr_redirect_last(&scmd->sc_rds);
 
 	switch (A_CTOK.type) {
@@ -252,15 +276,17 @@ ASHE_PRIVATE void redirection(struct a_simple_cmd *scmd)
 		redirect_in(rdp);
 		break;
 	case TK_GREATER_AND:
-		if (A_PTOK.type == TK_NUMBER)
-			goto fddup;
+		rdp->rd_lhsfd = 1;
+		if (is_dupout_or_close(rdp))
+			break;
+		skipped = 1;
 		/* FALLTHRU */
 	case TK_AND_GREATER:
 		rdp->rd_append = -1;
 		/* FALLTHRU */
 	case TK_AND_GREATER_GREATER:
 		rdp->rd_append++;
-		redirect_outerr(rdp);
+		redirect_outerr(rdp, skipped);
 		break;
 	case TK_GREATER_PIPE:
 		rdp->rd_op = ARDOP_REDIRECT_CLOB;
@@ -272,8 +298,8 @@ ASHE_PRIVATE void redirection(struct a_simple_cmd *scmd)
 		redirect_out(rdp);
 		break;
 	case TK_LESS_AND:
-fddup:
-		redirect_dup(rdp);
+		rdp->rd_lhsfd = 0;
+		dupin_or_close(rdp);
 		break;
 	case TK_LESS_GREATER:
 		redirect_inout(rdp);
@@ -292,7 +318,7 @@ fddup:
  *		       | redirection
  *		       | simple_cmd_prefix redirection
  */
-ASHE_PRIVATE void simple_cmd_prefix(struct a_simple_cmd *scmd)
+ASHE_PRIVATE void simple_cmd_prefix(struct a_simple_cmd *restrict scmd)
 {
 	struct a_redirect rd;
 	enum a_toktype type;
@@ -332,20 +358,20 @@ pushrd:
  * simple_cmd_command ::= WORD
  *			| NUMBER
  */
-ASHE_PRIVATE void simple_cmd_command(struct a_simple_cmd *scmd)
+ASHE_PRIVATE void simple_cmd_command(struct a_simple_cmd *restrict scmd)
 {
 	a_arr_ccharp_push(&scmd->sc_argv, *a_arr_ccharp_last(&ashe.sh_buffers));
 	nexttok(&A_LEX);
 }
 
 /* forward declare for 'block_subst()' */
-ASHE_PRIVATE inline void plist(struct a_block *block, struct a_list *list);
+ASHE_PRIVATE inline void plist(struct a_block *restrict block, struct a_list *list);
 
 /*
  * [SYNTAX]
  * block_subst ::= '(' plist ')'
  */
-ASHE_PRIVATE void block_subst(struct a_block *block)
+ASHE_PRIVATE void block_subst(struct a_block *restrict block)
 {
 	struct a_list list;
 	a_memmax insert;
@@ -368,7 +394,7 @@ ASHE_PRIVATE void block_subst(struct a_block *block)
  *		       | block_subst
  *		       | simple_cmd_suffix block_subst
  */
-ASHE_PRIVATE void simple_cmd_suffix(struct a_block *block, struct a_simple_cmd *scmd)
+ASHE_PRIVATE void simple_cmd_suffix(struct a_block *restrict block, struct a_simple_cmd *scmd)
 {
 	struct a_redirect rd;
 	const char *numstr;
@@ -415,7 +441,7 @@ pushrd:
  *	        | simple_cmd_command
  *	        | simple_cmd_command simple_cmd_suffix
  */
-ASHE_PRIVATE void simple_cmd(struct a_block *block, struct a_simple_cmd *scmd)
+ASHE_PRIVATE void simple_cmd(struct a_block *restrict block, struct a_simple_cmd *scmd)
 {
 	simple_cmd_prefix(scmd);
 	if (A_CTOK.type == TK_WORD || A_PTOK.type == TK_NUMBER) {
@@ -423,8 +449,7 @@ ASHE_PRIVATE void simple_cmd(struct a_block *block, struct a_simple_cmd *scmd)
 		if (ARGC(scmd) == 0)
 			simple_cmd_command(scmd);
 		simple_cmd_suffix(block, scmd);
-	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 &&
-				 a_arr_len(scmd->sc_rds) == 0)) {
+	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 && a_arr_len(scmd->sc_rds) == 0)) {
 		expect_error("string");
 	}
 }
@@ -433,7 +458,7 @@ ASHE_PRIVATE void simple_cmd(struct a_block *block, struct a_simple_cmd *scmd)
  * [SYNTAX]
  * command ::= simple_cmd
  */
-ASHE_PRIVATE void command(struct a_block *block, struct a_cmd *cmd)
+ASHE_PRIVATE void command(struct a_block *restrict block, struct a_cmd *cmd)
 {
 	switch (A_CTOK.type) {
 	default: /* for now only supports simple commands */
@@ -519,7 +544,7 @@ ASHE_PUBLIC void pblock(struct a_block *block)
 	}
 }
 
-ASHE_PUBLIC a_int32 ashe_parse(const char *cstr)
+ASHE_PUBLIC a_int32 ashe_parse(const char *restrict cstr)
 {
 	a_lexer_init(&ashe.sh_lexer, cstr);
 	ashe.sh_buf.buf_code = 0;

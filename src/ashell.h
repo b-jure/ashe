@@ -23,9 +23,10 @@ struct a_settings {
 }; /* shell settings */
 
 struct a_flags {
-	volatile a_ubyte exit : 1; /* warned before exiting */
+	volatile a_ubyte exit : 1; /* set if already warned before exiting or in fork */
 	volatile a_ubyte isfork : 1; /* set if this is a forked shell process */
 	volatile a_ubyte interactive : 1; /* set if shell is interactive */
+	volatile a_ubyte panic : 1; /* set if panic was triggered */
 };
 
 struct a_shell {
@@ -35,6 +36,7 @@ struct a_shell {
 	a_arr_ccharp sh_buffers;
 	a_arr_char sh_prompt;
 	a_arr_char sh_welcome;
+	a_arr_char sh_status;
 	struct a_block sh_block;
 	struct a_jmpbuf sh_buf;
 	struct a_flags sh_flags;

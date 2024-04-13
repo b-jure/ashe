@@ -13,6 +13,7 @@
 #include "ainput.h"
 #include "ashell.h"
 
+/* differentiate %ID (flip) and PID, check 'ashe_bi_jobs()' */
 #define FLIP_SIGN_BIT(n) ((n) ^ ((a_uint32)1 << ((sizeof(n) * 8) - 1)))
 
 /* options for envcmd function */
@@ -24,10 +25,8 @@
 
 /* help opt */
 #define is_help_opt(arg) (strcmp((arg), "-h") == 0 || strcmp((arg), "--help") == 0)
-#define print_help_opts(bin)                                                        \
-	ashe_printf(stderr,                                                         \
-		    "%s: use -h or --help options to display help information\r\n", \
-		    bin);
+#define print_help_opts(bin) \
+	ashe_printf(stderr, "%s: use -h or --help options to display help information\r\n", bin);
 
 /* builtin function signature */
 typedef a_int32 (*builtinfn)(a_arr_ccharp *argv);
@@ -96,8 +95,8 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 
 		if (*errstr != '\0') {
 			oklen = errstr - arg;
-			ashe_eprintf("%s: invalid %s provided, %*s'%s'", bin,
-				     (id ? "id" : "pid"), oklen, arg, errstr);
+			ashe_eprintf("%s: invalid %s provided, %*s'%s'", bin, (id ? "id" : "pid"),
+				     oklen, arg, errstr);
 		} else if (errno == ERANGE || num > INT_MAX) {
 			ashe_eprintf("%s: '%s '%s' too large, limit is %d.", bin,
 				     (id ? "id" : "pid"), arg, INT_MAX);
@@ -120,8 +119,7 @@ ASHE_PRIVATE void ashe_jobs_print_filtered_jobs(a_int32 *nums, a_memmax len)
 
 	for (i = 0; i < len; i++) {
 		if (nums[i] < 0)
-			job = a_jobcntl_get_job_with_id(&ashe.sh_jobcntl,
-							FLIP_SIGN_BIT(nums[i]));
+			job = a_jobcntl_get_job_with_id(&ashe.sh_jobcntl, FLIP_SIGN_BIT(nums[i]));
 		else
 			job = a_jobcntl_get_job_with_pgid(&ashe.sh_jobcntl, nums[i]);
 		if (job)
@@ -153,7 +151,7 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 	status = 0;
 
 	if (argc > 1)
-		nums = acalloc(sizeof(a_int32), argc - 1);
+		nums = ashe_calloc(sizeof(a_int32), argc - 1);
 
 	switch (argc) {
 	case 1:
@@ -183,14 +181,16 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 	}
 defer:
 	if (nums)
-		afree(nums);
+		ashe_free(nums);
 	return status;
 }
 
 /* Auxiliary to ashe_bg() */
 ASHE_PRIVATE a_int32 ashe_bg_last(void)
 {
-	struct a_job *job = a_jobcntl_get_job_from_background(&ashe.sh_jobcntl);
+	struct a_job *job;
+
+	job = a_jobcntl_get_job_from_background(&ashe.sh_jobcntl);
 
 	if (job) {
 		a_job_continue(job, 0);
@@ -203,23 +203,27 @@ ASHE_PRIVATE a_int32 ashe_bg_last(void)
 /* Auxiliary to ashe_bg() */
 ASHE_PRIVATE void ashe_bg_id(a_int32 id)
 {
-	struct a_job *job = a_jobcntl_get_job_with_id(&ashe.sh_jobcntl, id);
+	struct a_job *job;
+
+	job = a_jobcntl_get_job_with_id_from(&ashe.sh_jobcntl, id, 0);
 
 	if (job) {
 		a_job_continue(job, 0);
 	} else
-		ashe_eprintf("bg: there is no suitable job with id %d.", id);
+		ashe_eprintf("bg: could not find job with id %d.", id);
 }
 
 /* Auxiliary to ashe_bg() */
 ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 {
-	struct a_job *job = a_jobcntl_get_job_with_pid(&ashe.sh_jobcntl, pid);
+	struct a_job *job;
+
+	job = a_jobcntl_get_job_with_pid_from(&ashe.sh_jobcntl, pid, 0);
 
 	if (job)
 		a_job_continue(job, 0);
 	else
-		ashe_eprintf("bg: there is no suitable job with pid %d.", pid);
+		ashe_eprintf("bg: could not find job with pid %d.", pid);
 }
 
 ASHE_PRIVATE void ashe_bg_background_filtered_jobs(a_int32 *nums, a_memmax len)
@@ -239,11 +243,12 @@ ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 	static const char *usage[] = {
 		"bg - sends jobs to background resuming them if they are paused.\n\r",
 		"bg [PID | '%'ID [PID | '%'ID]]\n\r",
-		"There are multiple ways of specifying which job to move, either by PID, "
-		"%ID or by not giving any arguments to the command.",
+		"There are multiple ways of specifying which job to move/continue, either "
+		"by PID, %ID or by not giving any arguments to the command.",
 		"Multiple PIDs can be provided at once, same holds for %ID.",
-		"By not specifying any arguments then the last jobs that was "
-		"created (the highest ID) will be moved to background.",
+		"If no additional arguments were provided then the last jobs that was "
+		"created (the highest ID) that is in the background will be sent "
+		"SIGCONT signal, signaling it to continue.",
 	};
 
 	a_memmax argc;
@@ -265,7 +270,7 @@ ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 		}
 		/* FALLTHRU */
 	default:
-		nums = acalloc(argc - 1, sizeof(a_int32));
+		nums = ashe_calloc(argc - 1, sizeof(a_int32));
 		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
 			ASHE_DEFER(-1);
 		ashe_bg_background_filtered_jobs(nums, argc - 1);
@@ -273,7 +278,7 @@ ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 	}
 defer:
 	if (nums)
-		afree(nums);
+		ashe_free(nums);
 	return status;
 }
 
@@ -294,29 +299,33 @@ ASHE_PRIVATE a_int32 ashe_fg_last(void)
 }
 
 /* Auxiliary to ashe_fg() */
-ASHE_PRIVATE void ashe_fg_id(a_int32 id)
+ASHE_PRIVATE a_int32 ashe_fg_id(a_int32 id)
 {
 	struct a_job *job;
 
 	job = a_jobcntl_get_job_with_id_from(&ashe.sh_jobcntl, id, 0);
 
-	if (job)
+	if (job) {
 		a_job_continue(job, 1);
-	else
-		ashe_eprintf("fg: there is no suitable job with id %d.", id);
+		return 0;
+	}
+	ashe_eprintf("fg: could not find job with id %d.", id);
+	return -1;
 }
 
 /* Auxiliary to ashe_fg() */
-ASHE_PRIVATE void ashe_fg_pid(pid_t pid)
+ASHE_PRIVATE a_int32 ashe_fg_pid(pid_t pid)
 {
 	struct a_job *job;
 
 	job = a_jobcntl_get_job_with_pid_from(&ashe.sh_jobcntl, pid, 0);
 
-	if (job)
+	if (job) {
 		a_job_continue(job, 1);
-	else
-		ashe_eprintf("fg: there is no suitable job with pid %d.", pid);
+		return 0;
+	}
+	ashe_eprintf("fg: could not find job with pid %d.", pid);
+	return -1;
 }
 
 /* Foreground a job */
@@ -326,7 +335,8 @@ ASHE_PRIVATE a_int32 ashe_bi_fg(a_arr_ccharp *argv)
 		"fg - move job to foreground\n\r",
 		"fg [PID | %ID]\r\n",
 		"Moves the job into the foreground additionally resuming it if it was stopped.",
-		"If no arguments were supplied then the last job that was created (highest ID) is used.",
+		"If no arguments were supplied then the last job that was created (highest ID) "
+		"that is still running or is stopped in the background will be used.",
 		"User can provide PID or %ID to specify which job to foreground.",
 	};
 
@@ -348,9 +358,8 @@ ASHE_PRIVATE a_int32 ashe_bi_fg(a_arr_ccharp *argv)
 			if (filter_jobs_by_pid_or_id(argv, &n) < 0)
 				ASHE_DEFER(-1);
 			if (n < 0)
-				ashe_fg_id(FLIP_SIGN_BIT(n));
-			else
-				ashe_fg_pid(n);
+				ASHE_DEFER(ashe_fg_id(FLIP_SIGN_BIT(n)));
+			ASHE_DEFER(ashe_fg_pid(n));
 		}
 		break;
 	default:
@@ -400,8 +409,7 @@ ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 		}
 		status = strtol(a_arrp_ptr(argv)[1], &endptr, 10);
 		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' || status < 0) {
-			ashe_eprintf("exit: invalid exit status CODE '%s'.",
-				     a_arrp_ptr(argv)[1]);
+			ashe_eprintf("exit: invalid exit status CODE '%s'.", a_arrp_ptr(argv)[1]);
 			ASHE_DEFER(-1);
 		} else {
 l_exit:
@@ -747,13 +755,13 @@ ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
 		return 0;
 	}
 
-	execargs = amalloc(sizeof(*execargs) * argc);
+	execargs = ashe_malloc(sizeof(*execargs) * argc);
 	for (i = 0; i < argc - 1; i++)
 		execargs[i] = *a_arr_ccharp_index(argv, i + 1);
 	execargs[argc - 1] = NULL;
 
 	if (ASHE_UNLIKELY(execvp(execargs[0], (char *const *)execargs) < 0)) {
-		afree(execargs);
+		ashe_free(execargs);
 		ashe_perrno("execvp");
 		return -1;
 	}

@@ -75,8 +75,7 @@ typedef void (*a_sighandler)(int);
 /* -------------------------------- */
 
 /* Environment variable valid name characters (subset of PCS) */
-#define ENV_VAR_CHARS \
-	"0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+#define ENV_VAR_CHARS "0123456789_qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
 /* -------------------------------- */
 
 /* elements of array */
@@ -89,6 +88,10 @@ typedef void (*a_sighandler)(int);
 
 /* check if 'x' is power of 2 */
 #define ASHE_ISPOW2(x) (((x) & ((x)-1)) == 0)
+/* -------------------------------- */
+
+/* string literal size excluding null term */
+#define SS(str) (sizeof(str) - 1)
 /* -------------------------------- */
 
 /* max digits */

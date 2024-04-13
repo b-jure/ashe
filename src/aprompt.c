@@ -35,8 +35,7 @@ ASHE_PUBLIC const char *ashe_user(void)
 		ashe_perrno("getpwuid");
 		goto error;
 	}
-	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%s", record->pw_name) <
-			  0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%s", record->pw_name) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -100,8 +99,8 @@ ASHE_PUBLIC const char *ashe_time(void)
 		ashe_perrno("localtime");
 		goto error;
 	}
-	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_hour,
-				   lt->tm_min) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%02d:%02d", lt->tm_hour, lt->tm_min) <
+			  0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -124,9 +123,8 @@ ASHE_PUBLIC const char *ashe_date(void)
 		ashe_perrno("localtime");
 		goto error;
 	}
-	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%d-%02d-%02d",
-				   lt->tm_year + 1900, lt->tm_mon + 1,
-				   lt->tm_mday) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, BUFSIZ, "%d-%02d-%02d", lt->tm_year + 1900,
+				   lt->tm_mon + 1, lt->tm_mday) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -144,8 +142,8 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 		ashe_perrno("sysinfo");
 		goto error;
 	}
-	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, ASHE_INT64_DIGITS, "%ldh %ldm",
-				   (si.uptime / 3600), (si.uptime / 60) % 60) < 0)) {
+	if (ASHE_UNLIKELY(snprintf(ashe_plhbuf, ASHE_INT64_DIGITS, "%ldh %ldm", (si.uptime / 3600),
+				   (si.uptime / 60) % 60) < 0)) {
 		ashe_perrno("snprintf");
 		goto error;
 	}
@@ -154,8 +152,7 @@ error:
 	return NULL;
 }
 
-/* expand p...laaaceholder */
-ASHE_PRIVATE void expandp(a_arr_char *out, const char **ptr)
+ASHE_PRIVATE void expand_placeholders(a_arr_char *out, const char **ptr)
 {
 	const char *p = *ptr;
 	const char *res;
@@ -180,7 +177,7 @@ push_plh_sign:
 }
 
 /* parses 'str' by expanding all placeholders */
-ASHE_PRIVATE void parseps(a_arr_char *out, const char *str)
+ASHE_PRIVATE void parse_placeholders(a_arr_char *out, const char *str)
 {
 	a_int32 c;
 
@@ -189,14 +186,12 @@ ASHE_PRIVATE void parseps(a_arr_char *out, const char *str)
 			a_arr_char_push(out, c);
 			str++;
 		} else {
-			expandp(out, &str);
+			expand_placeholders(out, &str);
 		}
 	}
 
-	a_arrp_len(out) =
-		((ASHE_PROMPT_LEN_MAX - 1) *
-		 (a_arrp_len(out) >= ASHE_PROMPT_LEN_MAX)) +
-		(a_arrp_len(out) * (a_arrp_len(out) < ASHE_PROMPT_LEN_MAX));
+	if (ASHE_UNLIKELY(a_arrp_len(out) >= ASHE_PROMPT_LEN_MAX))
+		a_arrp_len(out) = ASHE_PROMPT_LEN_MAX - 1;
 
 	a_arr_char_push(out, '\0');
 }
@@ -206,7 +201,7 @@ ASHE_PUBLIC void userstr_print(const char *str, a_memmax len)
 	a_arr_char buffer;
 
 	a_arr_char_init_cap(&buffer, len);
-	parseps(&buffer, str);
+	parse_placeholders(&buffer, str);
 	ashe_print(a_arr_ptr(buffer), stderr);
 	a_arr_char_free(&buffer, NULL);
 }
@@ -214,14 +209,14 @@ ASHE_PUBLIC void userstr_print(const char *str, a_memmax len)
 ASHE_PUBLIC void ashe_pwelcome(void)
 {
 	a_arr_len(ashe.sh_welcome) = 0;
-	parseps(&ashe.sh_welcome, ASHE_WELCOME);
+	parse_placeholders(&ashe.sh_welcome, ASHE_WELCOME);
 	ashe_print(a_arr_ptr(ashe.sh_welcome), stderr);
 }
 
 ASHE_PUBLIC void ashe_pprompt(void)
 {
 	a_arr_len(ashe.sh_prompt) = 0;
-	parseps(&ashe.sh_prompt, ASHE_PROMPT);
+	parse_placeholders(&ashe.sh_prompt, ASHE_PROMPT);
 	ashe.sh_term.tm_promptlen = a_arr_len(ashe.sh_prompt) - 1;
 	ashe_print(a_arr_ptr(ashe.sh_prompt), stderr);
 }

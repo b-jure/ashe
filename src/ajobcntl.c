@@ -1,4 +1,5 @@
 #include "ajobcntl.h"
+#include "acommon.h"
 #include "aconf.h"
 #include "ainput.h"
 #include "ajobcntl.h"
@@ -6,7 +7,7 @@
 #include "aprompt.h"
 #include "autils.h"
 
-#include <errno.h>
+#include <signal.h>
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,8 +33,10 @@ ASHE_PUBLIC void a_process_init(struct a_process *proc, a_pid PID)
 
 /* ==== JOB ==== */
 
-/* Initialize the 'job', store 'input' for debug and
- * 'bg' is a flag indicating if this job is running in background. */
+/*
+ * Initialize the 'job', store 'input' for debug and
+ * 'bg' is a flag indicating if this job is running in background.
+ */
 ASHE_PUBLIC void a_job_init(struct a_job *job, const char *input, a_ubyte bg)
 {
 	job->tmodes = ashe.sh_term.tm_dfltermios;
@@ -99,19 +102,23 @@ ASHE_PUBLIC a_ubyte a_job_is_completed(struct a_job *job)
 	return 1;
 }
 
-/* Marks the 'job' as running in the background.
+/*
+ * Marks the 'job' as running in the background.
  * If 'cont' is non zero then SIGCONT signal is
- * sent to the job's process group ID. */
+ * sent to the job's process group ID.
+ */
 ASHE_PUBLIC void a_job_mark_as_background(struct a_job *job, a_ubyte cont)
 {
 	job->foreground = 0;
-	if (ASHE_UNLIKELY(cont && kill(-job->pgid, SIGCONT) < 0))
-		ashe_perrno("can't send singal %d to pgid %d", SIGCONT, job->pgid);
+	if (cont)
+		ashe_kill(-job->pgid, SIGCONT);
 }
 
-/* Return string representation of 'sig'.
+/*
+ * Return string representation of 'sig'.
  * This function only handles signals specified by ISO C.
- * Auxiliary to 'a_jobcntl_update_process()'. */
+ * Auxiliary to 'a_jobcntl_update_process()'.
+ */
 ASHE_PRIVATE const char *sigstr(a_int32 sig)
 {
 	switch (sig) {
@@ -145,7 +152,7 @@ ASHE_PRIVATE void proc_term_notify(struct a_process *proc, a_int32 status, a_uby
 	case SIGKILL:
 	case SIGTERM:
 		polite = 1;
-		/* FALLTHRU */
+		break;
 	default:
 		break;
 	}
@@ -153,16 +160,15 @@ ASHE_PRIVATE void proc_term_notify(struct a_process *proc, a_int32 status, a_uby
 	proc->status = WTERMSIG(status);
 	if (notify) {
 		signame = sigstr(status);
-		ashe_pinfo("PID %d was terminated by SIG%s%s", proc->pid,
-			   signame ? signame : "?", (polite ? " (polite)" : ""));
+		ashe_pinfo("PID %d was terminated by SIG%s%s", proc->pid, signame ? signame : "?",
+			   (polite ? " (polite)" : ""));
 	} else { /* print new line */
-		fputs("\r\n", stderr);
-		fflush(stderr);
+		ashe_print("\r\n", stderr);
 	}
 }
 
-ASHE_PRIVATE void Process_update_status(struct a_process *proc, a_int32 status,
-					a_ubyte notify)
+/* Update process status and notify if 'notify' is set */
+ASHE_PRIVATE void Process_update_status(struct a_process *proc, a_int32 status, a_ubyte notify)
 {
 	proc->status = status;
 	if (WIFSTOPPED(status)) {
@@ -178,20 +184,23 @@ ASHE_PRIVATE void Process_update_status(struct a_process *proc, a_int32 status,
 	}
 }
 
-/* Updates the process 'pid' that is part of the 'job'.
+/*
+ * Updates the process 'pid' that is part of the 'job'.
  * Returns the updated process (with matchind 'pid') or
- * NULL if no process was found with the given 'pid'. */
-ASHE_PRIVATE struct a_process *a_job_update_process_status(struct a_job *job, a_pid PID,
+ * NULL if no process was found with the given 'pid'.
+ */
+ASHE_PRIVATE struct a_process *a_job_update_process_status(struct a_job *job, a_pid pid,
 							   a_int32 status)
 {
 	struct a_process *proc;
 	a_memmax i, proc_cnt;
 
-	ashe_assert(PID > 0);
+	ashe_assert(pid > 0);
 	proc_cnt = a_job_processes(job);
+
 	for (i = 0; i < proc_cnt; i++) {
 		proc = a_job_get_process(job, i);
-		if (proc->pid == PID) {
+		if (proc->pid == pid) {
 			Process_update_status(proc, status, !job->foreground);
 			return proc;
 		}
@@ -199,85 +208,67 @@ ASHE_PRIVATE struct a_process *a_job_update_process_status(struct a_job *job, a_
 	return NULL;
 }
 
-/* Waits for the 'job' to finish or until it gets paused.
- * Auxiliary to 'a_job_move_to_foreground()'. */
+/*
+ * Waits for the 'job' to finish or until it gets paused.
+ * Auxiliary to 'a_job_move_to_foreground()'.
+ */
 ASHE_PRIVATE a_int32 a_job_wait(struct a_job *job, a_ubyte *stop)
 {
-	a_pid PID;
+	a_pid pid;
 	a_int32 status;
 	struct a_process *proc;
 
 	do {
-		errno = 0;
-		PID = waitpid(-job->pgid, &status, WUNTRACED);
-		if (ASHE_UNLIKELY(PID < 0)) {
-			ashe_perrno("waitpid");
-			ashe_panic(NULL);
-		}
-		proc = a_job_update_process_status(job, PID, status);
+		pid = ashe_waitpid(-job->pgid, &status, WUNTRACED);
+		ashe_assert(pid >= 0);
+		proc = a_job_update_process_status(job, pid, status);
 		ashe_assert(proc != NULL);
-	} while (!proc->stopped && !(proc->stopped = a_job_is_stopped(job)) &&
+	} while (!(*stop = proc->stopped) && !(*stop = a_job_is_stopped(job)) &&
 		 !a_job_is_completed(job));
 
-	if (!(*stop = proc->stopped)) {
+	if (!*stop)
 		return a_arr_process_last(&job->processes)->status;
-	} else {
+	else
 		return 0;
-	}
 }
 
-/* Moves the 'job' into foreground.
+/*
+ * Moves the 'job' into foreground.
  * If 'cont' is non zero then SIGCONT signal
- * is sent to the 'job's process group ID. */
-ASHE_PUBLIC a_int32 a_job_move_to_foreground(struct a_job *job, a_ubyte cont,
-					     a_ubyte *stop)
+ * is sent to the 'job's process group ID.
+ */
+ASHE_PUBLIC a_int32 a_job_move_to_foreground(struct a_job *job, const a_ubyte cont, a_ubyte *stop)
 {
 	a_int32 status;
 
+	status = 0;
 	*stop = 0;
 	job->foreground = 1;
-	if (ASHE_UNLIKELY(tcsetpgrp(STDIN_FILENO, job->pgid) < 0)) {
-		ashe_perrno("can't put pgid %d into foreground", job->pgid);
-		ASHE_DEFER(-1);
-	}
-	if (ASHE_UNLIKELY(cont && tcsetattr(STDIN_FILENO, TCSADRAIN, &job->tmodes) < 0)) {
-		ashe_perrno("can't set terminal settings");
-		ASHE_DEFER(-1);
-	}
-	if (ASHE_UNLIKELY(kill(-job->pgid, SIGCONT) < 0)) {
-		ashe_perrno("can't send signal %d to pgid %d", SIGCONT, job->pgid);
-		ASHE_DEFER(-1);
-	}
+
+	ashe_tcsetpgrp(job->pgid);
+	if (cont)
+		ashe_tcsetattr(TCSADRAIN, &job->tmodes);
+	ashe_kill(-job->pgid, SIGCONT);
+
 	status = a_job_wait(job, stop);
-	/* 'cont' means the 'job' is already inside of the 'JobControl' */
-	job->foreground = 0; /* can't be in foreground anymore */
+	job->foreground = 0; /* either stopped or completed */
+	job->notified = !*stop; /* if completed, don't notify */
+
 	if (!cont && *stop)
 		a_jobcntl_add_job(&ashe.sh_jobcntl, job);
-	if (ASHE_UNLIKELY(tcsetpgrp(STDIN_FILENO, getpgrp()) < 0)) {
-		ashe_perrno("can't put shell into foreground");
-		ASHE_DEFER(-1);
-	}
-	if (ASHE_UNLIKELY(tcgetattr(STDIN_FILENO, &job->tmodes) < 0)) {
-		ashe_perrno("can't update job's terminal settings");
-		ASHE_DEFER(-1);
-	}
-	if (ASHE_UNLIKELY(tcsetattr(STDIN_FILENO, TCSADRAIN,
-				    &ashe.sh_term.tm_dfltermios) < 0)) {
-		ashe_perrno("can't restore shell terminal settings");
-		ASHE_DEFER(-1);
-	}
-defer:
-	if (ASHE_UNLIKELY(status < 0)) {
-		if (!cont)
-			a_job_free(job);
-		ashe_panic(NULL);
-	}
+
+	ashe_tcsetpgrp(getpgrp());
+	ashe_tcgetattr(&job->tmodes);
+	ashe_tcsetattr(TCSADRAIN, &A_TM.tm_dfltermios);
+
 	return status;
 }
 
-/* Set 'job' as running by setting all processes that
+/*
+ * Set 'job' as running by setting all processes that
  * belong to the 'job' as not stopped.
- * Auxiliary to 'a_job_continue()'. */
+ * Auxiliary to 'a_job_continue()'.
+ */
 ASHE_PRIVATE inline void a_job_set_as_running(struct a_job *job)
 {
 	a_memmax i, len;
@@ -289,21 +280,23 @@ ASHE_PRIVATE inline void a_job_set_as_running(struct a_job *job)
 	job->notified = 0;
 }
 
-/* Sets the 'job' as running and if 'isfg' is a non zero
+/*
+ * Sets the 'job' as running and if 'isfg' is a non zero
  * value then the job is moved into foreground.
  * If 'isfg' is 0, then the job is not moved into foreground
  * and is marked as background.
  * Additionally SIGCONT signal is sent to the job's process
- * group ID in case the 'job' was stopped. */
+ * group ID in case the 'job' was stopped.
+ */
 ASHE_PUBLIC void a_job_continue(struct a_job *job, a_ubyte isfg)
 {
-	a_ubyte stopped = 0;
+	a_ubyte stopped;
 
 	a_job_set_as_running(job);
 	if (isfg) {
+		stopped = 0;
 		a_job_move_to_foreground(job, 1, &stopped);
-		if (ASHE_UNLIKELY(!stopped &&
-				  !a_jobcntl_remove_job(&ashe.sh_jobcntl, job, NULL)))
+		if (ASHE_UNLIKELY(!stopped && !a_jobcntl_remove_job(&ashe.sh_jobcntl, job, NULL)))
 			ashe_panic("job not found");
 	} else {
 		a_job_mark_as_background(job, 1);
@@ -314,7 +307,7 @@ ASHE_PUBLIC void a_job_continue(struct a_job *job, a_ubyte isfg)
 ASHE_PUBLIC void a_job_free(struct a_job *job)
 {
 	a_arr_process_free(&job->processes, NULL);
-	afree((void *)job->input);
+	ashe_free((void *)job->input);
 }
 
 /* ==== JOB-CONTROL ==== */
@@ -331,8 +324,10 @@ ASHE_PUBLIC a_memmax a_jobcntl_jobs(struct a_jobcntl *jobcntl)
 	return a_arr_len(jobcntl->jobs);
 }
 
-/* Generate new id.
- * Auxiliary to 'a_jobcntl_add_job()'. */
+/*
+ * Generate new id.
+ * Auxiliary to 'a_jobcntl_add_job()'.
+ */
 ASHE_PRIVATE inline a_memmax Joblist_id(struct a_jobcntl *jobcntl)
 {
 	static a_int32 id = 1;
@@ -349,8 +344,10 @@ ASHE_PUBLIC void a_jobcntl_add_job(struct a_jobcntl *jobcntl, struct a_job *job)
 	a_arr_job_push(&jobcntl->jobs, *job);
 }
 
-/* Remove 'Job' from 'jobcntl' located at index 'i'.
- * Auxiliary to 'a_jobcntl_remove_job()'. */
+/*
+ * Remove 'Job' from 'jobcntl' located at index 'i'.
+ * Auxiliary to 'a_jobcntl_remove_job()'.
+ */
 ASHE_PRIVATE inline struct a_job a_jobcntl_remove(struct a_jobcntl *jobcntl, a_uint32 i)
 {
 	return a_arr_job_remove(&jobcntl->jobs, i);
@@ -362,9 +359,11 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_at(struct a_jobcntl *jobcntl, a_uint
 	return a_arr_job_index(&jobcntl->jobs, i);
 }
 
-/* Remove 'job' from 'jobcntl'.
+/*
+ * Remove 'job' from 'jobcntl'.
  * If 'job' was found, remove it and free its resources, this returns 1.
- * Return 0 if the job was not found. */
+ * Return 0 if the job was not found.
+ */
 ASHE_PUBLIC a_ubyte a_jobcntl_remove_job(struct a_jobcntl *jobcntl, struct a_job *job,
 					 struct a_job *out)
 {
@@ -380,20 +379,19 @@ ASHE_PUBLIC a_ubyte a_jobcntl_remove_job(struct a_jobcntl *jobcntl, struct a_job
 	}
 	return 0;
 }
-/* Update process corresponding to 'pid' with 'status'.
+
+/*
+ * Update process corresponding to 'pid' with 'status'.
  * Additionally report if the process was terminated by a signal.
- * Auxiliary to 'a_jobcntl_update()'. */
-ASHE_PRIVATE a_int32 a_jobcntl_update_process(struct a_jobcntl *jobcntl, a_pid pid,
-					      a_int32 status)
+ * Auxiliary to 'a_jobcntl_update()'.
+ */
+ASHE_PRIVATE a_int32 a_jobcntl_update_process(struct a_jobcntl *jobcntl, a_pid pid, a_int32 status)
 {
 	a_memmax jobcnt, i;
 	struct a_job *job;
 
-	if (pid <= 0) {
-		if (pid != 0 && errno != ECHILD)
-			ashe_perrno("waitpid");
+	if (pid == 0) /* WNOHANG specified (process stopped) */
 		return 0;
-	}
 
 	jobcnt = a_jobcntl_jobs(jobcntl);
 	for (i = 0; i < jobcnt; i++) {
@@ -404,27 +402,35 @@ ASHE_PRIVATE a_int32 a_jobcntl_update_process(struct a_jobcntl *jobcntl, a_pid p
 	return -1;
 }
 
-/* Wait for any child process to stop or terminate and update it.
+/*
+ * Wait for any child process to stop or terminate and update it.
  * This runs until there are no any process that stopped or were terminated.
- * Auxiliary to 'a_jobcntl_update_and_notify'. */
+ * Auxiliary to 'a_jobcntl_update_and_notify'.
+ */
 ASHE_PRIVATE void a_jobcntl_update(struct a_jobcntl *jobcntl)
 {
 	a_int32 status, ret;
 	a_pid pid;
 
 	do {
-		pid = waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
+		pid = ashe_waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
+		if (pid < 0) { /* ECHILD */
+			errno = 0;
+			break;
+		}
 		ret = a_jobcntl_update_process(jobcntl, pid, status);
 		ashe_assert(ret >= 0);
-	} while (ret > 0);
+	} while (pid > 0);
 }
 
-/* Updates the 'JobControl' by removing all of the finished jobs.
+/*
+ * Updates the 'JobControl' by removing all of the finished jobs.
  * Additionally reports any of the jobs that were completed and/or stopped.
  * In most cases gets called inside the signal handler, so we have to take
  * care of the terminal input and about redrawing the screen properly.
  * Calling this directly without masking off the other signals with
- * SIG_BLOCK is highly unsafe and will probably break something. */
+ * SIG_BLOCK is highly unsafe and will probably break something.
+ */
 ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 {
 	struct a_term *term = &ashe.sh_term;
@@ -433,7 +439,9 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 	struct a_job *job, out;
 	a_ubyte completed;
 
-	jobcnt = a_jobcntl_jobs(jobcntl);
+	if ((jobcnt = a_jobcntl_jobs(jobcntl)) == 0)
+		return;
+
 	a_jobcntl_update(jobcntl);
 
 	for (i = 0; i < jobcnt;) {
@@ -445,13 +453,12 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 			out = a_jobcntl_remove(jobcntl, i);
 			job = &out;
 			jobcnt--;
-			if (!job->foreground) /* @?: Can it ever be in fg ? */
-				goto l_redraw;
-			/* Is this reachable ? */
+			if (!job->foreground && !job->notified)
+				goto notify;
 			a_job_free(job);
 			continue;
 		} else if (a_job_is_stopped(job) && !job->notified) {
-l_redraw:
+notify:
 			if (ashe.sh_term.tm_reading) { /* in signal handler ? */
 				col = A_COL;
 				row = A_ROW;
@@ -459,15 +466,18 @@ l_redraw:
 				ashe_cursor_end();
 				ashe_print("\r\n", stderr);
 			}
-			ashe_pinfo("job %d %s %s", job->pgid, job->input,
-				   (completed ? "completed [+]" : "stopped [-]"));
+
+			ashe_pinfo("%d '%s' %s", job->pgid, job->input,
+				   (completed ? "<completed>" : "<stopped>"));
 			ashe_pprompt();
+
 			if (term->tm_reading) {
 				A_COL = col;
 				A_ROW = row;
 				A_IBFIDX = idx;
 				ashe_redraw();
 			}
+
 			if (completed) {
 				a_job_free(job);
 				continue;
@@ -478,10 +488,11 @@ l_redraw:
 	}
 }
 
-/* Returns address of a Job that has a matching 'id' inside of 'jobcntl'.
- * If no matching Job was found this returns NULL. */
-ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id(struct a_jobcntl *jobcntl,
-						    a_memmax id)
+/*
+ * Returns address of a Job that has a matching 'id' inside of 'jobcntl'.
+ * If no matching Job was found this returns NULL.
+ */
+ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id(struct a_jobcntl *jobcntl, a_memmax id)
 {
 	a_memmax jobcnt, i;
 	struct a_job *job;
@@ -495,9 +506,11 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id(struct a_jobcntl *jobcntl,
 	return NULL;
 }
 
-/* Returns address of a Job that contains a process with matching
+/*
+ * Returns address of a Job that contains a process with matching
  * 'pid' inside of 'jobcntl'.
- * If no matching Job was found this returns NULL. */
+ * If no matching Job was found this returns NULL.
+ */
 ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pid(struct a_jobcntl *jobcntl, a_pid pid)
 {
 	a_memmax jobcnt, proc_cnt, i, j;
@@ -514,10 +527,11 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pid(struct a_jobcntl *jobcntl, 
 	return NULL;
 }
 
-/* Returns address of a Job that has a matching 'pgid' inside of 'jobcntl'.
- * If no matching Job was found this returns NULL. */
-ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pgid(struct a_jobcntl *jobcntl,
-						      a_pid pgid)
+/*
+ * Returns address of a Job that has a matching 'pgid' inside of 'jobcntl'.
+ * If no matching Job was found this returns NULL.
+ */
+ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pgid(struct a_jobcntl *jobcntl, a_pid pgid)
 {
 	a_memmax jobcnt, i;
 	struct a_job *job;
@@ -533,11 +547,13 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pgid(struct a_jobcntl *jobcntl,
 	return NULL;
 }
 
-/* Gets the Job from 'jobcntl' that matches the 'where' flag.
+/*
+ * Gets the Job from 'jobcntl' that matches the 'where' flag.
  * If 'where' is a non zero value then only foreground jobs can be returned.
  * If 'where' is zero then only a background job can be returned.
  * If no matching jobs were found, NULL is returned.
- * If the job is found it will be returned as in fifo (first in first out). */
+ * If the job is found it will be returned as in fifo (first in first out).
+ */
 ASHE_PUBLIC struct a_job *a_jobcntl_get_job_from(struct a_jobcntl *jobcntl, a_ubyte where)
 {
 	a_memmax jobcnt;
@@ -555,18 +571,21 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_from(struct a_jobcntl *jobcntl, a_ub
 	return NULL;
 }
 
-/* Gets the Job from 'jobcntl' that matches 'where' and has matching 'id'.
+/*
+ * Gets the Job from 'jobcntl' that matches 'where' and has matching 'id'.
  * If 'where' is a non zero value then only foreground jobs can be returned.
  * If 'where is zero then only a background job can be returned.
  * Job additionally must have matching 'id'.
  * If no matching jobs were found, NULL is returned.
- * If the job is found it will be returned as in fifo (first in first out). */
-ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id_from(struct a_jobcntl *jobcntl,
-							 a_memmax id, a_ubyte where)
+ * If the job is found it will be returned as in fifo (first in first out).
+ */
+ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id_from(struct a_jobcntl *jobcntl, a_memmax id,
+							 a_ubyte where)
 {
 	a_memmax jobcnt;
 	struct a_job *job;
 
+	where = (where != 0);
 	jobcnt = a_jobcntl_jobs(jobcntl);
 
 	while (jobcnt--) {
@@ -578,18 +597,21 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_id_from(struct a_jobcntl *jobcn
 	return NULL;
 }
 
-/* Gets the Job from 'jobcntl' that matches 'where' and 'pid'.
+/*
+ * Gets the Job from 'jobcntl' that matches 'where' and 'pid'.
  * If 'where' is a non zero value then only foreground jobs can be returned.
  * If 'where is zero then only a background job can be returned.
  * Job additionally must have matching 'pid'.
  * If no matching jobs were found, NULL is returned.
- * If the job is found it will be returned as in fifo (first in first out). */
-ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pid_from(struct a_jobcntl *jobcntl,
-							  a_pid pid, a_ubyte where)
+ * If the job is found it will be returned as in fifo (first in first out).
+ */
+ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pid_from(struct a_jobcntl *jobcntl, a_pid pid,
+							  a_ubyte where)
 {
 	a_memmax jobcnt;
 	struct a_job *job;
 
+	where = (where != 0);
 	jobcnt = a_jobcntl_jobs(jobcntl);
 
 	while (jobcnt--) {
@@ -601,19 +623,23 @@ ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pid_from(struct a_jobcntl *jobc
 	return NULL;
 }
 
-/* Gets the Job from 'jobcntl' that matches 'where' and has matching 'pgid'.
+/*
+ * Gets the Job from 'jobcntl' that matches 'where' and has matching 'pgid'.
  * If 'where' is a non zero value then only foreground jobs can be returned.
  * If 'where is zero then only a background job can be returned.
  * Job additionally must have matching 'pgid'.
  * If no matching jobs were found, NULL is returned.
- * If the job is found it will be returned as in fifo (first in first out). */
-ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pgid_from(struct a_jobcntl *jobcntl,
-							   a_pid pgid, a_ubyte where)
+ * If the job is found it will be returned as in fifo (first in first out).
+ */
+ASHE_PUBLIC struct a_job *a_jobcntl_get_job_with_pgid_from(struct a_jobcntl *jobcntl, a_pid pgid,
+							   a_ubyte where)
 {
 	struct a_job *job;
 	a_memmax jobcnt;
 
+	where = (where != 0);
 	jobcnt = a_jobcntl_jobs(jobcntl);
+
 	while (jobcnt--) {
 		job = a_jobcntl_get_job_at(jobcntl, jobcnt);
 		if (job->pgid == pgid && job->foreground == where)
@@ -635,34 +661,44 @@ ASHE_PRIVATE void a_job_kill_and_harvest(struct a_job *job)
 	struct timespec ts;
 	a_memmax zombies, processes;
 
-	if (kill(-job->pgid, SIGKILL) < 0)
-		ashe_perrno("coudln't send signal %d to pgid %d", SIGKILL, job->pgid);
+	/* do not call wrapper, it's okay if this fails*/
+	if (ASHE_UNLIKELY(kill(-job->pgid, SIGKILL) < 0))
+		ashe_perrno("kill");
 
 	ts.tv_sec = 0;
 	ts.tv_nsec = (ASHE_WAIT_BEFORE_HARVEST_MS % 1000) * 1000000;
-	nanosleep(&ts, NULL);
+
+	if (ASHE_UNLIKELY(nanosleep(&ts, NULL) < 0))
+		ashe_perrno("nanosleep");
 
 	zombies = 0;
 	processes = a_job_processes(job);
-	do { /* harvest */
-		pid = waitpid(-job->pgid, NULL, WUNTRACED);
+	ashe_assert(processes > 0);
+
+	do {
+		pid = ashe_waitpid(-job->pgid, NULL, WUNTRACED);
+		ashe_assert(pid >= 0);
 		if (pid == 0)
 			zombies++;
-		processes--;
-	} while (pid != -1 && processes > 0);
+	} while (--processes > 0);
 
 	if (ASHE_UNLIKELY(zombies > 0))
-		ashe_eprintf("was unable to reap %d processes in PGID %d", zombies,
-			     job->pgid);
+		ashe_eprintf("created %d zombie processes in PGID %d", zombies, job->pgid);
 }
 
-/* Kills and harvests all processes belonging
- * to any job inside of 'jobcntl'. */
+/*
+ * Kills and harvests all processes belonging
+ * to any job inside of 'jobcntl'.
+ */
 ASHE_PUBLIC void a_jobcntl_harvest(struct a_jobcntl *jobcntl)
 {
 	a_memmax len;
+	struct a_job *job;
 
 	len = a_jobcntl_jobs(jobcntl);
-	while (len--)
-		a_job_kill_and_harvest(a_jobcntl_get_job_at(jobcntl, len));
+
+	while (len--) {
+		job = a_jobcntl_get_job_at(jobcntl, len);
+		a_job_kill_and_harvest(job);
+	}
 }

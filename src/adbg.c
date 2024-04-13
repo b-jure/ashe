@@ -11,7 +11,6 @@
 #include <dirent.h>
 
 /* push string literal */
-#define SS(str)				 (sizeof(str) - 1)
 #define a_arr_char_push_strlit(out, lit) a_arr_char_push_str(out, lit, SS(lit))
 
 /* push tabs for proper indentation */
@@ -94,10 +93,8 @@ ASHE_PRIVATE inline const char *num2str(a_memmax n)
 {
 	static char buffer[ASHE_INT64_DIGITS + 1];
 
-	if (ASHE_UNLIKELY(snprintf(buffer, sizeof(buffer) - 1, "%lu", n))) {
-		ashe_perrno("snprintf");
-		ashe_panic(NULL);
-	}
+	if (ASHE_UNLIKELY(snprintf(buffer, sizeof(buffer) - 1, "%lu", n) < 0))
+		ashe_panic_libcall(snprintf);
 	return buffer;
 }
 
@@ -140,8 +137,7 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
  *
  */
 
-ASHE_PRIVATE void debug_prefix(const char *type, const char *name, a_uint32 tabs,
-			       a_arr_char *out)
+ASHE_PRIVATE void debug_prefix(const char *type, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	a_arr_char_push_str(out, type, strlen(type));
@@ -160,8 +156,7 @@ ASHE_PRIVATE void debug_suffix(a_uint32 tabs, a_arr_char *out)
 
 /*			TERMS				*/
 
-ASHE_PUBLIC void debug_number(a_ssize n, const char *name, a_uint32 tabs,
-			      a_arr_char *out)
+ASHE_PUBLIC void debug_number(a_ssize n, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	if (name != NULL)
@@ -169,8 +164,7 @@ ASHE_PUBLIC void debug_number(a_ssize n, const char *name, a_uint32 tabs,
 	a_arr_char_push_num(out, n);
 }
 
-ASHE_PUBLIC void debug_boolean(a_ubyte b, const char *name, a_uint32 tabs,
-			       a_arr_char *out)
+ASHE_PUBLIC void debug_boolean(a_ubyte b, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	const char *boolean;
 
@@ -181,8 +175,7 @@ ASHE_PUBLIC void debug_boolean(a_ubyte b, const char *name, a_uint32 tabs,
 	a_arr_char_push_str(out, boolean, strlen(boolean));
 }
 
-ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, a_uint32 tabs,
-			   a_arr_char *out)
+ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	if (name != NULL)
@@ -190,8 +183,8 @@ ASHE_PUBLIC void debug_ptr(const void *ptr, const char *name, a_uint32 tabs,
 	a_arr_char_push_ptr(out, ptr);
 }
 
-ASHE_PUBLIC void debug_string(const char *str, a_memmax len, const char *name,
-			      a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_string(const char *str, a_memmax len, const char *name, a_uint32 tabs,
+			      a_arr_char *out)
 {
 	pushtabs(out, tabs);
 	if (name != NULL)
@@ -199,8 +192,7 @@ ASHE_PUBLIC void debug_string(const char *str, a_memmax len, const char *name,
 	a_arr_char_push_str(out, str, len);
 }
 
-ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, a_uint32 tabs,
-			      a_arr_char *out)
+ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	const char *string;
 
@@ -296,8 +288,7 @@ ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name, a_uint32 t
 	a_arr_char_push_str(out, suffix, strlen(suffix));
 }
 
-ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 tabs,
-			       a_arr_char *out)
+ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	const char *suffix;
 
@@ -322,8 +313,8 @@ ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 ta
 	a_arr_char_push_str(out, suffix, strlen(suffix));
 }
 
-ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name,
-				   a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name, a_uint32 tabs,
+				   a_arr_char *out)
 {
 	const char *suffix;
 
@@ -365,15 +356,14 @@ ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name,
 
 /*			STRUCTS				 */
 
-ASHE_PRIVATE void debug_struct_prefix(const char *type, const char *name,
-				      a_uint32 tabs, a_arr_char *out)
+ASHE_PRIVATE void debug_struct_prefix(const char *type, const char *name, a_uint32 tabs,
+				      a_arr_char *out)
 {
 	debug_prefix(type, name, tabs, out);
 	a_arr_char_push_strlit(out, "{\n");
 }
 
-ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, a_uint32 tabs,
-			     a_arr_char *out)
+ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_token", name, tabs, out);
@@ -397,8 +387,8 @@ ASHE_PUBLIC void debug_token(struct a_token *tok, const char *name, a_uint32 tab
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
-				a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name, a_uint32 tabs,
+				a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_redirect", name, tabs, out);
@@ -419,8 +409,8 @@ ASHE_PUBLIC void debug_redirect(struct a_redirect *rd, const char *name,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_simple_cmd(struct a_simple_cmd *scmd, const char *name,
-				  a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_simple_cmd(struct a_simple_cmd *scmd, const char *name, a_uint32 tabs,
+				  a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_simple_cmd", name, tabs, out);
@@ -437,8 +427,7 @@ ASHE_PUBLIC void debug_simple_cmd(struct a_simple_cmd *scmd, const char *name,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, a_uint32 tabs,
-			   a_arr_char *out)
+ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	switch (cmd->c_type) {
 	case ACMD_SIMPLE:
@@ -451,8 +440,8 @@ ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, a_uint32 tabs,
 	}
 }
 
-ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name,
-				a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name, a_uint32 tabs,
+				a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_pipeline", name, tabs, out);
@@ -471,8 +460,7 @@ ASHE_PUBLIC void debug_pipeline(struct a_pipeline *pipeline, const char *name,
 	debug_suffix(tabs, out);
 }
 
-ASHE_PUBLIC void debug_list(struct a_list *list, const char *name, a_uint32 tabs,
-			    a_arr_char *out)
+ASHE_PUBLIC void debug_list(struct a_list *list, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	/* prefix */
 	debug_struct_prefix("struct a_list", name, tabs, out);
@@ -505,8 +493,8 @@ ASHE_PUBLIC void debug_block(struct a_block *block, const char *name, a_uint32 t
  *			ARRAYS
  */
 
-ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name, a_uint32 len,
-				   a_uint32 tabs, a_arr_char *out)
+ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name, a_uint32 len, a_uint32 tabs,
+				   a_arr_char *out)
 {
 	debug_prefix(type, name, tabs, out);
 	a_arr_char_push(out, '[');
@@ -514,32 +502,30 @@ ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name, a_uint32 
 	a_arr_char_push_strlit(out, "] = {\n");
 }
 
-ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *ccharps, const char *name,
-				  a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *ccharps, const char *name, a_uint32 tabs,
+				  a_arr_char *out)
 {
 	debug_arr(ccharp, ccharps, name, tabs, out, derefidxfn(ccharp));
 }
 
-ASHE_PUBLIC void debug_arr_redirect(a_arr_redirect *rds, const char *name,
-				    a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_arr_redirect(a_arr_redirect *rds, const char *name, a_uint32 tabs,
+				    a_arr_char *out)
 {
 	debug_arr(redirect, rds, name, tabs, out, refidxfn(redirect));
 }
 
-ASHE_PUBLIC void debug_arr_cmd(a_arr_cmd *cmds, const char *name, a_uint32 tabs,
-			       a_arr_char *out)
+ASHE_PUBLIC void debug_arr_cmd(a_arr_cmd *cmds, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	debug_arr(cmd, cmds, name, tabs, out, refidxfn(cmd));
 }
 
-ASHE_PUBLIC void debug_arr_pipeline(a_arr_pipeline *pipes, const char *name,
-				    a_uint32 tabs, a_arr_char *out)
+ASHE_PUBLIC void debug_arr_pipeline(a_arr_pipeline *pipes, const char *name, a_uint32 tabs,
+				    a_arr_char *out)
 {
 	debug_arr(pipeline, pipes, name, tabs, out, refidxfn(pipeline));
 }
 
-ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name, a_uint32 tabs,
-				a_arr_char *out)
+ASHE_PUBLIC void debug_arr_list(a_arr_list *lists, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	debug_arr(list, lists, name, tabs, out, refidxfn(list));
 }

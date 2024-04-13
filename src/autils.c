@@ -3,6 +3,7 @@
 #include "ashell.h"
 #include "autils.h"
 
+#include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -39,8 +40,8 @@ ASHE_PUBLIC void ashe_vprintf(FILE *stream, const char *msg, va_list argp)
 	ashe_flush(stream);
 }
 
-ASHE_PRIVATE void ashe_vprintf_prefix(FILE *stream, const char *fmt,
-				      const char *prefix, va_list argp)
+ASHE_PRIVATE void ashe_vprintf_prefix(FILE *stream, const char *fmt, const char *prefix,
+				      va_list argp)
 {
 	ashe_printf(stream, prefix);
 	ashe_vprintf(stream, fmt, argp);
@@ -75,7 +76,8 @@ ASHE_PUBLIC void ashe_perrno(const char *errfmt, ...)
 
 	ashe_assert(errno != 0);
 	if (ASHE_UNLIKELY(errno == ENOMEM)) {
-		perror(__func__);
+		perror("ashe");
+		ashe_panic_abort();
 	} else {
 		ashe_print(ASHE_ERR_PREFIX, stderr);
 		if (errfmt != NULL) {
@@ -84,7 +86,7 @@ ASHE_PUBLIC void ashe_perrno(const char *errfmt, ...)
 			va_end(argp);
 			ashe_printf(stderr, ": %s\n\r", strerror(errno));
 		} else {
-			perror(__func__);
+			perror(NULL);
 		}
 	}
 }
@@ -102,7 +104,7 @@ ASHE_PUBLIC char *ashe_dupstrn(const char *str, a_memmax len)
 {
 	char *dup;
 
-	dup = amalloc(len + 1);
+	dup = ashe_malloc(len + 1);
 	dup[len] = '\0';
 	memcpy(dup, str, len);
 	return dup;
@@ -114,7 +116,7 @@ ASHE_PUBLIC char *ashe_dupstr(const char *str)
 	a_memmax len;
 
 	len = strlen(str) + 1;
-	dup = amalloc(len);
+	dup = ashe_malloc(len);
 	dup[len - 1] = '\0';
 	memcpy(dup, str, len);
 	return dup;
@@ -215,8 +217,7 @@ ASHE_PUBLIC a_ubyte ashe_isescaped(const char *restrict str, a_memmax curpos)
 
 	ashe_assert(str != NULL);
 	at = str + curpos;
-	return (curpos > 0 && ((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') ||
-			       at[-1] == '\\'));
+	return (curpos > 0 && ((curpos > 1 && at[-1] == '\\' && at[-2] != '\\') || at[-1] == '\\'));
 }
 
 /* Unescape tabs, newlines, etc.. for more readable output in debug functions. */
@@ -286,7 +287,7 @@ ASHE_PUBLIC void ashe_escape(a_arr_char *buffer)
 }
 
 /*
- * SYSCALL WRAPPERS
+ * libc wrappers
  */
 
 ASHE_PUBLIC a_int32 ashe_open(const char *file, a_ubyte how, a_ubyte append)
@@ -294,6 +295,7 @@ ASHE_PUBLIC a_int32 ashe_open(const char *file, a_ubyte how, a_ubyte append)
 	a_int32 fd;
 	a_memmax o_flags;
 
+	errno = 0;
 	o_flags = 0;
 
 	switch (how) {
@@ -311,43 +313,124 @@ checkappend:
 		break;
 	default:
 		/* UNREACHED */
-		ashe_panic("invalid open mode");
+		ashe_panic_libwcall(ashe_open, "invalid open mode");
 		break;
 	}
 
 	if (ASHE_UNLIKELY(fd < 0))
 		ashe_perrno("can't open file '%s'", (file ? file : "(null)"));
+
 	return fd;
 }
 
-ASHE_PUBLIC a_int32 ashe_dup2(a_int32 oldfd, a_int32 newfd)
+ASHE_PUBLIC void ashe_dup2(a_int32 oldfd, a_int32 newfd)
 {
-	if (ASHE_UNLIKELY(dup2(oldfd, newfd) < 0)) {
-		ashe_perrno("ashe_dup2(%d, %d) failed", oldfd, newfd);
-		return -1;
-	}
-	return 0;
+	errno = 0;
+	if (ASHE_UNLIKELY(dup2(oldfd, newfd) < 0))
+		ashe_panic_libcall(dup2);
 }
 
-ASHE_PUBLIC a_int32 ashe_close(a_int32 fd)
+ASHE_PUBLIC void ashe_close(a_int32 fd)
 {
-	if (ASHE_UNLIKELY(close(fd) < 0)) {
-		ashe_perrno("ashe_close(%d) failed", fd);
-		return -1;
-	}
-	return 0;
+	errno = 0;
+	if (ASHE_UNLIKELY(close(fd) < 0))
+		ashe_panic_libcall(close);
 }
 
-ASHE_PUBLIC a_int32 ashe_write(a_int32 fd, const void *buf, a_memmax bts)
+ASHE_PUBLIC void ashe_write(a_int32 fd, const void *buf, a_memmax bts)
 {
-	if (ASHE_UNLIKELY(write(fd, buf, bts) < 0)) {
-		ashe_perrno("failed writting %zu bytes to fd %d from %p", bts, fd, buf);
-		return -1;
-	}
-	return 0;
+	errno = 0;
+	if (ASHE_UNLIKELY(write(fd, buf, bts) < 0))
+		ashe_panic_libcall(write);
 }
 
-ASHE_PUBLIC void ashe_exit(a_int32 status)
+ASHE_PUBLIC a_ssize ashe_read(a_int32 fd, void *buf, a_memmax bts)
+{
+	a_ssize n;
+
+	errno = 0;
+	if (ASHE_UNLIKELY((n = read(fd, buf, bts)) < 0))
+		ashe_panic_libcall(read);
+	return n;
+}
+
+ASHE_PUBLIC void ashe_kill(a_pid pid, a_int32 sig)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(kill(pid, sig) < 0))
+		ashe_panic_libcall(kill);
+}
+
+ASHE_PUBLIC a_pid ashe_waitpid(a_pid pid, a_int32 *status, a_int32 opts)
+{
+	a_pid ret;
+
+	errno = 0;
+	if (ASHE_UNLIKELY((ret = waitpid(pid, status, opts)) < 0 && errno != ECHILD))
+		ashe_panic_libcall(waitpid);
+	return ret;
+}
+
+ASHE_PUBLIC void ashe_setpgid(a_pid pid, a_pid pgid)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(setpgid(pid, pgid) < 0))
+		ashe_panic_libcall(setpgid);
+}
+
+ASHE_PUBLIC void ashe_tcsetpgrp(a_pid pgid)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(tcsetpgrp(STDIN_FILENO, pgid) < 0))
+		ashe_panic_libcall(tcsetpgrp);
+}
+
+ASHE_PUBLIC void ashe_tcsetattr(a_int32 actions, const struct termios *tp)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(tcsetattr(STDIN_FILENO, actions, tp) < 0))
+		ashe_panic_libcall(tcsetattr);
+}
+
+ASHE_PUBLIC void ashe_tcgetattr(struct termios *tp)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(tcgetattr(STDIN_FILENO, tp) < 0))
+		ashe_panic_libcall(tcgetattr);
+}
+
+ASHE_PUBLIC void ashe_setenv(const char *name, const char *value, a_int32 overwrite)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(setenv(name, value, overwrite) < 0))
+		ashe_panic_libcall(setenv);
+}
+
+ASHE_PUBLIC void ashe_pipe(a_int32 *pipefds)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(pipe(pipefds) < 0))
+		ashe_panic_libcall(pipe);
+}
+
+ASHE_PUBLIC a_pid ashe_fork(void)
+{
+	a_pid pid;
+
+	errno = 0;
+	if (ASHE_UNLIKELY((pid = fork()) < 0))
+		ashe_panic_libcall(fork);
+	return pid;
+}
+
+ASHE_PUBLIC void ashe_sigaction(a_int32 sig, const struct sigaction *act, struct sigaction *oact)
+{
+	errno = 0;
+	if (ASHE_UNLIKELY(sigaction(sig, act, oact) < 0))
+		ashe_panic_libcall(sigaction);
+}
+
+ASHE_PUBLIC ASHE_NORET ashe_exit(a_int32 status)
 {
 	if (ashe.sh_flags.isfork) {
 		ashe_cleanupfork();
