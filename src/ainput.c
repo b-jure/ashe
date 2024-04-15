@@ -630,6 +630,7 @@ ASHE_PRIVATE a_ubyte process_key(void)
 	return 1;
 }
 
+// TODO: SIGWINCH handler needs fixing !!!
 /* Read input from STDIN_FILENO. */
 ASHE_PUBLIC void a_terminput_read(void)
 {

@@ -50,12 +50,6 @@ ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 {
 	pid_t sh_pgid;
 
-#if defined(ASHE_DBG_CURSOR)
-	logfile_create("debug_cursor.dbg.txt", ALOG_CURSOR);
-#endif
-#if defined(ASHE_DBG_LINES)
-	logfile_create("debug_lines.dbg.txt", ALOG_LINES);
-#endif
 	sh_pgid = getpgrp();
 	a_jobcntl_init(&sh->sh_jobcntl);
 	sh_init_buffers(sh);

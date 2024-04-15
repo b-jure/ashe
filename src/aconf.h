@@ -75,7 +75,7 @@ static a_promptfn placeholders[] = {
 	"\tdate   - %6\n"
 
 /* ---- Prompt ---- */
-#define ASHE_PROMPT "$ "
+#define ASHE_PROMPT "[%4]$ "
 
 /* ---- Settings ---- */
 #define ASHE_SETTING_WARN_ON_EXIT 1

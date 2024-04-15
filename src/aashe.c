@@ -27,6 +27,13 @@ int main(int argc, char **argv)
 	jobcntl = &ashe.sh_jobcntl;
 	a_shell_init(&ashe);
 
+#if defined(ASHE_DBG_CURSOR)
+	logfile_create("/tmp/ashe.cursor.dbg.txt", ALOG_CURSOR);
+#endif
+#if defined(ASHE_DBG_LINES)
+	logfile_create("/tmp/ashe.lines.dbg.txt", ALOG_LINES);
+#endif
+
 	for (;;) { /* REPL */
 		ashe_pprompt();
 		a_terminput_clear();
