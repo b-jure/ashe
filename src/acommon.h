@@ -94,11 +94,14 @@ typedef void (*a_sighandler)(int);
 #define SS(str) (sizeof(str) - 1)
 /* -------------------------------- */
 
-/* max digits */
-#define ASHE_INT64_DIGITS 20
-#define ASHE_INT32_DIGITS 10
-#define ASHE_INT16_DIGITS 5
-#define ASHE_INT8_DIGITS  3
+/* max length of the conversion of a number to a string */
+#define ASHE_MAXNUM2STR 44
+/* -------------------------------- */
+
+/* formats */
+#define ASHE_DOUBLE_FMT "%.7g"
+#define ASHE_NUMBER_FMT "%zd"
+#define ASHE_PTR_FMT	"%p"
 /* -------------------------------- */
 
 /* defer */

@@ -1,40 +1,34 @@
 #include "acommon.h"
 #include "ainput.h"
+#include "autils.h"
 #include "aparser.h"
 #include "autils.h"
 #include "adbg.h"
-#include "aprompt.h"
-#include "ashell.h" /* avoid recursive include in 'ainput.h' */
+#include "ashell.h"
 
 #include <stdio.h>
 #include <errno.h>
 #include <dirent.h>
 
-/* push string literal */
-#define a_arr_char_push_strlit(out, lit) a_arr_char_push_str(out, lit, SS(lit))
-
 /* push tabs for proper indentation */
-#define ASHE_TAB 4
-#define pushtabs(out, tabs)                             \
-	for (a_uint32 i = 0; i < tabs; i++)             \
-		for (a_uint32 j = 0; j < ASHE_TAB; j++) \
-			a_arr_char_push(out, ' ');
+#define pushtabs(out, tabs)                            \
+	for (a_uint32 i = 0; i < tabs * ASHE_TAB; i++) \
+		a_arr_char_push(out, ' ');
 
 /* push struct/array value separator */
 #define pushsep(out) a_arr_char_push_strlit(out, ",\n")
+
 /* push struct field name */
-#define pushfieldname(out, name)                              \
-	do {                                                  \
-		a_arr_char_push_str(out, name, strlen(name)); \
-		a_arr_char_push_strlit(out, ": ");            \
-	} while (0)
+#define pushfieldname(out, name) a_arr_char_push_strf(out, "%s: ", name)
 
 /* generic array index function */
 #define refidxfn(type)	 a_arr_##type##_index
 #define derefidxfn(type) *a_arr_##type##_index
+
 /* debug generic array */
 #define debug_arr(type, ptr, name, tabs, out, idxfn) \
 	debug_arr_internal(type, ptr, name, tabs, out, idxfn)
+
 #define debug_arr_internal(type, ptr, name, tabs, out, idxfn)           \
 	do {                                                            \
 		a_uint32 len, i;                                        \
@@ -91,10 +85,8 @@ static const char *tokenstr[] = {
 /* Auxiliary to 'a_token_debug()' */
 ASHE_PRIVATE inline const char *num2str(a_memmax n)
 {
-	static char buffer[ASHE_INT64_DIGITS + 1];
-
-	if (ASHE_UNLIKELY(snprintf(buffer, sizeof(buffer) - 1, "%lu", n) < 0))
-		ashe_panic_libcall(snprintf);
+	static char buffer[ASHE_MAXNUM2STR + 1];
+	ashe_snprintf(buffer, sizeof(buffer) - 1, "%zu", n);
 	return buffer;
 }
 
@@ -126,7 +118,7 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
 		return num2str(token->u.number);
 	default:
 		/* UNREACHED */
-		ashe_assert(0);
+		ashe_panic("unreachable");
 		return NULL;
 	}
 }
@@ -140,12 +132,9 @@ ASHE_PUBLIC const char *a_token_str(struct a_token *token)
 ASHE_PRIVATE void debug_prefix(const char *type, const char *name, a_uint32 tabs, a_arr_char *out)
 {
 	pushtabs(out, tabs);
-	a_arr_char_push_str(out, type, strlen(type));
-	a_arr_char_push(out, ' ');
-	if (name != NULL) {
-		a_arr_char_push_str(out, name, strlen(name));
-		a_arr_char_push(out, ' ');
-	}
+	a_arr_char_push_strf(out, "%s ", type);
+	if (name != NULL)
+		a_arr_char_push_strf(out, "%s ", name);
 }
 
 ASHE_PRIVATE void debug_suffix(a_uint32 tabs, a_arr_char *out)
@@ -161,7 +150,7 @@ ASHE_PUBLIC void debug_number(a_ssize n, const char *name, a_uint32 tabs, a_arr_
 	pushtabs(out, tabs);
 	if (name != NULL)
 		pushfieldname(out, name);
-	a_arr_char_push_num(out, n);
+	a_arr_char_push_number(out, n);
 }
 
 ASHE_PUBLIC void debug_boolean(a_ubyte b, const char *name, a_uint32 tabs, a_arr_char *out)
@@ -200,9 +189,7 @@ ASHE_PUBLIC void debug_ccharp(const char *ptr, const char *name, a_uint32 tabs, 
 	pushtabs(out, tabs);
 	if (name != NULL)
 		pushfieldname(out, name);
-	a_arr_char_push(out, '"');
-	a_arr_char_push_str(out, string, strlen(string));
-	a_arr_char_push(out, '"');
+	a_arr_char_push_strf(out, "\"%s\"", string);
 }
 
 /*			ENUMS				*/
@@ -215,7 +202,6 @@ ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name, a_uint32 t
 	pushtabs(out, tabs);
 	if (name != NULL)
 		pushfieldname(out, name);
-	a_arr_char_push_strlit(out, "TK_");
 	switch (type) {
 	case TK_AND_AND:
 		suffix = "AND_AND";
@@ -282,10 +268,10 @@ ASHE_PUBLIC void debug_toktype(enum a_toktype type, const char *name, a_uint32 t
 		break;
 	default:
 		/* UNREACHED */
-		ashe_assert(0);
+		ashe_panic("unreachable");
 		break;
 	}
-	a_arr_char_push_str(out, suffix, strlen(suffix));
+	a_arr_char_push_strf(out, "TK_%s", suffix);
 }
 
 ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 tabs, a_arr_char *out)
@@ -295,7 +281,6 @@ ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 ta
 	pushtabs(out, tabs);
 	if (name != NULL)
 		pushfieldname(out, name);
-	a_arr_char_push_strlit(out, "ACON_");
 	switch (con) {
 	case ACON_NONE:
 		suffix = "NONE";
@@ -307,10 +292,10 @@ ASHE_PUBLIC void debug_connect(enum a_connect con, const char *name, a_uint32 ta
 		suffix = "OR";
 		break;
 	default: /* UNREACHED */
-		ashe_assert(0);
+		ashe_panic("unreachable");
 		break;
 	}
-	a_arr_char_push_str(out, suffix, strlen(suffix));
+	a_arr_char_push_strf(out, "ACON_%s", suffix);
 }
 
 ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name, a_uint32 tabs,
@@ -321,7 +306,6 @@ ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name, a_ui
 	pushtabs(out, tabs);
 	if (name != NULL)
 		pushfieldname(out, name);
-	a_arr_char_push_strlit(out, "ARDOP_");
 	switch (op) {
 	case ARDOP_REDIRECT_ERROUT:
 		suffix = "REDIRECT_ERROUT";
@@ -348,10 +332,10 @@ ASHE_PUBLIC void debug_redirect_op(enum a_redirect_op op, const char *name, a_ui
 		a_arr_char_push_strlit(out, "CLOSE");
 		return;
 	default: /* UNREACHED */
-		ashe_assert(0);
+		ashe_panic("unreachable");
 		return;
 	}
-	a_arr_char_push_str(out, suffix, strlen(suffix));
+	a_arr_char_push_strf(out, "ARDOP_%s", suffix);
 }
 
 /*			STRUCTS				 */
@@ -435,7 +419,7 @@ ASHE_PUBLIC void debug_cmd(struct a_cmd *cmd, const char *name, a_uint32 tabs, a
 		break;
 	default:
 		/* UNREACHED */
-		ashe_assert(0);
+		ashe_panic("unreachable");
 		break;
 	}
 }
@@ -497,9 +481,7 @@ ASHE_PRIVATE void debug_arr_prefix(const char *type, const char *name, a_uint32 
 				   a_arr_char *out)
 {
 	debug_prefix(type, name, tabs, out);
-	a_arr_char_push(out, '[');
-	a_arr_char_push_num(out, len);
-	a_arr_char_push_strlit(out, "] = {\n");
+	a_arr_char_push_strf(out, "[%n] = {\n", len);
 }
 
 ASHE_PUBLIC void debug_arr_ccharp(a_arr_ccharp *ccharps, const char *name, a_uint32 tabs,
@@ -563,112 +545,51 @@ ASHE_PUBLIC void debug_ast(struct a_block *block)
 /* Debug cursor position */
 ASHE_PUBLIC void debug_cursor(void)
 {
-	static char buffer[1028];
-	FILE *fp = NULL;
-	a_memmax len = 0;
-	a_ssize temp = 0;
-	a_int32 status;
+	a_arr_char buffer;
+	a_int32 fd;
 
-	status = 0;
-	errno = 0;
-	if (ASHE_UNLIKELY((fp = fopen(logfiles[ALOG_CURSOR], "a")) == NULL))
-		ASHE_DEFER(-1);
+	a_arr_char_init(&buffer);
 
-	temp = snprintf(
-		buffer, sizeof(buffer),
-		"[A_TCOLMAX:%u][A_TCOL:%u][A_ROW:%u][LINE_LEN:%lu][A_COL:%u][A_IBFIDX:%lu]\r\n",
+	if (ASHE_UNLIKELY((fd = ashe_open(logfiles[ALOG_CURSOR], AHOW_RW, 1)) < 0))
+		ashe_panic_libwcall(ashe_open, "can't open logfile for cursor logging");
+	a_arr_char_push_strf(
+		&buffer,
+		"[A_TCOLMAX:%n][A_TCOL:%n][A_ROW:%n][LINE_LEN:%n][A_COL:%n][A_IBFIDX:%n]\n",
 		A_TCOLMAX, A_TCOL, A_ROW, A_LINE.len, A_COL, A_IBFIDX);
+	ashe_write(fd, a_arr_ptr(buffer), a_arr_len(buffer));
 
-	if (ASHE_UNLIKELY(temp < 0 || temp > BUFSIZ))
-		ASHE_DEFER(-1);
-
-	len += temp;
-
-	if (ASHE_UNLIKELY(fwrite(buffer, sizeof(a_byte), len, fp) != len))
-		ASHE_DEFER(-1);
-	if (ASHE_UNLIKELY(fclose(fp) == EOF))
-		ASHE_DEFER(-1);
-defer:
-	if (status == -1) {
-		if (fp)
-			fclose(fp);
-		ashe_perrno(NULL);
-		ashe_panic(NULL);
-	}
+	ashe_close(fd);
+	a_arr_char_free(&buffer, NULL);
 }
 
-// clang-format off
 /* Debug each row and its line (contents) */
 ASHE_PUBLIC void debug_lines(void)
 {
-	static char temp[128];
 	a_arr_char buffer;
-	FILE *fp = NULL;
-	a_uint32 i, idx;
-	a_int32 status;
-	a_ssize len;
+	struct a_line *line;
+	a_uint32 i;
+	a_int32 fd;
 
-	status = 0;
-	errno = 0;
 	a_arr_char_init(&buffer);
 
-	if (ASHE_UNLIKELY((fp = fopen(logfiles[ALOG_LINES], "w")) == NULL))
-		ASHE_DEFER(-1);
+	if (ASHE_UNLIKELY((fd = ashe_open(logfiles[ALOG_LINES], AHOW_W, 0)) < 0))
+		ashe_panic_libwcall(ashe_open, "can't open logfile for logging lines");
 
-	if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp), "[A_PLEN:%lu] -> [", A_PLEN)) < 0
-				|| (a_memmax)len > sizeof(temp))) {
-		ASHE_DEFER(-1);
-	}
-
-	a_arr_char_push_str(&buffer, temp, len);
-	a_arr_char_push_str(&buffer, a_arr_ptr(ashe.sh_prompt), a_arr_len(ashe.sh_prompt) - 1);
-	a_arr_char_push_strlit(&buffer, "]\r\n");
-
-	if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp), "[IBFLEN:%u] -> [",
-					  a_arr_len(A_IBF))) < 0 || (a_memmax)len > sizeof(temp))) {
-		ASHE_DEFER(-1);
-	}
-
-	a_arr_char_push_str(&buffer, temp, len);
-	idx = a_arr_len(buffer);
+	a_arr_char_push_strf(&buffer, "[A_PLEN:%n] -> [", A_PLEN);
+	a_arr_char_push_str(&buffer, a_arr_ptr(ashe.sh_prompt), a_arr_len(ashe.sh_prompt));
+	a_arr_char_push_strf(&buffer, "]\n[IBFLEN:%n] -> [", a_arr_len(A_IBF));
 	a_arr_char_push_str(&buffer, a_arr_ptr(A_IBF), a_arr_len(A_IBF));
-	ashe_unescape(&buffer, idx, a_arr_len(buffer));
-	a_arr_char_push_strlit(&buffer, "]\r\n");
-
-	/* Log lines */
+	a_arr_char_push_strlit(&buffer, "]\n");
 	for (i = 0; i < a_arr_len(A_LINES); i++) {
-		if (ASHE_UNLIKELY((len = snprintf(temp, sizeof(temp),
-					"[A_LINE:%4u][LEN:%4lu] -> [", i,
-					a_arr_ptr(A_LINES)[i].len)) < 0 ||
-				  	(a_memmax)len > sizeof(temp))) {
-			ASHE_DEFER(-1);
-		}
-
-		a_arr_char_push_str(&buffer, temp, len);
-		idx = a_arr_len(buffer);
-		a_arr_char_push_str(&buffer, a_arr_ptr(A_LINES)[i].start, a_arr_ptr(A_LINES)[i].len);
-		ashe_unescape(&buffer, idx, a_arr_len(buffer));
-		a_arr_char_push_strlit(&buffer, "]\r\n");
+		line = a_arr_line_index(&A_LINES, i);
+		a_arr_char_push_strf(&buffer, "[A_LINE:%n][LEN:%n] -> [", i, line->len);
+		a_arr_char_push_str(&buffer, line->start, line->len);
+		a_arr_char_push_strlit(&buffer, "]\n");
 	}
 
-	/* Write log file */
-	if (ASHE_UNLIKELY(fwrite(buffer.data, sizeof(a_byte), a_arr_len(buffer), fp) < a_arr_len(buffer)))
-		ASHE_DEFER(-1);
-
-	if (ASHE_UNLIKELY(fclose(fp) == EOF)) {
-		fp = NULL;
-		ASHE_DEFER(-1);
-	}
-
+	ashe_write(fd, a_arr_ptr(buffer), a_arr_len(buffer));
+	ashe_close(fd);
 	a_arr_char_free(&buffer, NULL);
-defer:
-	if (status == -1) {
-		if (fp)
-			fclose(fp);
-		a_arr_char_free(&buffer, NULL);
-		ashe_perrno(NULL);
-		ashe_panic(NULL);
-	}
 }
 
 ASHE_PUBLIC void remove_logfiles(void)
@@ -685,12 +606,11 @@ ASHE_PUBLIC void remove_logfiles(void)
 		ASHE_DEFER(-1);
 
 	for (errno = 0; (entry = readdir(root)) != NULL;) {
-		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0
-			|| strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0)
-			&& entry->d_type == DT_REG)
-		{
+		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0 ||
+		     strcmp(entry->d_name, logfiles[ALOG_LINES]) == 0) &&
+		    entry->d_type == DT_REG) {
 			if (unlink(entry->d_name) < 0)
-				ashe_perrno("couldn't unlink %d", entry->d_name);
+				ashe_perrno("couldn't unlink %n", entry->d_name);
 		}
 	}
 
@@ -705,13 +625,13 @@ defer:
 		ashe_panic(NULL);
 	}
 }
-// clang-format on
 
 ASHE_PUBLIC void logfile_create(const char *logfile, a_int32 which)
 {
+	a_int32 fd;
+
 	logfiles[which] = logfile;
-	if (ASHE_UNLIKELY(fopen(logfile, "w") == NULL)) {
-		ashe_perrno("failed opening %s file", logfile);
-		ashe_panic(NULL);
-	}
+	if (ASHE_UNLIKELY((fd = ashe_open(logfile, AHOW_W, 0)) < 0))
+		ashe_panic_libwcall(ashe_open, "can't create logfile");
+	ashe_close(fd);
 }

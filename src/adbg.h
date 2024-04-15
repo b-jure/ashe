@@ -7,6 +7,8 @@
 #include "acommon.h"
 #include "aparser.h"
 
+#define ASHE_TAB 4
+
 /* debug terminal input */
 #define ALOG_CURSOR 0
 #define ALOG_LINES  1

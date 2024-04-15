@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 		ashe_enable_jobcntl_updates();
 		a_terminput_read();
 		ashe_disable_jobcntl_updates();
-		ashe_dprintf("read %u bytes: '%s'", A_IBF.len, A_IBF.data);
+		ashe_dprintf("read %n bytes: '%s'", A_IBF.len, A_IBF.data);
 		clear_ast();
 		clear_buffers();
 		ashe_expandvars(&A_IBF); /* '$' */
@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 		debug_ast(&ashe.sh_block);
 #endif
 		status = abs(ashe_interpret(&ashe.sh_block));
-		a_arr_char_push_num(statusbuf, status);
+		a_arr_char_push_number(statusbuf, status);
 		a_arr_char_push(statusbuf, '\0');
 setenv:
 		ashe_dprintf("storing status '%s' into '%s' variable", a_arrp_ptr(statusbuf),

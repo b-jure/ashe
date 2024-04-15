@@ -3,11 +3,13 @@
 
 /* [======== GENERIC ARRAY =========] */
 
-#include "aalloc.h"
-
 #include <memory.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#include "aalloc.h"
+#include "acommon.h"
+#include "alibc.h"
 
 #define GROW_ARRAY_CAPACITY(cap) ((cap) < 8 ? 8 : (cap) * 2)
 
@@ -198,25 +200,31 @@ typedef void (*FreeFn)(void *value);
                                                                                                    \
 	static inline void _ARRAY_METHOD_VARARG(name, push_ptr, const void *ptr)                   \
 	{                                                                                          \
-		char temp[ASHE_INT64_DIGITS];                                                      \
+		char temp[ASHE_MAXNUM2STR];                                                        \
 		a_ssize chars;                                                                     \
                                                                                                    \
 		ashe_assert(sizeof(type) == sizeof(char));                                         \
-		chars = snprintf(temp, sizeof(temp), "%p", ptr);                                   \
-		if (ASHE_UNLIKELY(chars < 0 || (a_memmax)chars > sizeof(temp)))                    \
-			ashe_panic_libcall(snprintf);                                              \
+		chars = ashe_snprintf(temp, sizeof(temp) - 1, ASHE_PTR_FMT, ptr);                  \
 		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);                            \
 	}                                                                                          \
                                                                                                    \
-	static inline void _ARRAY_METHOD_VARARG(name, push_num, a_ssize n)                         \
+	static inline void _ARRAY_METHOD_VARARG(name, push_double, double f)                       \
 	{                                                                                          \
-		char temp[ASHE_INT64_DIGITS];                                                      \
+		char temp[ASHE_MAXNUM2STR];                                                        \
 		a_ssize chars;                                                                     \
                                                                                                    \
 		ashe_assert(sizeof(type) == sizeof(char));                                         \
-		chars = snprintf(temp, sizeof(temp), "%ld", n);                                    \
-		if (ASHE_UNLIKELY(chars < 0 || (a_memmax)chars > sizeof(temp)))                    \
-			ashe_panic_libcall(snprintf);                                              \
+		chars = ashe_snprintf(temp, sizeof(temp) - 1, ASHE_DOUBLE_FMT, f);                 \
+		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);                            \
+	}                                                                                          \
+                                                                                                   \
+	static inline void _ARRAY_METHOD_VARARG(name, push_number, a_ssize n)                      \
+	{                                                                                          \
+		char temp[ASHE_MAXNUM2STR];                                                        \
+		a_ssize chars;                                                                     \
+                                                                                                   \
+		ashe_assert(sizeof(type) == sizeof(char));                                         \
+		chars = ashe_snprintf(temp, sizeof(temp) - 1, ASHE_NUMBER_FMT, n);                 \
 		_CALL_ARRAY_METHOD_VARARG(name, push_str, temp, chars);                            \
 	}
 

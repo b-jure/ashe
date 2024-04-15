@@ -153,6 +153,14 @@ ASHE_PUBLIC void a_block_free(struct a_block *restrict block)
  *
  */
 
+/* Helper */
+ASHE_PRIVATE inline const char *getfilename(void)
+{
+	if (A_CTOK.type == TK_NUMBER)
+		return *a_arr_ccharp_last(&ashe.sh_buffers);
+	return A_CTOK_STR();
+}
+
 /*
  * [SYNTAX]
  * redirect_in ::= '<' filename
@@ -162,7 +170,7 @@ ASHE_PRIVATE void redirect_in(struct a_redirect *restrict rdp)
 	if (rdp->rd_lhsfd == -1)
 		rdp->rd_lhsfd = 0;
 	expect(1, BM_STRING, "filename (string)");
-	rdp->rd_fname = A_CTOK_STR();
+	rdp->rd_fname = getfilename();
 	rdp->rd_op = ARDOP_REDIRECT_IN;
 }
 
@@ -177,7 +185,7 @@ ASHE_PRIVATE void redirect_out(struct a_redirect *restrict rdp)
 	if (rdp->rd_lhsfd == -1)
 		rdp->rd_lhsfd = 1;
 	expect(1, BM_STRING, "filename (string)");
-	rdp->rd_fname = A_CTOK_STR();
+	rdp->rd_fname = getfilename();
 	if (rdp->rd_op != ARDOP_REDIRECT_CLOB)
 		rdp->rd_op = ARDOP_REDIRECT_OUT;
 }
@@ -193,7 +201,7 @@ ASHE_PRIVATE void redirect_outerr(struct a_redirect *restrict rdp, a_ubyte skipp
 	if (!skipped)
 		nexttok(&A_LEX);
 	expect(0, BM_STRING, "filename (string)");
-	rdp->rd_fname = A_CTOK_STR();
+	rdp->rd_fname = getfilename();
 }
 
 /*
@@ -224,8 +232,6 @@ ASHE_PRIVATE a_ubyte is_dupout_or_close(struct a_redirect *restrict rdp)
  */
 ASHE_PRIVATE void dupin_or_close(struct a_redirect *restrict rdp)
 {
-	if (A_PTOK.type == TK_NUMBER)
-		rdp->rd_lhsfd = A_PTOK_NUM();
 	expect(1, BM(TK_NUMBER) | BM(TK_MINUS), "file descriptor or '-'");
 	if (A_CTOK.type == TK_NUMBER) {
 		rdp->rd_rhsfd = A_CTOK_NUM();
@@ -245,7 +251,7 @@ ASHE_PRIVATE void redirect_inout(struct a_redirect *restrict rdp)
 		rdp->rd_lhsfd = 0;
 	rdp->rd_op = ARDOP_REDIRECT_INOUT;
 	expect(1, BM_STRING, "filename (string)");
-	rdp->rd_fname = A_CTOK_STR();
+	rdp->rd_fname = getfilename();
 }
 
 /*
@@ -276,7 +282,8 @@ ASHE_PRIVATE void redirection(struct a_simple_cmd *restrict scmd)
 		redirect_in(rdp);
 		break;
 	case TK_GREATER_AND:
-		rdp->rd_lhsfd = 1;
+		if (rdp->rd_lhsfd < 0)
+			rdp->rd_lhsfd = 1;
 		if (is_dupout_or_close(rdp))
 			break;
 		skipped = 1;
@@ -298,7 +305,8 @@ ASHE_PRIVATE void redirection(struct a_simple_cmd *restrict scmd)
 		redirect_out(rdp);
 		break;
 	case TK_LESS_AND:
-		rdp->rd_lhsfd = 0;
+		if (rdp->rd_lhsfd < 0)
+			rdp->rd_lhsfd = 0;
 		dupin_or_close(rdp);
 		break;
 	case TK_LESS_GREATER:
@@ -444,12 +452,14 @@ pushrd:
 ASHE_PRIVATE void simple_cmd(struct a_block *restrict block, struct a_simple_cmd *scmd)
 {
 	simple_cmd_prefix(scmd);
-	if (A_CTOK.type == TK_WORD || A_PTOK.type == TK_NUMBER) {
-		/* if PTOK is NUMBER then we already have command */
-		if (ARGC(scmd) == 0)
+	if (A_CTOK.type != TK_EOL && (A_CTOK.type == TK_WORD || A_PTOK.type == TK_NUMBER)) {
+		if (ARGC(scmd) == 0) {
+			ashe_assert(A_PTOK.type != TK_NUMBER);
 			simple_cmd_command(scmd);
+		}
 		simple_cmd_suffix(block, scmd);
 	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 && a_arr_len(scmd->sc_rds) == 0)) {
+		/* this: 'input... ['|' | '&&' | '||'] EOL' */
 		expect_error("string");
 	}
 }

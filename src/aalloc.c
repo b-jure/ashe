@@ -22,28 +22,27 @@ ASHE_PUBLIC void ashe_cleanupfork(void)
 
 ASHE_PRIVATE void ppanic(const char *efmt, va_list argp, a_int32 apanic)
 {
+	a_arr_char buffer;
 	const char *caller, *callee;
 	const char *error;
 	const char *file;
 	a_int32 line;
 
 	ashe_assert(efmt != NULL);
+	a_arr_char_init(&buffer);
+	a_arr_char_push_strlit(&buffer, ASHE_PANIC_PREFIX);
 
-	/* print prefix */
-	ashe_print(ASHE_PANIC_PREFIX, stderr);
-
-	/* get source information and print it */
+	/* source information */
 	file = va_arg(argp, const char *);
 	ashe_assert(file != NULL);
 	line = va_arg(argp, a_int32);
 	caller = va_arg(argp, const char *);
 	ashe_assert(caller != NULL);
-	ashe_printf(stderr, "at %s on line %d in %s(): ", file, line, caller);
+	a_arr_char_push_strf(&buffer, "at %s on line %n in %s(): ", file, line, caller);
 
-	/* print actual error */
 	switch (apanic) {
 	case APANIC_CALL:
-		ashe_vprintf(stderr, efmt, argp);
+		a_arr_char_push_vstrf(&buffer, efmt, argp);
 		break;
 	case APANIC_LIBCALL:
 	case APANIC_LIBWCALL:
@@ -51,16 +50,19 @@ ASHE_PRIVATE void ppanic(const char *efmt, va_list argp, a_int32 apanic)
 		ashe_assert(callee != NULL);
 		error = va_arg(argp, const char *);
 		ashe_assert(error != NULL);
-		ashe_printf(stderr, efmt, callee, error);
+		a_arr_char_push_strf(&buffer, efmt, callee, error);
 		break;
 	default:
 		/* UNREACHED */
 		ashe_assert(0);
 		break;
 	}
+	a_arr_char_push_strlit(&buffer, "\r\n\0");
 
-	/* done */
-	ashe_print("\r\n", stderr);
+	/* print all */
+	ashe_print(a_arr_ptr(buffer), stderr);
+
+	a_arr_char_free(&buffer, NULL);
 }
 
 ASHE_PUBLIC ASHE_NORET ashe_internal_panic(const char *restrict errmsg, a_int32 apanic, ...)
@@ -90,8 +92,10 @@ ASHE_PUBLIC void *ashe_realloc(void *ptr, a_memmax size)
 
 	ptr = realloc(ptr, size);
 
-	if (ASHE_UNLIKELY(ptr == NULL))
-		ashe_panic_libcall(realloc);
+	if (ASHE_UNLIKELY(ptr == NULL)) {
+		perror("ashe");
+		ashe_panic_abort();
+	}
 
 	return ptr;
 }

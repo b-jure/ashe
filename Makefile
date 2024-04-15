@@ -6,7 +6,7 @@ include config.mk
 
 SRC = src/aalloc.c src/aashe.c src/aasync.c src/abuiltin.c src/ainput.c \
       src/ajobcntl.c src/alex.c src/aparser.c src/aprompt.c src/arun.c \
-      src/ashell.c src/autils.c src/adbg.c
+      src/ashell.c src/autils.c src/adbg.c src/alibc.c
 OBJ = ${SRC:.c=.o}
 
 all: options ashe

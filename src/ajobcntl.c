@@ -135,7 +135,7 @@ ASHE_PRIVATE const char *sigstr(a_int32 sig)
 	case SIGTERM:
 		return "TERM";
 	default:
-		return NULL;
+		return "?";
 	}
 }
 
@@ -160,7 +160,7 @@ ASHE_PRIVATE void proc_term_notify(struct a_process *proc, a_int32 status, a_uby
 	proc->status = WTERMSIG(status);
 	if (notify) {
 		signame = sigstr(status);
-		ashe_pinfo("PID %d was terminated by SIG%s%s", proc->pid, signame ? signame : "?",
+		ashe_pinfo("PID %n was terminated by SIG%s%s", proc->pid, signame ? signame : "?",
 			   (polite ? " (polite)" : ""));
 	} else { /* print new line */
 		ashe_print("\r\n", stderr);
@@ -467,7 +467,7 @@ notify:
 				ashe_print("\r\n", stderr);
 			}
 
-			ashe_pinfo("%d '%s' %s", job->pgid, job->input,
+			ashe_pinfo("%n '%s' %s", job->pgid, job->input,
 				   (completed ? "<completed>" : "<stopped>"));
 			ashe_pprompt();
 

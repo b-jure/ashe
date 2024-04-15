@@ -31,9 +31,10 @@
 
 /* ---- Prefix formats ----
  * Note: these currently do not support placeholders */
-#define ASHE_PANIC_PREFIX "PANIC "
-#define ASHE_INFO_PREFIX  "[ashe ~ info]: "
-#define ASHE_ERR_PREFIX	  "[ashe ~ error]: "
+#define ASHE_DEBUG_PREFIX "[DEBUG]: "
+#define ASHE_PANIC_PREFIX "[PANIC]: "
+#define ASHE_INFO_PREFIX  "[INFO]: "
+#define ASHE_ERR_PREFIX	  "[ERROR]: "
 
 /* ---- Reserved file descriptors ----
  * These are file descriptors ashe uses internally,
@@ -85,6 +86,6 @@ static a_promptfn placeholders[] = {
  * to its child processes and trying to harvest them.
  * Time is in milliseconds and can be >=0 or up to 1000
  * milliseconds (1 second). */
-#define ASHE_WAIT_BEFORE_HARVEST_MS 100
+#define ASHE_WAIT_BEFORE_HARVEST_MS 200
 
 #endif

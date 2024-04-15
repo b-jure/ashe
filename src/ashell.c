@@ -40,7 +40,7 @@ ASHE_PRIVATE void sh_init_vars(struct a_shell *sh)
 	ashe_setenv(ASHE_VAR_STATUS, "0", 1);
 	/* use status buffer to store PID temporarily */
 	pidbuf = &sh->sh_status;
-	a_arr_char_push_num(pidbuf, getpid());
+	a_arr_char_push_number(pidbuf, getpid());
 	a_arr_char_push(pidbuf, '\0');
 	ashe_setenv(ASHE_VAR_PID, a_arrp_ptr(pidbuf), 1);
 	a_arrp_len(pidbuf) = 0;

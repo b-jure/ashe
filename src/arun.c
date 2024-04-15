@@ -7,6 +7,7 @@
 #include "arun.h"
 #include "ashell.h"
 #include "aasync.h"
+#include "alibc.h"
 
 #include <fcntl.h>
 #include <memory.h>
@@ -124,7 +125,7 @@ ASHE_PRIVATE inline void setdirty(a_int32 fd)
 ASHE_PRIVATE inline a_int32 fd_assert_bounds(a_ssize fd)
 {
 	if (fd < 0 || fd > INT_MAX) {
-		ashe_eprintf("file descriptor %zd out of bounds.", fd);
+		ashe_eprintf("file descriptor %n out of bounds.", fd);
 		return -1;
 	}
 	return 0;
@@ -133,7 +134,7 @@ ASHE_PRIVATE inline a_int32 fd_assert_bounds(a_ssize fd)
 ASHE_PRIVATE inline a_int32 fd_assert_perms(a_int32 fd, a_memmax perms)
 {
 	if (!a_fd_isopen(fd, perms)) {
-		ashe_eprintf("file descriptor %d lacks required permissions.", fd);
+		ashe_eprintf("file descriptor %n lacks required permissions.", fd);
 		return -1;
 	}
 	return 0;
@@ -143,7 +144,7 @@ ASHE_PRIVATE inline a_int32 fd_assert_valid(a_int32 fd)
 {
 	errno = 0;
 	if (fcntl(fd, F_GETFD) < 0 || errno == EBADFD) {
-		ashe_perrno("bad file descriptor %d");
+		ashe_perrno("bad file descriptor %n");
 		return -1;
 	}
 	return 0;

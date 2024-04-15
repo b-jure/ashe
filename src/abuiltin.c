@@ -73,10 +73,10 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 	char *errstr;
 	a_ubyte id = 0;
 	a_int32 num, status;
-	a_memmax oklen, i;
+	a_memmax i;
 
 	status = 0;
-	bin = a_arrp_ptr(argv)[0];
+	bin = *a_arr_ccharp_index(argv, 0);
 
 	for (i = 1; i < a_arrp_len(argv); i++) {
 		arg = *a_arr_ccharp_index(argv, i);
@@ -94,11 +94,9 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 		num = strtoul(arg, &errstr, 10);
 
 		if (*errstr != '\0') {
-			oklen = errstr - arg;
-			ashe_eprintf("%s: invalid %s provided, %*s'%s'", bin, (id ? "id" : "pid"),
-				     oklen, arg, errstr);
+			ashe_eprintf("%s: invalid %s provided", bin, (id ? "id" : "pid"));
 		} else if (errno == ERANGE || num > INT_MAX) {
-			ashe_eprintf("%s: '%s '%s' too large, limit is %d.", bin,
+			ashe_eprintf("%s: %s '%s' too large, limit is %n.", bin,
 				     (id ? "id" : "pid"), arg, INT_MAX);
 		} else {
 			*nums++ = (id ? (a_int32)FLIP_SIGN_BIT(num) : num);
@@ -210,7 +208,7 @@ ASHE_PRIVATE void ashe_bg_id(a_int32 id)
 	if (job) {
 		a_job_continue(job, 0);
 	} else
-		ashe_eprintf("bg: could not find job with id %d.", id);
+		ashe_eprintf("bg: could not find job with id %n.", id);
 }
 
 /* Auxiliary to ashe_bg() */
@@ -223,7 +221,7 @@ ASHE_PRIVATE void ashe_bg_pid(pid_t pid)
 	if (job)
 		a_job_continue(job, 0);
 	else
-		ashe_eprintf("bg: could not find job with pid %d.", pid);
+		ashe_eprintf("bg: could not find job with pid %n.", pid);
 }
 
 ASHE_PRIVATE void ashe_bg_background_filtered_jobs(a_int32 *nums, a_memmax len)
@@ -309,7 +307,7 @@ ASHE_PRIVATE a_int32 ashe_fg_id(a_int32 id)
 		a_job_continue(job, 1);
 		return 0;
 	}
-	ashe_eprintf("fg: could not find job with id %d.", id);
+	ashe_eprintf("fg: could not find job with id %n.", id);
 	return -1;
 }
 
@@ -324,7 +322,7 @@ ASHE_PRIVATE a_int32 ashe_fg_pid(pid_t pid)
 		a_job_continue(job, 1);
 		return 0;
 	}
-	ashe_eprintf("fg: could not find job with pid %d.", pid);
+	ashe_eprintf("fg: could not find job with pid %n.", pid);
 	return -1;
 }
 

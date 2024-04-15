@@ -1,8 +1,8 @@
 #ifndef ATOKEN_H
 #define ATOKEN_H
 
-#include "aarray.h"
 #include "acommon.h"
+#include "aarray.h"
 
 ARRAY_NEW(a_arr_char, char)
 
