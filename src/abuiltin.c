@@ -668,7 +668,7 @@ ASHE_PRIVATE a_int32 ashe_bi_clear(a_arr_ccharp *argv)
 
 	switch (argc) {
 	case 1:
-		ashe_clear_screen_raw();
+		ashe_s_clear_unsafe();
 		break;
 	case 2:
 		if (is_help_opt(a_arrp_ptr(argv)[1])) {

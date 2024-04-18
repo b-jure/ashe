@@ -39,7 +39,7 @@ static const a_ubyte is_redirection[TK_NUMBER + 1] = {
 	1, /* TK_LESS_GREATER '<>' */
 	1, /* TK_LESS '<' */
 	1, /* TK_GREATER '>' */
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
 /* Advance to the next token. */
@@ -47,6 +47,10 @@ ASHE_PRIVATE void nexttok(struct a_lexer *restrict lexer)
 {
 	lexer->prev = lexer->curr;
 	lexer->curr = a_lexer_next(lexer);
+	if (ASHE_UNLIKELY(A_CTOK.type == TK_ERROR)) { /* lex error ? */
+		ashe_eprintf(A_CTOK.u.error);
+		jump_out(-1);
+	}
 #if defined(ASHE_DBG_LEX) && defined(ASHE_DBG)
 	debug_current_token(&A_CTOK);
 #endif
@@ -157,7 +161,7 @@ ASHE_PUBLIC void a_block_free(struct a_block *restrict block)
 ASHE_PRIVATE inline const char *getfilename(void)
 {
 	if (A_CTOK.type == TK_NUMBER)
-		return *a_arr_ccharp_last(&ashe.sh_buffers);
+		return *a_arr_ccharp_last(&ashe.sh_strings);
 	return A_CTOK_STR();
 }
 
@@ -343,7 +347,7 @@ ASHE_PRIVATE void simple_cmd_prefix(struct a_simple_cmd *restrict scmd)
 		case TK_NUMBER:
 			nexttok(&A_LEX);
 			if (!is_redirection[A_CTOK.type]) {
-				numstr = *a_arr_ccharp_last(&ashe.sh_buffers);
+				numstr = *a_arr_ccharp_last(&ashe.sh_strings);
 				a_arr_ccharp_push(&scmd->sc_argv, numstr);
 				return;
 			}
@@ -368,7 +372,7 @@ pushrd:
  */
 ASHE_PRIVATE void simple_cmd_command(struct a_simple_cmd *restrict scmd)
 {
-	a_arr_ccharp_push(&scmd->sc_argv, *a_arr_ccharp_last(&ashe.sh_buffers));
+	a_arr_ccharp_push(&scmd->sc_argv, *a_arr_ccharp_last(&ashe.sh_strings));
 	nexttok(&A_LEX);
 }
 
@@ -421,7 +425,7 @@ ASHE_PRIVATE void simple_cmd_suffix(struct a_block *restrict block, struct a_sim
 			a_arr_ccharp_push(&scmd->sc_argv, A_CTOK_STR());
 			break;
 		case TK_NUMBER:
-			numstr = *a_arr_ccharp_last(&ashe.sh_buffers);
+			numstr = *a_arr_ccharp_last(&ashe.sh_strings);
 			nexttok(&A_LEX);
 			if (!is_redirection[A_CTOK.type]) {
 				a_arr_ccharp_push(&scmd->sc_argv, numstr);
@@ -502,7 +506,7 @@ ASHE_PRIVATE void pipe_seq(struct a_block *block, struct a_pipeline *pipeline)
 		end = A_CTOK.end;
 	}
 	pipeline->pl_input = ashe_dupstrn(temp, (end - temp));
-	a_arr_ccharp_push(&ashe.sh_buffers, pipeline->pl_input);
+	a_arr_ccharp_push(&ashe.sh_strings, pipeline->pl_input);
 }
 
 /*

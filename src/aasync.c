@@ -2,7 +2,6 @@
 #include <stdio.h>
 
 #include "aasync.h"
-#include "aprompt.h"
 #include "acommon.h"
 #include "ainput.h"
 #include "ajobcntl.h"
@@ -47,8 +46,7 @@ ASHE_PRIVATE void SIGWINCH_handler(int signum)
 	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
-	ashe_get_winsize(&ashe.sh_term.tm_rows, &A_TCOLMAX);
-	ashe_get_curpos(NULL, &A_TCOL);
+	sigwinch_redraw();
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif
@@ -64,11 +62,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
-	ashe_cursor_end();
-	ashe_print("\r\n", stderr);
-	ashe_pprompt();
-	a_terminput_clear();
-	ashe_get_curpos(NULL, &A_TCOL);
+	ashe_p_redraw();
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif

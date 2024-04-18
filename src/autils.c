@@ -253,12 +253,12 @@ ASHE_PUBLIC void ashe_expandvars(a_arr_char *buffer)
 			diff = vlen - klen;
 			if (ASHE_UNLIKELY(diff > 0 && a_arrp_len(buffer) + diff >= ARG_MAX))
 				continue;
-			a_arr_char_remove_str(buffer, idx, klen);
-			a_arr_char_insert_str(buffer, idx, value, vlen);
+			a_arr_char_remove_n(buffer, idx, klen);
+			a_arr_char_insert_n(buffer, idx, value, vlen);
 			ptr = a_arrp_ptr(buffer) + idx + vlen - 1;
 		} else { /* remove the key + '$' */
 			--ptr; /* back to char before '$' */
-			a_arr_char_remove_str(buffer, idx, klen);
+			a_arr_char_remove_n(buffer, idx, klen);
 		}
 	}
 }
@@ -298,7 +298,7 @@ ASHE_PUBLIC void ashe_unescape(a_arr_char *buffer, a_uint32 from, a_uint32 to)
 			break;
 		if (c == '\033') {
 			*a_arr_char_index(buffer, i++) = '\\';
-			a_arr_char_insert_str(buffer, i, "033", 3);
+			a_arr_char_insert_n(buffer, i, "033", 3);
 			to += 3;
 			i += 2;
 		} else if (unescape[c]) {

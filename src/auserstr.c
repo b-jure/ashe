@@ -1,7 +1,7 @@
 #define ASHE_USE_PLACEHOLDERS_ARRAY
 #include "acommon.h"
 #include "atoken.h"
-#include "aprompt.h"
+#include "auserstr.h"
 #include "ajobcntl.h"
 #include "ashell.h"
 #include "autils.h"
@@ -12,8 +12,6 @@
 #include <sys/sysinfo.h>
 #include <time.h>
 #include <pwd.h>
-
-#define ASHE_PROMPT_LEN_MAX ((ARG_MAX >> 4) ? (ARG_MAX >> 4) : 1024)
 
 static char plhbuf[BUFSIZ];
 
@@ -136,7 +134,7 @@ push_plh_sign:
 }
 
 /* parses 'str' by expanding all placeholders */
-ASHE_PRIVATE void parse_placeholders(a_arr_char *out, const char *str)
+ASHE_PUBLIC void parse_placeholders(a_arr_char *out, const char *str)
 {
 	a_int32 c;
 
@@ -148,34 +146,28 @@ ASHE_PRIVATE void parse_placeholders(a_arr_char *out, const char *str)
 			expand_placeholders(out, &str);
 		}
 	}
-
-	if (ASHE_UNLIKELY(a_arrp_len(out) >= ASHE_PROMPT_LEN_MAX))
-		a_arrp_len(out) = ASHE_PROMPT_LEN_MAX - 1;
-
 	a_arr_char_push(out, '\0');
 }
 
-ASHE_PUBLIC void userstr_print(const char *str, a_memmax len)
+/* Prints and parses any arbitrary string. */
+ASHE_PUBLIC void ashe_puserstr(const char *str, a_memmax len)
 {
 	a_arr_char buffer;
 
 	a_arr_char_init_cap(&buffer, len);
 	parse_placeholders(&buffer, str);
+
+	if (ASHE_UNLIKELY(a_arr_len(buffer) >= ASHE_USERSTR_MAX))
+		a_arr_len(buffer) = ASHE_USERSTR_MAX - 1;
+
 	ashe_print(a_arr_ptr(buffer), stderr);
 	a_arr_char_free(&buffer, NULL);
 }
 
+/* Prints parsed welcome message. */
 ASHE_PUBLIC void ashe_pwelcome(void)
 {
 	a_arr_len(ashe.sh_welcome) = 0;
 	parse_placeholders(&ashe.sh_welcome, ASHE_WELCOME);
 	ashe_print(a_arr_ptr(ashe.sh_welcome), stderr);
-}
-
-ASHE_PUBLIC void ashe_pprompt(void)
-{
-	a_arr_len(ashe.sh_prompt) = 0;
-	parse_placeholders(&ashe.sh_prompt, ASHE_PROMPT);
-	ashe.sh_term.tm_promptlen = a_arr_len(ashe.sh_prompt) - 1;
-	ashe_print(a_arr_ptr(ashe.sh_prompt), stderr);
 }

@@ -29,21 +29,43 @@
 #endif
 #endif /* ASHE_ASSERT */
 
-/* ---- Prefix formats ----
- * Note: these currently do not support placeholders */
-#define ASHE_DEBUG_PREFIX "[DEBUG]: "
-#define ASHE_PANIC_PREFIX "[PANIC]: "
-#define ASHE_INFO_PREFIX  "[INFO]: "
-#define ASHE_ERR_PREFIX	  "[ERROR]: "
+/* ---- Prefix formats ---- */
+/*
+ * Note:
+ * Prefixes do not support placeholder expansion.
+ */
+#define ASHE_DEBUG_PREFIX "[ashe debug]: "
+#define ASHE_PANIC_PREFIX "[ashe panic]: "
+#define ASHE_INFO_PREFIX  "[ashe info]: "
+#define ASHE_ERR_PREFIX	  "[ashe error]: "
 
-/* ---- Reserved file descriptors ----
+/* ---- Reserved file descriptors ---- */
+/*
  * These are file descriptors ashe uses internally,
- * you can change them if you know what you are doing. */
+ * you can change them if you know what you are doing.
+ */
 #define ASHE_FD_0 10
 #define ASHE_FD_1 11
 #define ASHE_FD_2 12
 
 /* ---- Placeholders ---- */
+/*
+ * To use placeholders just add '%' prefix and after that
+ * the index of the function inside the 'placeholders' array.
+ * Each of these functions returns a string, so the placeholder
+ * will be replaced with the return value of the selected function.
+ *
+ * You can change the placeholder character by changing
+ * 'ASHE_PLH_SIGN' define.
+ *
+ * You can add your own placeholders by editing the auserstr.c
+ * source file and adding the function signature under the
+ * 'ASHE_USE_PLACEHOLDERS_ARRAY' additionally providing it
+ * inside the 'placeholders' array.
+ * In case any of the placeholders return NULL then
+ * the placeholder won't get expanded and it will
+ * remain unchanged.
+ */
 #define ASHE_PLH_SIGN '%'
 typedef const char *(*a_promptfn)(void);
 #ifdef ASHE_USE_PLACEHOLDERS_ARRAY /* include guard */
@@ -75,17 +97,21 @@ static a_promptfn placeholders[] = {
 	"\tdate   - %6\n"
 
 /* ---- Prompt ---- */
-#define ASHE_PROMPT "[%4]$ "
-
-/* ---- Settings ---- */
-#define ASHE_SETTING_WARN_ON_EXIT 1
-#define ASHE_SETTING_NOCLOBBER	  1
+/*
+ * Note:
+ * tabs for now are not supported and will be unescaped,
+ * new line characters, carriage retrun, vertical tabs,
+ * form feed are also prohibited and will be unescaped.
+ */
+#define ASHE_PROMPT "$ "
 
 /* ---- Shell exit ---- */
-/* Sleep time in-between shell sending a kill signal
+/*
+ * Sleep time in-between shell sending a kill signal
  * to its child processes and trying to harvest them.
  * Time is in milliseconds and can be >=0 or up to 1000
- * milliseconds (1 second). */
+ * milliseconds (1 second).
+ */
 #define ASHE_WAIT_BEFORE_HARVEST_MS 200
 
 #endif

@@ -13,34 +13,38 @@
 #include "ainput.h"
 #include "ashell.h"
 #include "aasync.h"
-#include "aprompt.h"
+#include "auserstr.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
 #endif
 
+#define ASHE_IBF_MAX ASHE_USERSTR_MAX
+
 /* control sequence introducer */
 #define A_CSI	   "\033["
 #define A_ESC(seq) A_CSI #seq
-/* cursor */
-#define a_csi_cursor_home	   A_ESC(H)
-#define a_csi_cursor_left(n)	   A_ESC(n) "D"
-#define c_si_cursor_right(n)	   A_ESC(n) "C"
-#define c_si_cursor_up(n)	   A_ESC(n) "A"
-#define c_si_cursor_down(n)	   A_ESC(n) "B"
-#define c_si_cursor_save	   A_ESC(s)
-#define c_si_cursor_load	   A_ESC(u)
-#define c_si_cursor_col(col)	   A_ESC(col) "G"
-#define c_si_cursor_move(row, col) A_ESC(row ";" col) "H"
-#define c_si_cursor_position	   A_ESC(6n)
-#define c_si_cursor_hide A_ESC(?25l)
-#define c_si_cursor_show A_ESC(?25h)
-/* clear */
-#define c_si_clear_down	      A_ESC(0J)
-#define c_si_clear_up	      A_ESC(1J)
-#define c_si_clear_all	      A_ESC(2J)
-#define c_si_clear_line_right A_ESC(0K)
-#define c_si_clear_line_left  A_ESC(1K)
-#define c_si_clear_line	      A_ESC(2K)
+
+/* cursor control sequences */
+#define a_csi_cursor_home	    A_ESC(H)
+#define a_csi_cursor_left(n)	    A_ESC(n) "D"
+#define a_csi_cursor_right(n)	    A_ESC(n) "C"
+#define a_csi_cursor_up(n)	    A_ESC(n) "A"
+#define a_csi_cursor_down(n)	    A_ESC(n) "B"
+#define a_csi_cursor_save	    A_ESC(s)
+#define a_csi_cursor_load	    A_ESC(u)
+#define a_csi_cursor_col(col)	    A_ESC(col) "G"
+#define a_csi_cursor_move(row, col) A_ESC(row ";" col) "H"
+#define a_csi_cursor_position	    A_ESC(6n)
+#define a_csi_cursor_hide A_ESC(?25l)
+#define a_csi_cursor_show A_ESC(?25h)
+
+/* clear control sequences */
+#define a_csi_clear_down       A_ESC(0J)
+#define a_csi_clear_up	       A_ESC(1J)
+#define a_csi_clear_all	       A_ESC(2J)
+#define a_csi_clear_line_right A_ESC(0K)
+#define a_csi_clear_line_left  A_ESC(1K)
+#define a_csi_clear_line       A_ESC(2K)
 
 /* key code defs */
 #define CTRL_KEY(k)    ((k) & 0x1f)
@@ -51,36 +55,43 @@
 /* terminal column position */
 #define tcol(x) ((((x)-1) % (A_TCOLMAX)) + 1)
 
+/* terminal row diff */
+#define trowdiff(x, y) (((x) / A_TCOLMAX) - ((y) / A_TCOLMAX))
+#define trowdiffx(x)   ((x) / A_TCOLMAX)
+
 /* draw buffer */
-#define dbf_draw_lit(strlit) ashe_write(STDERR_FILENO, strlit, SS(strlit))
+#define dbf_pushc(c)	     a_arr_char_push(&A_TDBF, c)
+#define dbf_push(s)	     a_arr_char_push_str(&A_TDBF, s, strlen(s))
+#define dbf_push_len(s, len) a_arr_char_push_str(&A_TDBF, s, len)
+#define dbf_push_movecol(n)  a_arr_char_push_strf(&A_TDBF, A_CSI "%nG", n)
+#define dbf_push_moveup(n)   a_arr_char_push_strf(&A_TDBF, A_CSI "%nA", n)
+#define dbf_push_movedown(n) a_arr_char_push_strf(&A_TDBF, A_CSI "%nB", n)
 #define dbf_pushlit(strlit)  dbf_push_len(strlit, SS(strlit))
-#define dbf_pushc(c)	     a_arr_char_push(&A_DBF, c)
-#define dbf_push(s)	     a_arr_char_push_str(&A_DBF, s, strlen(s))
-#define dbf_push_len(s, len) a_arr_char_push_str(&A_DBF, s, len)
-#define dbf_push_movecol(n)  a_arr_char_push_strf(&A_DBF, A_CSI "%nG", n)
-#define dbf_push_moveup(n)   a_arr_char_push_strf(&A_DBF, A_CSI "%nA", n)
 
-#define init_dflterm(term) ashe_tcgetattr(term);
+/* draw without buffering */
+#define draw_lit(strlit) ashe_write(STDERR_FILENO, strlit, SS(strlit))
 
-#define set_terminal_mode(tmode)                                          \
-	if (ASHE_UNLIKELY(tcsetattr(STDIN_FILENO, TCSAFLUSH, tmode) < 0)) \
-		ashe_panic("can't set terminal settings");
-
-#define opost_on()                                              \
-	do {                                                    \
-		ashe.sh_term.tm_rawtermios.c_oflag |= OPOST;    \
-		set_terminal_mode(&ashe.sh_term.tm_rawtermios); \
+/* turn on OPOST in raw mode */
+#define opost_on()                                           \
+	do {                                                 \
+		ashe.sh_term.tm_rawtermios.c_oflag |= OPOST; \
+		ashe_tcsetattr(TCSAFLUSH, &A_TIORAW);        \
 	} while (0)
 
+/* turn off OPOST in raw mode */
 #define opost_off()                                             \
 	do {                                                    \
 		ashe.sh_term.tm_rawtermios.c_oflag &= ~(OPOST); \
-		set_terminal_mode(&ashe.sh_term.tm_rawtermios); \
+		ashe_tcsetattr(TCSAFLUSH, &A_TIORAW);           \
 	} while (0)
 
-#define shift_lines(row, sign)                              \
-	for (a_uint32 i = row; i < a_arr_len(A_LINES); i++) \
-		a_arr_line_index(&A_LINES, i)->start sign##sign;
+/*
+ * shift lines starting from 'row', 'n' bytes
+ * to right or left depending on the 'sign'
+ */
+#define shift_lines_from(row, n, sign)                \
+	for (a_uint32 i = row; i < A_ILINES.len; i++) \
+		a_arr_line_index(&A_ILINES, i)->start sign## = (n);
 
 /* Implemented keys */
 enum termkey { BACKSPACE = 127, L_ARW = 1000, U_ARW, D_ARW, R_ARW, HOME_KEY, END_KEY, DEL_KEY };
@@ -88,56 +99,23 @@ enum termkey { BACKSPACE = 127, L_ARW = 1000, U_ARW, D_ARW, R_ARW, HOME_KEY, END
 ASHE_PRIVATE inline void dbf_flush()
 {
 	opost_on();
-	ashe_write(STDERR_FILENO, a_arr_ptr(A_DBF), a_arr_len(A_DBF));
+	ashe_write(STDERR_FILENO, a_arr_ptr(A_TDBF), a_arr_len(A_TDBF));
 	opost_off();
-	a_arr_len(A_DBF) = 0;
+	a_arr_len(A_TDBF) = 0;
 }
 
-ASHE_PRIVATE void get_winsize_fallback(a_uint32 *height, a_uint32 *width)
+ASHE_PRIVATE void get_winsize_fallback(void)
 {
-	dbf_draw_lit(c_si_cursor_save c_si_cursor_right(99999) c_si_cursor_down(99999));
-	ashe_get_curpos(height, width);
-	dbf_draw_lit(c_si_cursor_load);
-}
+	a_uint32 oldrow, oldcol;
 
-ASHE_PUBLIC void ashe_get_winsize(a_uint32 *height, a_uint32 *width)
-{
-	struct winsize ws;
-
-	if (ASHE_UNLIKELY(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
-		get_winsize_fallback(height, width);
-		return;
-	}
-	if (height)
-		*height = ws.ws_row;
-	if (width)
-		*width = ws.ws_col;
-}
-
-ASHE_PUBLIC void ashe_get_curpos(a_uint32 *row, a_uint32 *col)
-{
-	char c;
-	a_ssize nread;
-	a_uint32 srow, scol;
-	a_uint16 i;
-	char buf[ASHE_MAXNUM2STR * 2 + sizeof(A_CSI ";")]; /* A_ESC [ Pn ; Pn R */
-
-	i = 0;
-
-	dbf_draw_lit(c_si_cursor_position);
-	while ((nread = ashe_read(STDIN_FILENO, &c, 1)) == 1) {
-		if (c == 'R')
-			break;
-		buf[i++] = c;
-	}
-
-	if (ASHE_UNLIKELY(sscanf(buf, "\033[%u;%u", &srow, &scol) != 2))
-		ashe_panic_libcall(sscanf);
-
-	if (row)
-		*row = srow;
-	if (col)
-		*col = scol;
+	draw_lit(a_csi_cursor_hide a_csi_cursor_save a_csi_cursor_right(99999)
+			 a_csi_cursor_down(99999));
+	oldrow = A_TROW;
+	oldcol = A_TCOL;
+	a_term_sync_cursor();
+	A_TROW = oldrow;
+	A_TCOL = oldcol;
+	draw_lit(a_csi_cursor_load a_csi_cursor_show);
 }
 
 /* Auxiliary to 'a_term_init()' */
@@ -152,354 +130,109 @@ ASHE_PRIVATE void init_rawterm(struct termios *rawterm)
 	rawterm->c_cc[VTIME] = 0;
 }
 
-ASHE_PUBLIC void a_terminput_init(void)
+ASHE_PRIVATE void a_input_init()
 {
 	a_arr_char_init_cap(&A_IBF, 8);
-	a_arr_char_init_cap(&A_DBF, 8);
-	a_arr_line_init(&A_LINES);
-	a_arr_line_push(&A_LINES, (struct a_line){ .len = 0, .start = a_arr_ptr(A_IBF) });
 	A_IBFIDX = 0;
-	A_COL = 0;
-	A_ROW = 0;
+	/* input lines */
+	a_arr_line_init(&A_ILINES);
+	a_arr_line_push(&A_ILINES, (struct a_line){ .len = 0, .start = a_arr_ptr(A_IBF) });
+	A_ICOL = 0;
+	A_IROW = 0;
+	/* rest is set dynamically */
 }
 
-ASHE_PUBLIC void a_terminput_free(void)
+ASHE_PRIVATE void a_input_free(void)
 {
 	a_arr_char_free(&A_IBF, NULL);
-	a_arr_char_free(&A_DBF, NULL);
-	a_arr_line_free(&A_LINES, NULL);
+	a_arr_line_free(&A_ILINES, NULL);
 }
 
-ASHE_PUBLIC void a_term_init(void)
+/*
+ * Re-links the slices (lines) to the input buffer.
+ * This should be called after inserting bytes into
+ * the input buffer because buffer might reallocate
+ * to a different memory address.
+ */
+ASHE_PRIVATE void relink_lines(void)
 {
-	a_terminput_init();
-	init_dflterm(&A_TM.tm_dfltermios);
-	init_rawterm(&A_TM.tm_rawtermios);
-	ashe_get_winsize(&A_TM.tm_rows, &A_TM.tm_columns);
-	/* tm_col - gets set when reading and drawing */
-	/* tm_promptlen - gets set in 'print_prompt()' */
-	A_TM.tm_reading = 0;
-}
+	struct a_line *prev;
+	struct a_line *curr;
+	a_uint32 i, lines;
 
-ASHE_PUBLIC a_ubyte ashe_cursor_up(void)
-{
-	a_uint32 extra = ((A_ROW == 0) * A_PLEN);
-	a_uint32 len = A_COL + 1 + extra;
-	a_uint32 pwraps = (A_PLEN != 0) * ((A_PLEN - 1) / A_TCOLMAX);
-	a_uint32 lwraps = (len - 1) / A_TCOLMAX;
-	a_uint32 temp;
-
-	temp = lwraps - pwraps;
-	if (A_ROW == 0 && (temp == 0 || (temp < 2 && len % A_TCOLMAX == 0)))
-		return 0;
-	if (A_ROW == 0) {
-		if (temp == 1 && (temp = tcol(A_PLEN)) >= tcol(len)) {
-start:
-			A_COL = 0;
-			A_IBFIDX = 0;
-			A_TCOL = temp + 1;
-			goto uptocol_draw;
-		} else {
-			goto up;
-		}
-	} else if (lwraps == 0) {
-		A_IBFIDX -= A_COL + 1; /* end of the line above */
-		A_ROW--;
-		extra = (A_ROW == 0) * A_PLEN;
-		len = a_arr_len(A_LINE) + extra;
-		lwraps = (len - 1) / A_TCOLMAX;
-		if ((temp = tcol(len)) <= A_COL + 1) {
-			A_COL = a_arr_len(A_LINE) - 1;
-			A_TCOL = temp;
-			goto uptocol_draw;
-		} else {
-			temp = tcol(A_COL + 1);
-			if (A_ROW == 0 && lwraps - pwraps == 0 && tcol(A_PLEN) >= temp) {
-				temp = tcol(A_PLEN + 1);
-				goto start;
-			}
-			temp = tcol(len) - temp;
-			A_COL = a_arr_len(A_LINE) - temp - 1;
-			A_IBFIDX -= temp;
-			goto up_draw;
-		}
-	} else { /* lwraps > 0 */
-up:
-		A_COL -= A_TCOLMAX;
-		A_IBFIDX -= A_TCOLMAX;
-up_draw:
-		dbf_pushlit(c_si_cursor_up(1));
-		goto flush;
-	}
-uptocol_draw:
-	dbf_pushlit(c_si_cursor_up(1));
-	dbf_push_movecol(A_TCOL);
-flush:
-	dbf_flush();
-	return 1;
-}
-
-ASHE_PUBLIC a_ubyte ashe_cursor_down(void)
-{
-	a_uint32 extra = (A_ROW == 0) * A_PLEN;
-	a_uint32 linewraps =
-		(a_arr_len(A_LINE) != 0) * ((a_arr_len(A_LINE) - 1 + extra) / A_TCOLMAX);
-	a_uint32 colwraps = (A_COL != 0) * ((A_COL + extra) / A_TCOLMAX);
-	a_ssize wrapdepth = linewraps - colwraps;
-	a_ubyte temp; /* for edge cases */
-
-	if (wrapdepth > 0) {
-		if (wrapdepth > 1 || A_COL + extra + A_TCOLMAX <= a_arr_len(A_LINE) + extra - 1) {
-			A_COL += A_TCOLMAX;
-			A_IBFIDX += A_TCOLMAX;
-			goto down;
-		} else {
-			temp = (A_ROW != a_arr_len(A_LINES) - 1);
-			A_IBFIDX += a_arr_len(A_LINE) - A_COL - temp;
-			A_COL = a_arr_len(A_LINE) - temp;
-			A_TCOL = tcol(a_arr_len(A_LINE) + extra + !temp);
-			goto downtocol;
-		}
-	} else if (A_ROW < a_arr_len(A_LINES) - 1) {
-		A_IBFIDX += a_arr_len(A_LINE) - A_COL; /* start of new line */
-		A_ROW++;
-		if (a_arr_len(A_LINE) >= A_TCOLMAX ||
-		    a_arr_len(A_LINE) >= tcol(A_COL + 1 + extra)) {
-			A_IBFIDX += A_TCOL - 1;
-			A_COL = A_TCOL - 1;
-down:
-			dbf_pushlit(c_si_cursor_down(1));
-			goto flush;
-		} else {
-			temp = (A_ROW != a_arr_len(A_LINES) - 1);
-			A_IBFIDX += a_arr_len(A_LINE) - temp;
-			A_COL = a_arr_len(A_LINE) - temp;
-			A_TCOL = a_arr_len(A_LINE) + !temp;
-downtocol:
-			dbf_pushlit(c_si_cursor_down(1));
-			dbf_push_movecol(A_TCOL);
-flush:
-			dbf_flush();
-		}
-		return 1;
-	}
-	return 0;
-}
-
-ASHE_PUBLIC a_ubyte ashe_cursor_left(void)
-{
-	if (A_COL > 0) {
-		A_COL--;
-		if (A_TCOL == 1) {
-			A_TCOL = A_TCOLMAX;
-			goto lineuptocol;
-		} else {
-			A_TCOL--;
-			dbf_draw_lit(a_csi_cursor_left(1));
-		}
-	} else if (A_ROW > 0) {
-		A_ROW--;
-		A_COL = a_arr_len(A_LINE) - 1;
-		A_TCOL = tcol(a_arr_len(A_LINE) + ((A_ROW == 0) * A_PLEN));
-lineuptocol:
-		dbf_pushlit(c_si_cursor_up(1));
-		dbf_push_movecol(A_TCOL);
-		dbf_flush();
-	} else {
-		return 0;
-	}
-	A_IBFIDX--;
-	return 1;
-}
-
-ASHE_PUBLIC a_ubyte ashe_cursor_right(void)
-{
-	if (A_COL <
-	    a_arr_len(A_LINE) - (a_arr_len(A_LINES) != 0 && A_ROW != a_arr_len(A_LINES) - 1)) {
-		A_COL++;
-		if (A_TCOL < A_TCOLMAX) {
-			A_TCOL++;
-			dbf_draw_lit(c_si_cursor_right(1));
-		} else {
-			goto firstcoldown;
-		}
-	} else if (A_ROW < (a_arr_len(A_LINES) - 1)) {
-		A_ROW++;
-		A_COL = 0;
-firstcoldown:
-		A_TCOL = 1;
-		dbf_draw_lit(c_si_cursor_down(1) c_si_cursor_col(1));
-	} else {
-		return 0;
-	}
-	A_IBFIDX++;
-	return 1;
-}
-
-ASHE_PUBLIC a_ubyte ashe_insert(a_int32 c)
-{
-	a_uint32 idx, i;
-	a_ubyte relink;
-	struct a_line *prev = NULL;
-	struct a_line *curr = NULL;
-
-	if (a_arr_len(A_IBF) >= ARG_MAX - 1)
-		return 0;
-
-	idx = A_IBFIDX;
-	relink = (a_arr_len(A_IBF) >= a_arr_cap(A_IBF));
-	a_arr_char_insert(&A_IBF, A_IBFIDX, c);
-	a_arr_len(A_LINE)++;
-	prev = &A_LINES.data[0];
+	lines = a_arr_len(A_ILINES);
+	prev = a_arr_line_index(&A_ILINES, 0);
 	prev->start = a_arr_ptr(A_IBF);
 
-	for (i = 1; i < relink * a_arr_len(A_LINES); i++) {
-		curr = a_arr_line_index(&A_LINES, i);
+	for (i = 1; i < lines; i++) {
+		curr = a_arr_line_index(&A_ILINES, i);
 		curr->start = prev->start + prev->len;
 		prev = curr;
 	}
-
-	shift_lines(A_ROW + 1, +); /* shift right */
-	dbf_pushlit(c_si_clear_line_right c_si_clear_down);
-	if (c == '\n' && A_TCOL < A_TCOLMAX) {
-		dbf_pushc('\n');
-		idx++;
-	}
-	dbf_pushlit(c_si_cursor_save);
-	dbf_push_len(&a_arr_ptr(A_IBF)[idx], a_arr_len(A_IBF) - idx);
-	dbf_pushlit(c_si_cursor_load);
-	dbf_flush();
-
-	if (c != '\n') /* otherwise we are in 'a_terminput_cr()' */
-		ashe_cursor_right();
-
-	return 1;
 }
 
-ASHE_PUBLIC a_ubyte ashe_cr(void)
+/* Redraw prompt, do not update cursor. */
+ASHE_PRIVATE void redraw_prompt(void)
 {
-	struct a_line newline = { 0 };
-
-	if (ashe_isescaped(a_arr_ptr(A_IBF), A_IBFIDX) || ashe_indq(a_arr_ptr(A_IBF), A_IBFIDX)) {
-		ashe_insert('\n');
-		newline.start = A_LINE.start + A_COL + 1;
-		newline.len = a_arr_len(A_LINE) - (A_COL + 1);
-		a_arr_len(A_LINE) = A_COL + 1;
-		A_ROW++;
-		A_IBFIDX++;
-		A_COL = 0;
-		A_TCOL = 1;
-		a_arr_line_insert(&A_LINES, A_ROW, newline);
-		return 1;
-	}
-	return 0;
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_len(a_arr_ptr(A_TP), A_TPLEN);
+	dbf_pushlit(a_csi_cursor_show);
 }
 
-ASHE_PUBLIC a_ubyte ashe_remove(void)
+/*
+ * Return number of rows between the current row
+ * and the first row where the prompt resides
+ * if the 'prompt' is non zero value.
+ * Otherwise return the number of rows between the
+ * current row and the first terminal row where the
+ * input buffer begins.
+ */
+ASHE_PRIVATE a_uint32 first_row_diff(a_ubyte prompt)
 {
-	struct a_line *l;
-	a_ubyte coalesce;
-
-	if (A_IBFIDX <= 0)
-		return 0;
-	a_arr_char_remove(&A_IBF, A_IBFIDX - 1);
-	shift_lines(A_ROW + 1, -); /* shift left */
-	a_arr_len(A_LINE) -= !(coalesce = (A_COL == 0));
-	l = &A_LINE; /* cache current line */
-	ashe_cursor_left();
-	if (coalesce) {
-		a_arr_len(A_LINE)--; /* '\n' */
-		a_arr_len(A_LINE) += l->len;
-		a_arr_line_remove(&A_LINES, A_ROW + 1);
-	}
-	dbf_pushlit(c_si_cursor_hide c_si_clear_line_right c_si_clear_down c_si_cursor_save);
-	dbf_push_len(a_arr_ptr(A_IBF) + A_IBFIDX, a_arr_len(A_IBF) - A_IBFIDX);
-	dbf_pushlit(c_si_cursor_load c_si_cursor_show);
-	dbf_flush();
-	return 1;
-}
-
-ASHE_PUBLIC a_ubyte ashe_cursor_lineend(void)
-{
-	a_uint32 extra = (A_ROW == 0) * A_PLEN;
-	a_uint32 col = A_COL + extra;
-	a_uint32 len = a_arr_len(A_LINE) + extra;
-	a_uint32 temp;
-	a_ubyte lastrow = (A_ROW == a_arr_len(A_LINES) - 1);
-
-	if (a_arr_len(A_LINE) > 0 &&
-	    ((temp = tcol(col + 1)) != A_TCOLMAX || A_COL != a_arr_len(A_LINE) - !lastrow)) {
-		if (col / A_TCOLMAX < (len - 1) / A_TCOLMAX) {
-			A_TCOL = A_TCOLMAX;
-			A_COL += A_TCOLMAX - temp;
-			A_IBFIDX += A_TCOLMAX - temp;
-		} else {
-			A_TCOL = (len % A_TCOLMAX) + lastrow;
-			A_IBFIDX += a_arr_len(A_LINE) - A_COL - !lastrow;
-			A_COL = a_arr_len(A_LINE) - !lastrow;
-		}
-		dbf_push_movecol(A_TCOL);
-		dbf_flush();
-		return 1;
-	}
-	return 0;
-}
-
-ASHE_PUBLIC a_ubyte ashe_cursor_linestart(void)
-{
-	a_uint32 extra = (A_ROW == 0) * A_PLEN;
-	a_uint32 col = A_COL + extra;
+	struct a_line *line;
 	a_ssize temp;
+	a_uint32 idx, rows;
 
-	if (A_COL != 0 && (temp = tcol(col + 1)) != 1) {
-		if (col < A_TCOLMAX) {
-			A_IBFIDX -= A_COL;
-			A_COL = 0;
-			A_TCOL = extra + 1;
-		} else {
-			A_IBFIDX -= temp - 1;
-			A_COL -= temp - 1;
-			col = A_COL + extra;
-			A_TCOL = tcol(col + 1);
-		}
-		dbf_push_movecol(A_TCOL);
-		dbf_flush();
-		return 1;
+	prompt = (prompt != 0);
+	idx = A_IROW;
+	line = a_arr_line_index(&A_ILINES, idx);
+	temp = line->len;
+
+	for (rows = 0; 0 < idx; idx--) {
+		rows += trowdiffx(temp - 1) + 1;
+		line = a_arr_line_index(&A_ILINES, idx);
+		temp = line->len;
 	}
-	return 0;
+
+	rows += trowdiffx(temp - 1 + (prompt * A_TPLEN));
+
+	return rows;
 }
 
-ASHE_PUBLIC void ashe_redraw(void)
+/*
+ * Return number of rows between the current row
+ * and the last input buffer row.
+ */
+ASHE_PRIVATE a_uint32 last_row_diff(void)
 {
-	a_uint32 col = A_COL + (A_ROW == 0) * A_PLEN;
+	a_ssize temp;
+	a_uint32 idx, rows, lines, extra;
 
-	A_TCOL = tcol(col + 1);
-	dbf_pushlit(c_si_cursor_hide);
-	dbf_push_len(a_arr_ptr(A_IBF), A_IBFIDX);
-	dbf_pushlit(c_si_cursor_save);
-	dbf_push_len(a_arr_ptr(A_IBF) + A_IBFIDX, a_arr_len(A_IBF) - A_IBFIDX);
-	dbf_pushlit(c_si_cursor_load c_si_cursor_show);
-	dbf_flush();
-}
+	lines = a_arr_len(A_ILINES);
+	idx = A_IROW;
+	extra = (idx == 0) * A_TPLEN;
+	temp = a_arr_line_index(&A_ILINES, idx)->len;
+	temp += extra;
+	temp -= trowdiffx(A_ICOL + extra);
 
-ASHE_PUBLIC void ashe_clear_screen_raw(void)
-{
-	dbf_draw_lit(a_csi_cursor_home c_si_clear_all);
-}
+	for (rows = 0; idx < lines; idx++) {
+		rows += trowdiffx(temp - 1) + 1;
+		temp = a_arr_line_index(&A_ILINES, idx)->len;
+	}
+	if (idx != 0)
+		rows--; /* we overshoot by one row always */
 
-ASHE_PUBLIC void ashe_clear_screen(void)
-{
-	dbf_draw_lit(a_csi_cursor_home c_si_clear_all);
-	ashe_pprompt();
-	ashe_redraw();
-}
-
-/* Move cursor to the end of the input */
-ASHE_PUBLIC void ashe_cursor_end(void)
-{
-	while (ashe_cursor_down())
-		;
-	ashe_cursor_lineend();
+	return rows;
 }
 
 ASHE_PRIVATE enum termkey read_key(void)
@@ -580,33 +313,33 @@ ASHE_PRIVATE a_ubyte process_key(void)
 	if (IMPLEMENTED((c = read_key()))) {
 		switch (c) {
 		case CR:
-			if (!ashe_cr())
+			if (ashe_i_cr())
 				return 0;
 			break;
 		case DEL_KEY:
 		case BACKSPACE:
-			ashe_remove();
+			ashe_i_remove();
 			break;
 		case END_KEY:
-			ashe_cursor_lineend();
+			ashe_c_eol();
 			break;
 		case HOME_KEY:
-			ashe_cursor_linestart();
+			ashe_c_sol();
 			break;
 		case CTRL_KEY('h'): // TODO: change back to 'l' after testing
-			ashe_clear_screen();
+			ashe_s_clear();
 			break;
 		case L_ARW:
-			ashe_cursor_left();
+			ashe_c_left();
 			break;
 		case R_ARW:
-			ashe_cursor_right();
+			ashe_c_right();
 			break;
 		case U_ARW:
-			ashe_cursor_up();
+			ashe_c_up();
 			break;
 		case D_ARW:
-			ashe_cursor_down();
+			ashe_c_down();
 			break;
 		// case CTRL_KEY('h'): // TODO: Uncomment after testing
 		case CTRL_KEY('x'):
@@ -617,7 +350,7 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			break;
 		default:
 			if (isgraph(c) || isspace(c))
-				ashe_insert(c);
+				ashe_i_insert(c);
 			break;
 		}
 	}
@@ -630,17 +363,8 @@ ASHE_PRIVATE a_ubyte process_key(void)
 	return 1;
 }
 
-// TODO: SIGWINCH handler needs fixing !!!
-/* Read input from STDIN_FILENO. */
-ASHE_PUBLIC void a_terminput_read(void)
+ASHE_PRIVATE void a_input_read(void)
 {
-	ashe_assert(a_arr_ptr(A_IBF) != NULL);
-	ashe_assert(a_arr_ptr(A_DBF) != NULL);
-	ashe_mask_signals(SIG_BLOCK);
-	A_TM.tm_reading = 1;
-	set_terminal_mode(&A_TM.tm_rawtermios);
-	ashe_get_winsize(&A_TM.tm_rows, &A_TM.tm_columns);
-	ashe_get_curpos(NULL, &A_TCOL);
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif
@@ -650,8 +374,626 @@ ASHE_PUBLIC void a_terminput_read(void)
 	while (process_key())
 		;
 	a_arr_char_push(&A_IBF, '\0');
-	ashe_cursor_end();
-	ashe_print("\r\n", stderr);
+	ashe_c_end();
+}
+
+ASHE_PUBLIC void a_input_clear(void)
+{
+	a_input_free();
+	a_input_init();
+}
+
+ASHE_PUBLIC void a_term_init(void)
+{
+	a_arr_char_init_cap(&A_TP, 8);
+	a_input_init();
+	a_arr_char_init_cap(&A_TDBF, 8);
+	ashe_tcgetattr(&A_TIODFL); /* init default termios */
+	init_rawterm(&A_TIORAW); /* init raw mode */
+	a_term_sync_dimensions();
+	/* tm_col - gets set when reading and drawing */
+	/* tm_promptlen - gets set in 'print_prompt()' */
 	A_TM.tm_reading = 0;
-	set_terminal_mode(&A_TM.tm_dfltermios);
+}
+
+ASHE_PUBLIC void a_term_read(void)
+{
+	ashe_mask_signals(SIG_BLOCK);
+	a_input_free();
+	a_input_init();
+	ashe_print("\r\n", stderr);
+	ashe_p_draw_unsafe();
+	a_term_sync_dimensions();
+	a_term_sync_cursor();
+	A_TM.tm_reading = 1;
+	ashe_tcsetattr(TCSAFLUSH, &A_TIORAW);
+	a_input_read();
+	ashe_tcsetattr(TCSAFLUSH, &A_TIODFL);
+	A_TM.tm_reading = 0;
+	ashe_print("\r\n", stderr);
+}
+
+ASHE_PUBLIC void a_term_sync_cursor(void)
+{
+	char c;
+	a_ssize nread;
+	a_uint32 srow, scol;
+	a_uint16 i;
+	char buf[ASHE_MAXNUM2STR * 2 + sizeof(A_CSI ";")]; /* A_ESC [ Pn ; Pn R */
+
+	i = 0;
+	draw_lit(a_csi_cursor_position);
+	while ((nread = ashe_read(STDIN_FILENO, &c, 1)) == 1) {
+		if (c == 'R')
+			break;
+		buf[i++] = c;
+	}
+
+	if (ASHE_UNLIKELY(sscanf(buf, "\033[%u;%u", &srow, &scol) != 2))
+		ashe_panic_libcall(sscanf);
+
+	A_TROW = srow;
+	A_TCOL = scol;
+}
+
+ASHE_PUBLIC void a_term_sync_dimensions(void)
+{
+	struct winsize ws;
+
+	if (ASHE_UNLIKELY(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
+		get_winsize_fallback();
+		return;
+	}
+	A_TROWMAX = ws.ws_row;
+	A_TCOLMAX = ws.ws_col;
+}
+
+ASHE_PUBLIC void a_term_free(void)
+{
+	a_arr_char_free(&A_TP, NULL);
+	a_input_free();
+	a_arr_char_free(&A_TDBF, NULL);
+}
+
+ASHE_PUBLIC a_ubyte ashe_i_insert(a_ubyte c)
+{
+	a_uint32 idx;
+	a_ubyte relink;
+
+	if (a_arr_len(A_IBF) >= ARG_MAX - 1)
+		return 0;
+
+	idx = A_IBFIDX;
+	relink = (a_arr_len(A_IBF) >= a_arr_cap(A_IBF));
+	a_arr_char_insert(&A_IBF, A_IBFIDX, c);
+	A_ILINE.len++;
+	if (relink)
+		relink_lines();
+
+	shift_lines_from(A_IROW + 1, 1, +); /* shift right */
+	dbf_pushlit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down);
+	if (c == '\n' && A_TCOL < A_TCOLMAX) {
+		dbf_pushc('\n');
+		idx++;
+	}
+	dbf_pushlit(a_csi_cursor_save);
+	dbf_push_len(&a_arr_ptr(A_IBF)[idx], a_arr_len(A_IBF) - idx);
+	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_flush();
+
+	if (c != '\n') { /* inside of 'ashe_i_cr()' ? */
+		ashe_c_right();
+		if (ASHE_UNLIKELY(A_TCOL == 1 && A_TROW == A_TROWMAX))
+			draw_lit("\n");
+	}
+
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_i_remove(void)
+{
+	struct a_line *l;
+	a_ubyte coalesce;
+
+	if (A_IBFIDX <= 0)
+		return 0;
+	a_arr_char_remove(&A_IBF, A_IBFIDX - 1);
+	shift_lines_from(A_IROW + 1, 1, -); /* shift left */
+	A_ILINE.len -= !(coalesce = (A_ICOL == 0));
+	l = &A_ILINE; /* cache current line */
+	ashe_c_left();
+	if (coalesce) {
+		ashe_assert(A_ILINES.len > 1);
+		A_ILINE.len--; /* '\n' */
+		A_ILINE.len += l->len;
+		a_arr_line_remove(&A_ILINES, A_IROW + 1);
+		A_TROW--;
+	}
+	dbf_pushlit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down a_csi_cursor_save);
+	dbf_push_len(a_arr_char_index(&A_IBF, A_IBFIDX), a_arr_len(A_IBF) - A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_flush();
+	return 1;
+}
+
+/*
+ * TODO: needs testing
+ */
+ASHE_PUBLIC a_uint32 ashe_i_remove_bytes(a_ssize len)
+{
+	struct a_line *line;
+	a_uint32 bufflen, toremove, rmlines, i;
+	a_ssize leftover;
+
+	bufflen = a_arr_len(A_IBF);
+	leftover = bufflen - A_IBFIDX;
+	if (bufflen == 0 || len > leftover)
+		return 0;
+	if (len < 0 || len == leftover) {
+		toremove = leftover;
+		a_arr_len(A_ILINES) = A_IROW + 1;
+		a_arr_len(A_IBF) = A_IBFIDX + 1;
+		A_ILINE.len = A_ICOL;
+		return toremove;
+	}
+
+	toremove = len;
+	leftover = toremove - (A_ILINE.len - A_ICOL);
+	A_ILINE.len = A_ICOL;
+	rmlines = 0;
+
+	for (i = A_IROW + 1; i < a_arr_len(A_ILINES); i++) {
+		line = a_arr_line_index(&A_ILINES, i);
+		if ((leftover -= line->len) <= 0) {
+			leftover += line->len;
+			break;
+		}
+		rmlines++;
+	}
+
+	if (rmlines > 0)
+		a_arr_line_remove_n(&A_ILINES, A_IROW + 1, rmlines);
+
+	if (leftover >= 0 && A_IROW < a_arr_len(A_ILINES)) { /* coalesce ? */
+		line = a_arr_line_index(&A_ILINES, A_IROW + 1);
+		A_ILINE.len += line->len;
+		A_ILINE.len -= leftover;
+		a_arr_line_remove(&A_ILINES, A_IROW + 1);
+		shift_lines_from(A_IROW + 1, toremove, -);
+	}
+
+	a_arr_char_remove_n(&A_IBF, A_IBFIDX, toremove);
+
+	/* reflect changes on the terminal screen */
+	dbf_pushlit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down a_csi_cursor_save);
+	dbf_push_len(a_arr_char_index(&A_IBF, A_IBFIDX), a_arr_len(A_IBF) - A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_flush();
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_i_cr(void)
+{
+	struct a_line newline = { 0 };
+
+	if (ashe_isescaped(a_arr_ptr(A_IBF), A_IBFIDX) || ashe_indq(a_arr_ptr(A_IBF), A_IBFIDX)) {
+		ashe_i_insert('\n');
+		newline.start = A_ILINE.start + A_ICOL + 1;
+		newline.len = A_ILINE.len - (A_ICOL + 1);
+		A_ILINE.len = A_ICOL + 1;
+		A_IROW++;
+		A_IBFIDX++;
+		A_ICOL = 0;
+		A_TCOL = 1;
+		a_arr_line_insert(&A_ILINES, A_IROW, newline);
+		return 0;
+	}
+	ashe_print("\r\n", stderr);
+	return 1;
+}
+
+/*
+ * Prompt must not have newline or else it
+ * will mess up cursor navigation.
+ * Additionally tabs are removed also because
+ * the shell doesn't support tabs (yet).
+ *
+ * TODO: add support for tabs by adding separate array
+ * of graphical bytes for each line.
+ */
+ASHE_PRIVATE void sanitize_prompt(void)
+{
+	static const char unsupported[UINT8_MAX] = {
+		['\n'] = 'n', ['\r'] = 'r', ['\t'] = 't', ['\v'] = 'v', ['\f'] = 'f',
+	};
+	a_uint32 i;
+	a_ubyte c;
+
+	for (i = 0; i < a_arr_len(A_TP); i++) {
+		c = *a_arr_char_index(&A_TP, i);
+		switch (c) {
+		case '\n':
+		case '\r':
+		case '\t':
+		case '\v':
+		case '\f':
+			*a_arr_char_index(&A_TP, i++) = '\\';
+			a_arr_char_insert(&A_TP, i, unsupported[c]);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+ASHE_PUBLIC a_ubyte ashe_p_draw_unsafe(void)
+{
+	a_arr_len(A_TP) = 0;
+	parse_placeholders(&A_TP, ASHE_PROMPT);
+	sanitize_prompt();
+	if (ASHE_UNLIKELY(a_arr_len(A_TP) >= ASHE_USERSTR_MAX)) {
+		a_arr_len(A_TP) = ASHE_USERSTR_MAX - 1;
+		a_arr_char_push(&A_TP, '\0');
+	}
+	ashe_print(a_arr_ptr(A_TP), stderr);
+	return 1;
+}
+
+ASHE_PUBLIC void ashe_p_redraw(void)
+{
+	ashe_c_end();
+	a_input_clear();
+	ashe_print("\r\n", stderr);
+	redraw_prompt();
+	a_term_sync_cursor();
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_left(void)
+{
+	if (A_ICOL > 0) {
+		A_ICOL--;
+		if (A_TCOL == 1) {
+			A_TCOL = A_TCOLMAX;
+			goto lineuptocol;
+		} else {
+			A_TCOL--;
+			draw_lit(a_csi_cursor_left(1));
+		}
+	} else if (A_IROW > 0) {
+		A_IROW--;
+		A_ICOL = A_ILINE.len - 1;
+		A_TCOL = tcol(A_ILINE.len + ((A_IROW == 0) * A_TPLEN));
+lineuptocol:
+		A_TROW--;
+		dbf_pushlit(a_csi_cursor_up(1));
+		dbf_push_movecol(A_TCOL);
+		dbf_flush();
+	} else {
+		return 0;
+	}
+	A_IBFIDX--;
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_right(void)
+{
+	if (A_ICOL < A_ILINE.len - (A_IROW < (A_ILINES.len - (A_ILINES.len != 0)))) {
+		A_ICOL++;
+		if (A_TCOL < A_TCOLMAX) {
+			A_TCOL++;
+			draw_lit(a_csi_cursor_right(1));
+		} else {
+			goto firstcoldown;
+		}
+	} else if (A_IROW < (A_ILINES.len - 1)) {
+		A_IROW++;
+		A_ICOL = 0;
+firstcoldown:
+		A_TROW++;
+		A_TCOL = 1;
+		draw_lit(a_csi_cursor_down(1) a_csi_cursor_col(1));
+	} else {
+		return 0;
+	}
+	A_IBFIDX++;
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_down(void)
+{
+	a_uint32 extra = (A_IROW == 0) * A_TPLEN;
+	a_uint32 linewraps = (A_ILINE.len != 0) * ((a_arr_len(A_ILINE) - 1 + extra) / A_TCOLMAX);
+	a_uint32 colwraps = (A_ICOL != 0) * ((A_ICOL + extra) / A_TCOLMAX);
+	a_ssize wrapdepth = linewraps - colwraps;
+	a_ubyte temp; /* for edge cases */
+
+	if (wrapdepth > 0) {
+		if (wrapdepth > 1 || A_ICOL + extra + A_TCOLMAX <= A_ILINE.len + extra - 1) {
+			A_ICOL += A_TCOLMAX;
+			A_IBFIDX += A_TCOLMAX;
+			goto down;
+		} else {
+			temp = (A_IROW != A_ILINES.len - 1);
+			A_IBFIDX += A_ILINE.len - A_ICOL - temp;
+			A_ICOL = A_ILINE.len - temp;
+			A_TCOL = tcol(A_ILINE.len + extra + !temp);
+			goto downtocol;
+		}
+	} else if (A_IROW < A_ILINES.len - 1) {
+		A_IBFIDX += A_ILINE.len - A_ICOL; /* start of new line */
+		A_IROW++;
+		if (A_ILINE.len >= A_TCOLMAX || A_ILINE.len >= tcol(A_ICOL + 1 + extra)) {
+			A_IBFIDX += A_TCOL - 1;
+			A_ICOL = A_TCOL - 1;
+down:
+			dbf_pushlit(a_csi_cursor_down(1));
+			goto flush;
+		} else {
+			temp = (A_IROW != A_ILINES.len - 1);
+			A_IBFIDX += A_ILINE.len - temp;
+			A_ICOL = A_ILINE.len - temp;
+			A_TCOL = A_ILINE.len + !temp;
+downtocol:
+			dbf_pushlit(a_csi_cursor_down(1));
+			dbf_push_movecol(A_TCOL);
+flush:
+			dbf_flush();
+		}
+		A_TROW++;
+		return 1;
+	}
+	return 0;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_up(void)
+{
+	a_uint32 extra = ((A_IROW == 0) * A_TPLEN);
+	a_uint32 len = A_ICOL + 1 + extra;
+	a_uint32 pwraps = (A_TPLEN != 0) * ((A_TPLEN - 1) / A_TCOLMAX);
+	a_uint32 lwraps = (len - 1) / A_TCOLMAX;
+	a_uint32 temp;
+
+	temp = lwraps - pwraps;
+
+	if (A_IROW == 0 && (temp == 0 || (temp < 2 && len % A_TCOLMAX == 0)))
+		return 0;
+
+	if (A_IROW == 0) {
+		if (temp == 1 && (temp = tcol(A_TPLEN)) >= tcol(len)) {
+start:
+			A_ICOL = 0;
+			A_IBFIDX = 0;
+			A_TCOL = temp + 1;
+			goto uptocol_draw;
+		} else {
+			goto up;
+		}
+	} else if (lwraps == 0) {
+		A_IBFIDX -= A_ICOL + 1; /* end of the line above */
+		A_IROW--;
+		extra = (A_IROW == 0) * A_TPLEN;
+		len = A_ILINE.len + extra;
+		lwraps = (len - 1) / A_TCOLMAX;
+		if ((temp = tcol(len)) <= A_ICOL + 1) {
+			A_ICOL = A_ILINE.len - 1;
+			A_TCOL = temp;
+			goto uptocol_draw;
+		} else {
+			temp = tcol(A_ICOL + 1);
+			if (A_IROW == 0 && lwraps - pwraps == 0 && tcol(A_TPLEN) >= temp) {
+				temp = tcol(A_TPLEN + 1);
+				goto start;
+			}
+			temp = tcol(len) - temp;
+			A_ICOL = A_ILINE.len - temp - 1;
+			A_IBFIDX -= temp;
+			goto up_draw;
+		}
+	} else { /* lwraps > 0 */
+up:
+		A_ICOL -= A_TCOLMAX;
+		A_IBFIDX -= A_TCOLMAX;
+up_draw:
+		dbf_pushlit(a_csi_cursor_up(1));
+		goto flush;
+	}
+uptocol_draw:
+	dbf_pushlit(a_csi_cursor_up(1));
+	dbf_push_movecol(A_TCOL);
+flush:
+	dbf_flush();
+	A_TROW--;
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_eol(void)
+{
+	a_uint32 extra = (A_IROW == 0) * A_TPLEN;
+	a_uint32 col = A_ICOL + extra;
+	a_uint32 len = A_ILINE.len + extra;
+	a_uint32 temp;
+	a_ubyte lastrow = (A_IROW == A_ILINES.len - 1);
+
+	if (A_ILINE.len > 0 &&
+	    ((temp = tcol(col + 1)) != A_TCOLMAX || A_ICOL != A_ILINE.len - !lastrow)) {
+		if (col / A_TCOLMAX < (len - 1) / A_TCOLMAX) {
+			A_TCOL = A_TCOLMAX;
+			A_ICOL += A_TCOLMAX - temp;
+			A_IBFIDX += A_TCOLMAX - temp;
+		} else {
+			A_TCOL = (len % A_TCOLMAX) + lastrow;
+			A_IBFIDX += A_ILINE.len - A_ICOL - !lastrow;
+			A_ICOL = A_ILINE.len - !lastrow;
+		}
+		dbf_push_movecol(A_TCOL);
+		dbf_flush();
+		return 1;
+	}
+	return 0;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_sol(void)
+{
+	a_uint32 extra = (A_IROW == 0) * A_TPLEN;
+	a_uint32 col = A_ICOL + extra;
+	a_ssize temp;
+
+	if (A_ICOL != 0 && (temp = tcol(col + 1)) != 1) {
+		if (col < A_TCOLMAX) {
+			A_IBFIDX -= A_ICOL;
+			A_ICOL = 0;
+			A_TCOL = extra + 1;
+		} else {
+			A_IBFIDX -= temp - 1;
+			A_ICOL -= temp - 1;
+			col = A_ICOL + extra;
+			A_TCOL = tcol(col + 1);
+		}
+		dbf_push_movecol(A_TCOL);
+		dbf_flush();
+		return 1;
+	}
+	return 0;
+}
+
+ASHE_PUBLIC void ashe_s_clear_unsafe(void)
+{
+	draw_lit(a_csi_cursor_hide a_csi_cursor_home a_csi_clear_all a_csi_cursor_show);
+}
+
+ASHE_PUBLIC void ashe_s_clear(void)
+{
+	ashe_s_clear_unsafe();
+	ashe_p_draw_unsafe();
+	ashe_i_redraw_unsafe();
+	a_term_sync_cursor();
+}
+
+/*
+ * TODO: needs testing, additionally must not be allowed to insert
+ * newlines this will break cursor logic.
+ * This is not part of the usable API this should get implemented fully
+ * once the tab rendering (being able to insert tabs) is implemented.
+ * To even support newline insertions this function would then have to
+ * parse the 'str' and for each escaped (or in dq) '\n' insert the new 'a_line'.
+ */
+ASHE_PUBLIC a_ubyte ashe_i_insert_bytes_unsafe(const char *str, a_uint32 len)
+{
+	a_memmax newlen = A_IBFIDX + len;
+	a_ubyte relink;
+
+	if (ASHE_UNLIKELY(len == 0 || newlen > ASHE_IBF_MAX || newlen > UINT32_MAX))
+		return 0;
+
+	/* adjust input buffer */
+	relink = (a_arr_cap(A_IBF) < a_arr_len(A_IBF) + len);
+	a_arr_char_insert_n(&A_IBF, A_IBFIDX, str, len);
+	A_IBFIDX += len;
+	A_ILINE.len += len;
+	A_ICOL += len;
+	if (relink)
+		relink_lines();
+
+	/* draw to terminal */
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_len(str, len);
+	dbf_pushlit(a_csi_cursor_show);
+	dbf_flush();
+	return 1;
+}
+
+/* Only draws to the terminal screen. */
+ASHE_PUBLIC void ashe_i_redraw_unsafe(void)
+{
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_len(a_arr_ptr(A_IBF), A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_save);
+	dbf_push_len(a_arr_ptr(A_IBF) + A_IBFIDX, a_arr_len(A_IBF) - A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_flush();
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_start(void)
+{
+	a_int32 up;
+
+	if (A_IBFIDX == 0) /* already at start ? */
+		return 0;
+
+	/* update input buffer */
+	up = first_row_diff(0);
+	A_IROW -= up;
+	A_TCOL = tcol(A_TPLEN + 1);
+	A_IBFIDX = 0;
+	A_ICOL = 0;
+	A_IROW = 0;
+
+	/* update terminal cursor */
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_moveup(up);
+	dbf_push_movecol(A_TCOL);
+	dbf_pushlit(a_csi_cursor_show);
+	dbf_flush();
+
+	return 1;
+}
+
+ASHE_PUBLIC a_ubyte ashe_c_end(void)
+{
+	struct a_line *line;
+	a_uint32 lines, down;
+
+	if (A_IBFIDX == a_arr_len(A_IBF)) /* already at end ? */
+		return 0;
+
+	/* update input buffer */
+	down = last_row_diff();
+	lines = a_arr_len(A_ILINES);
+	line = a_arr_line_last(&A_ILINES);
+	A_IBFIDX = a_arr_len(A_IBF);
+	A_IROW = lines - (lines == 0);
+	A_ICOL = line->len + (lines == 0) * A_TPLEN;
+	A_IROW += down;
+	A_TCOL = tcol(A_ICOL);
+
+	/* update terminal cursor */
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_movedown(down);
+	dbf_push_movecol(tcol(A_ICOL));
+	dbf_pushlit(a_csi_cursor_show);
+	dbf_flush();
+
+	return 1;
+}
+
+/*
+ * Triggers each time SIGWINCH is caught.
+ * Terminals usually don't properly redraw (rewrap)
+ * terminal rows if terminal window is changed.
+ * This function doesn't update the prompt instead it
+ * redraws the previous one.
+ * This should properly redraw the whole input together
+ * with the previous prompt and set the cursor to its
+ * original location inside the input buffer.
+ *
+ * Possible side effects could be that above the
+ * reprinted prompt is part of the old prompt and
+ * the old input.
+ * I would say this is  okay, because the previous
+ * commands should still be unobstructed and visible
+ * together with the newly redrawn prompt and input.
+ */
+ASHE_PUBLIC void sigwinch_redraw(void)
+{
+	a_term_sync_dimensions();
+	dbf_pushlit(a_csi_cursor_hide);
+	dbf_push_moveup(first_row_diff(1));
+	dbf_pushlit(a_csi_cursor_col(1));
+	dbf_push_len(a_arr_ptr(A_TP), A_TPLEN);
+	dbf_push_len(a_arr_ptr(A_IBF), A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_save);
+	dbf_push_len(a_arr_char_index(&A_IBF, A_IBFIDX), a_arr_len(A_IBF) - A_IBFIDX);
+	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_flush();
+	a_term_sync_cursor();
 }

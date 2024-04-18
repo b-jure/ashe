@@ -4,14 +4,13 @@
 #include "aparser.h"
 #include "ashell.h"
 #include "arun.h"
-#include "aprompt.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
 #endif
 
 #define clear_ast() (a_block_free(&ashe.sh_block), a_block_init(&ashe.sh_block))
 #define clear_buffers() \
-	(a_arr_ccharp_free(&ashe.sh_buffers, ashe_free_ccharp), a_arr_ccharp_init(&ashe.sh_buffers))
+	(a_arr_ccharp_free(&ashe.sh_strings, ashe_free_ccharp), a_arr_ccharp_init(&ashe.sh_strings))
 
 /* ashe entry */
 int main(int argc, char **argv)
@@ -35,11 +34,9 @@ int main(int argc, char **argv)
 #endif
 
 	for (;;) { /* REPL */
-		ashe_pprompt();
-		a_terminput_clear();
 		a_jobcntl_update_and_notify(jobcntl);
 		ashe_enable_jobcntl_updates();
-		a_terminput_read();
+		a_term_read();
 		ashe_disable_jobcntl_updates();
 		ashe_dprintf("read %n bytes: '%s'", A_IBF.len, A_IBF.data);
 		clear_ast();

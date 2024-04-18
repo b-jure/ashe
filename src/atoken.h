@@ -25,6 +25,7 @@ enum a_toktype {
 	TK_PIPE, /* '|' */
 	TK_AND, /* '&' */
 	TK_EOL, /* '\0' */
+	TK_ERROR, /* lexer error */
 	TK_WORD, /* string */
 	TK_KVPAIR, /* key=value */
 	TK_NUMBER, /* number (integer) */
@@ -33,6 +34,7 @@ enum a_toktype {
 struct a_token {
 	enum a_toktype type;
 	union {
+		const char *error;
 		a_arr_char string;
 		a_memmax number;
 	} u;

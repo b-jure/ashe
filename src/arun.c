@@ -72,7 +72,7 @@ ASHE_PRIVATE void add_envs(const a_arr_ccharp *restrict env)
 		*sep = '\0';
 		ashe_setenv(name, value, 1);
 		*a_arr_ccharp_index(env, i) = name;
-		a_arr_ccharp_push(&ashe.sh_buffers, name);
+		a_arr_ccharp_push(&ashe.sh_strings, name);
 	}
 }
 

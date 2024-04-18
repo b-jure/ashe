@@ -4,7 +4,6 @@
 #include "ainput.h"
 #include "ajobcntl.h"
 #include "ashell.h"
-#include "aprompt.h"
 #include "autils.h"
 
 #include <signal.h>
@@ -460,22 +459,23 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 		} else if (a_job_is_stopped(job) && !job->notified) {
 notify:
 			if (ashe.sh_term.tm_reading) { /* in signal handler ? */
-				col = A_COL;
-				row = A_ROW;
+				col = A_ICOL;
+				row = A_IROW;
 				idx = A_IBFIDX;
-				ashe_cursor_end();
+				ashe_c_end();
 				ashe_print("\r\n", stderr);
 			}
 
-			ashe_pinfo("%n '%s' %s", job->pgid, job->input,
+			ashe_pinfo("[%n] '%s' %s", job->pgid, job->input,
 				   (completed ? "<completed>" : "<stopped>"));
-			ashe_pprompt();
+			ashe_p_draw_unsafe();
 
 			if (term->tm_reading) {
-				A_COL = col;
-				A_ROW = row;
+				A_ICOL = col;
+				A_IROW = row;
 				A_IBFIDX = idx;
-				ashe_redraw();
+				ashe_i_redraw_unsafe();
+				a_term_sync_cursor();
 			}
 
 			if (completed) {

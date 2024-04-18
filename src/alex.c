@@ -102,6 +102,12 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 	token.end = lexer->current;
 	a_arr_char_push(&buffer, '\0');
 
+	if (ASHE_UNLIKELY(c == '\0' && dq)) {
+		a_arr_char_free(&buffer, NULL);
+		token.u.error = "expected '\"', instead got 'EOL'";
+		token.type = TK_ERROR;
+	}
+
 	ptr = a_arr_ptr(buffer);
 	if (*ptr != '=' && (ptr = strstr(ptr, "=")) != NULL) {
 		*ptr = '\0';
@@ -125,7 +131,7 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 		} else {
 			token.u.string = buffer;
 		}
-		a_arr_ccharp_push(&ashe.sh_buffers, a_arr_ptr(buffer));
+		a_arr_ccharp_push(&ashe.sh_strings, a_arr_ptr(buffer));
 	}
 	return token;
 }

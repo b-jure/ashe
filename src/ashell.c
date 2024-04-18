@@ -4,7 +4,7 @@
 #include "ashell.h"
 #include "aalloc.h"
 #include "aalloc.h"
-#include "aprompt.h"
+#include "auserstr.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
 #endif
@@ -17,8 +17,7 @@ struct a_shell ashe = { 0 };
 
 ASHE_PRIVATE void sh_init_buffers(struct a_shell *sh)
 {
-	a_arr_ccharp_init(&sh->sh_buffers);
-	a_arr_char_init_cap(&sh->sh_prompt, sizeof(ASHE_PROMPT));
+	a_arr_ccharp_init(&sh->sh_strings);
 	a_arr_char_init_cap(&sh->sh_welcome, sizeof(ASHE_WELCOME));
 	a_arr_char_init_cap(&sh->sh_status, 8);
 }
@@ -89,8 +88,7 @@ ASHE_PUBLIC void a_shell_free(struct a_shell *sh)
 {
 	a_jobcntl_free(&sh->sh_jobcntl);
 	a_term_free();
-	a_arr_ccharp_free(&sh->sh_buffers, ashe_free_ccharp);
-	a_arr_char_free(&sh->sh_prompt, NULL);
+	a_arr_ccharp_free(&sh->sh_strings, ashe_free_ccharp);
 	a_arr_char_free(&sh->sh_welcome, NULL);
 	a_arr_char_free(&sh->sh_status, NULL);
 	a_block_free(&sh->sh_block);

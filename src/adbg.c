@@ -554,8 +554,8 @@ ASHE_PUBLIC void debug_cursor(void)
 		ashe_panic_libwcall(ashe_open, "can't open logfile for cursor logging");
 	a_arr_char_push_strf(
 		&buffer,
-		"[A_TCOLMAX:%n][A_TCOL:%n][A_ROW:%n][LINE_LEN:%n][A_COL:%n][A_IBFIDX:%n]\n",
-		A_TCOLMAX, A_TCOL, A_ROW, A_LINE.len, A_COL, A_IBFIDX);
+		"[TCOLMAX:%n][TROWMAX:%n][TCOL:%n][TROW:%n][ROW:%n][LINE_LEN:%n][COL:%n][IBFIDX:%n]\n",
+		A_TCOLMAX, A_TROWMAX, A_TCOL, A_TROW, A_IROW, A_ILINE.len, A_ICOL, A_IBFIDX);
 	ashe_write(fd, a_arr_ptr(buffer), a_arr_len(buffer));
 
 	ashe_close(fd);
@@ -575,14 +575,14 @@ ASHE_PUBLIC void debug_lines(void)
 	if (ASHE_UNLIKELY((fd = ashe_open(logfiles[ALOG_LINES], AHOW_W, 0)) < 0))
 		ashe_panic_libwcall(ashe_open, "can't open logfile for logging lines");
 
-	a_arr_char_push_strf(&buffer, "[A_PLEN:%n] -> [", A_PLEN);
-	a_arr_char_push_str(&buffer, a_arr_ptr(ashe.sh_prompt), a_arr_len(ashe.sh_prompt));
+	a_arr_char_push_strf(&buffer, "[A_TPLEN:%n] -> [", A_TPLEN);
+	a_arr_char_push_str(&buffer, a_arr_ptr(A_TP), A_TPLEN);
 	a_arr_char_push_strf(&buffer, "]\n[IBFLEN:%n] -> [", a_arr_len(A_IBF));
 	a_arr_char_push_str(&buffer, a_arr_ptr(A_IBF), a_arr_len(A_IBF));
 	a_arr_char_push_strlit(&buffer, "]\n");
-	for (i = 0; i < a_arr_len(A_LINES); i++) {
-		line = a_arr_line_index(&A_LINES, i);
-		a_arr_char_push_strf(&buffer, "[A_LINE:%n][LEN:%n] -> [", i, line->len);
+	for (i = 0; i < A_ILINES.len; i++) {
+		line = a_arr_line_index(&A_ILINES, i);
+		a_arr_char_push_strf(&buffer, "[A_ILINE:%n][LEN:%n] -> [", i, line->len);
 		a_arr_char_push_str(&buffer, line->start, line->len);
 		a_arr_char_push_strlit(&buffer, "]\n");
 	}

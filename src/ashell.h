@@ -33,8 +33,7 @@ struct a_shell {
 	struct a_jobcntl sh_jobcntl;
 	struct a_term sh_term;
 	struct a_lexer sh_lexer;
-	a_arr_ccharp sh_buffers;
-	a_arr_char sh_prompt;
+	a_arr_ccharp sh_strings;
 	a_arr_char sh_welcome;
 	a_arr_char sh_status;
 	struct a_block sh_block;
