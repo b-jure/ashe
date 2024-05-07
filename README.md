@@ -23,7 +23,7 @@ Before building/installing you can configure the build parameters in
 
 Building from source using [GNU make](https://www.gnu.org/software/make/):
 ```sh
-git clone https://github.com/SigmaBale/ashe.git
+git clone https://github.com/b-jure/ashe 
 cd ashe
 make
 ```
