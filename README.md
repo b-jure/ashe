@@ -29,5 +29,5 @@ make
 ```
 Installing:
 ```sh
-make clean && sudo install
+make clean && sudo make install
 ```
