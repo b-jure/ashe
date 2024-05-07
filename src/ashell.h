@@ -34,8 +34,8 @@ struct a_shell {
 	struct a_term sh_term;
 	struct a_lexer sh_lexer;
 	a_arr_ccharp sh_strings;
-	a_arr_char sh_welcome;
 	a_arr_char sh_status;
+	a_arr_char sh_welcome;
 	struct a_block sh_block;
 	struct a_jmpbuf sh_buf;
 	struct a_flags sh_flags;
@@ -47,7 +47,8 @@ struct a_shell {
 extern struct a_shell ashe; /* global */
 
 void a_shell_init(struct a_shell *sh);
+void a_shell_clear_strings(struct a_shell *sh);
+void a_shell_clear_ast(struct a_shell *sh);
 void a_shell_free(struct a_shell *sh);
-void ashe_free_ccharp(void *ptr);
 
 #endif

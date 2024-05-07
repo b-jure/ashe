@@ -113,7 +113,7 @@ ASHE_PRIVATE void expand_placeholders(a_arr_char *out, const char **ptr)
 		goto push_plh_sign;
 
 	n = prev = 0;
-	for (i = 0; i < ASHE_MAXNUM2STR && isdigit((c = *p)); i++, p++) {
+	for (i = 0; i < ASHE_MAXNUMSTR && isdigit((c = *p)); i++, p++) {
 		n = n * 10 + (c - '0');
 		if (ASHE_UNLIKELY(n < prev))
 			ashe_panic("placeholder index overflowed");

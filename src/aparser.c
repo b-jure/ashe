@@ -345,9 +345,9 @@ ASHE_PRIVATE void simple_cmd_prefix(struct a_simple_cmd *restrict scmd)
 			a_arr_ccharp_push(&scmd->sc_env, A_CTOK_STR());
 			break;
 		case TK_NUMBER:
+			numstr = *a_arr_ccharp_last(&ashe.sh_strings);
 			nexttok(&A_LEX);
 			if (!is_redirection[A_CTOK.type]) {
-				numstr = *a_arr_ccharp_last(&ashe.sh_strings);
 				a_arr_ccharp_push(&scmd->sc_argv, numstr);
 				return;
 			}
@@ -456,12 +456,13 @@ pushrd:
 ASHE_PRIVATE void simple_cmd(struct a_block *restrict block, struct a_simple_cmd *scmd)
 {
 	simple_cmd_prefix(scmd);
-	if (A_CTOK.type != TK_EOL && (A_CTOK.type == TK_WORD || A_PTOK.type == TK_NUMBER)) {
+	if (A_CTOK.type == TK_WORD || A_PTOK.type == TK_NUMBER) {
 		if (ARGC(scmd) == 0) {
 			ashe_assert(A_PTOK.type != TK_NUMBER);
 			simple_cmd_command(scmd);
 		}
-		simple_cmd_suffix(block, scmd);
+		if (A_CTOK.type != TK_EOL)
+			simple_cmd_suffix(block, scmd);
 	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 && a_arr_len(scmd->sc_rds) == 0)) {
 		/* this: 'input... ['|' | '&&' | '||'] EOL' */
 		expect_error("string");
@@ -560,6 +561,7 @@ ASHE_PUBLIC void pblock(struct a_block *block)
 
 ASHE_PUBLIC a_int32 ashe_parse(const char *restrict cstr)
 {
+	ashe_dprint("R[E]PL");
 	a_lexer_init(&ashe.sh_lexer, cstr);
 	ashe.sh_buf.buf_code = 0;
 	if (setjmp(ashe.sh_buf.buf_jmpbuf) == 0)

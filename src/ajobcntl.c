@@ -411,6 +411,10 @@ ASHE_PRIVATE void a_jobcntl_update(struct a_jobcntl *jobcntl)
 	a_int32 status, ret;
 	a_pid pid;
 
+#ifndef ASHE_DBG_ASSERT
+	ASHE_UNUSED(ret);
+#endif
+
 	do {
 		pid = ashe_waitpid(WAIT_ANY, &status, WUNTRACED | WNOHANG);
 		if (pid < 0) { /* ECHILD */
@@ -462,19 +466,19 @@ notify:
 				col = A_ICOL;
 				row = A_IROW;
 				idx = A_IBFIDX;
-				ashe_c_end();
+				ashe_move_to_end();
 				ashe_print("\r\n", stderr);
 			}
 
 			ashe_pinfo("[%n] '%s' %s", job->pgid, job->input,
 				   (completed ? "<completed>" : "<stopped>"));
-			ashe_p_draw_unsafe();
+			ashe_draw_prompt_unsafe();
 
 			if (term->tm_reading) {
 				A_ICOL = col;
 				A_IROW = row;
 				A_IBFIDX = idx;
-				ashe_i_redraw_unsafe();
+				ashe_redraw_input_unsafe();
 				a_term_sync_cursor();
 			}
 

@@ -34,15 +34,20 @@
 #define A_ISROW	 A_TI.in_startrow
 #define A_ISCOL	 A_TI.in_startcol
 
-/* slice of bytes */
-struct a_line {
+struct a_line { /* input line */
 	char *start;
 	a_memmax len;
+
+	/* TODO: implement line flags and trow in order to move
+	 * cursor up properly up after terminal scrolls down. */
+	a_uint32 trow;
+#define ALF_SCROLLWIN 0x01 /* last char will scroll window */
+	a_ubyte flags;
 };
 
 ARRAY_NEW(a_arr_line, struct a_line)
 
-/* terminal input (private) */
+/* terminal input */
 struct a_input {
 	/* input buffer and current cursor index within it */
 	a_arr_char in_ibf;
@@ -108,21 +113,13 @@ void a_term_read(void);
 void sigwinch_redraw(void); // TODO: test
 
 /*
- * ------------------------------------------------------
- * 		TERMINAL INPUT SAFE API
- * 	Safe to invoke always, you can't mess up.
- * 		(but developer can...)
- * ------------------------------------------------------
- */
-
-/*
  * Insert character 'c' under the cursor into the
  * input buffer and update cursor.
  *
  * If the input size limit is reached, character
  * won't get inserted and return value will be 0.
  */
-a_ubyte ashe_i_insert(a_ubyte c);
+a_ubyte ashe_insert_char(a_ubyte c);
 
 /*
  * Remove character under the cursor from the
@@ -132,7 +129,7 @@ a_ubyte ashe_i_insert(a_ubyte c);
  * input buffer was already empty, return value
  * will be 0.
  */
-a_ubyte ashe_i_remove(void);
+a_ubyte ashe_remove_char(void);
 
 /*
  * Remove 'len' bytes from the input buffer
@@ -151,11 +148,11 @@ a_ubyte ashe_i_remove(void);
  * to the end of the input buffer, return value
  * is 0 and removal is not performed.
  */
-a_uint32 ashe_i_remove_bytes(a_ssize len); // TODO: test
+a_uint32 ashe_remove_bytes(a_ssize len); // TODO: test
 
 /*
- * Insert newline under the cursor and create
- * a new input line.
+ * Insert new line under the cursor and move the
+ * cursor to the start of that line.
  *
  * If cursor is not preceeded by the open double
  * quotes and the preceeding character is not escape
@@ -164,12 +161,10 @@ a_uint32 ashe_i_remove_bytes(a_ssize len); // TODO: test
  * input buffer.
  * In this case the function returns 1.
  */
-a_ubyte ashe_i_cr(void);
+a_ubyte ashe_cr(void);
 
-/*
- * Redraw the prompt and clear the input buffer.
- */
-void ashe_p_redraw(void);
+/* Redraw the prompt and clear the input buffer. */
+void ashe_redraw_prompt(void);
 
 /*
  * Move terminal cursor once to the left.
@@ -177,7 +172,7 @@ void ashe_p_redraw(void);
  * If cursor is already at the start of
  * the input buffer 0 is returned.
  */
-a_ubyte ashe_c_left(void);
+a_ubyte ashe_move_left(void);
 
 /*
  * Move terminal cursor once to the right.
@@ -185,7 +180,7 @@ a_ubyte ashe_c_left(void);
  * If cursor is already at the end of the
  * input buffer 0 is returned.
  */
-a_ubyte ashe_c_right(void);
+a_ubyte ashe_move_right(void);
 
 /*
  * Move terminal cursor down once.
@@ -193,7 +188,7 @@ a_ubyte ashe_c_right(void);
  * If cursor is already at the last
  * terminal row of the input 0 is returned.
  */
-a_ubyte ashe_c_down(void);
+a_ubyte ashe_move_down(void);
 
 /*
  * Move terminal cursor up once.
@@ -201,7 +196,7 @@ a_ubyte ashe_c_down(void);
  * If cursor is already at the first
  * terminal row of the input 0 is returned.
  */
-a_ubyte ashe_c_up(void);
+a_ubyte ashe_move_up(void);
 
 /*
  * Move cursor to the end of the terminal line.
@@ -209,7 +204,7 @@ a_ubyte ashe_c_up(void);
  * If cursor is already at the end of
  * the terminal line 0 is returned.
  */
-a_ubyte ashe_c_eol(void);
+a_ubyte ashe_move_to_eol(void);
 
 /*
  * Move cursor to the start of the terminal line.
@@ -217,14 +212,14 @@ a_ubyte ashe_c_eol(void);
  * If cursor is already at the start of
  * the terminal line 0 is returned.
  */
-a_ubyte ashe_c_sol(void);
+a_ubyte ashe_move_to_sol(void);
 
 /*
  * Clears the screen, redraws the prompt together
  * with the input buffer and sets the terminal cursor
  * to the original position inside the input buffer.
  */
-void ashe_s_clear(void);
+void ashe_clear_screen_and_redraw(void);
 
 /*
  * Moves cursor to the start of the input buffer.
@@ -232,7 +227,7 @@ void ashe_s_clear(void);
  * If the cursor was already at the start this
  * returns 0.
  */
-a_ubyte ashe_c_start(void);
+a_ubyte ashe_move_to_start(void);
 
 /*
  * Moves cursor to the end of the input buffer.
@@ -240,29 +235,11 @@ a_ubyte ashe_c_start(void);
  * If the cursor was already at the start this
  * returns 0.
  */
-a_ubyte ashe_c_end(void);
+a_ubyte ashe_move_to_end(void);
 
-/*
- * ------------------------------------------------------
- * 		TERMINAL INPUT UNSAFE API
- *
- * 	In order to use this effectively without
- * 	breaking the program you need to read
- * 	source code and get familiar with the
- * 	codebase.
- * 	It is up to developer to abstract upon
- * 	this API.
- * 	This API is also exposed for internal
- * 	use in the shell, specifically inside
- * 	the signal handlers and even some of
- * 	the built-in commands have use of it.
- * ------------------------------------------------------
- */
 
-/* read source code :( */
-a_ubyte ashe_p_draw_unsafe(void); // TODO: test
-void ashe_i_redraw_unsafe(void);
-a_ubyte ashe_i_insert_bytes_unsafe(const char *src, a_uint32 len); // TODO: test
-void ashe_s_clear_unsafe(void);
+a_ubyte ashe_draw_prompt_unsafe(void);
+void ashe_redraw_input_unsafe(void);
+void ashe_clear_screen_unsafe(void);
 
 #endif

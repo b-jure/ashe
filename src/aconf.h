@@ -103,7 +103,7 @@ static a_promptfn placeholders[] = {
  * new line characters, carriage retrun, vertical tabs,
  * form feed are also prohibited and will be unescaped.
  */
-#define ASHE_PROMPT "$ "
+#define ASHE_PROMPT "%1@%0 %3$ "
 
 /* ---- Shell exit ---- */
 /*

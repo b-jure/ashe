@@ -94,8 +94,12 @@ typedef void (*a_sighandler)(int);
 #define SS(str) (sizeof(str) - 1)
 /* -------------------------------- */
 
-/* max length of the conversion of a number to a string */
-#define ASHE_MAXNUM2STR 44
+/* max lenghts of number to string conversions */
+#define ASHE_MAXINT8STR	 5
+#define ASHE_MAXINT16STR 7
+#define ASHE_MAXINT32STR 12
+#define ASHE_MAXINT64STR 22
+#define ASHE_MAXNUMSTR	 44
 /* -------------------------------- */
 
 /* formats */
@@ -105,7 +109,6 @@ typedef void (*a_sighandler)(int);
 /* -------------------------------- */
 
 /* defer */
-#define ASHE_DEFER_NO_STATUS() goto defer;
 #define ASHE_DEFER(n)       \
 	do {                \
 		status = n; \

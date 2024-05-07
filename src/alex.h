@@ -6,8 +6,8 @@
 struct a_lexer {
 	struct a_token curr;
 	struct a_token prev;
-	const char *current;
-	const char *start; // for debug
+	const char *current; /* debug */
+	const char *start; /* debug */
 };
 
 /* global lexer */

@@ -197,7 +197,7 @@ typedef void (*FreeFn)(void *value);
                                                                                                  \
 	static inline void _ARRAY_METHOD_VARARG(name, push_ptr, const void *ptr)                 \
 	{                                                                                        \
-		char temp[ASHE_MAXNUM2STR];                                                      \
+		char temp[ASHE_MAXNUMSTR];                                                      \
 		a_ssize chars;                                                                   \
                                                                                                  \
 		ashe_assert(sizeof(type) == sizeof(char));                                       \
@@ -207,7 +207,7 @@ typedef void (*FreeFn)(void *value);
                                                                                                  \
 	static inline void _ARRAY_METHOD_VARARG(name, push_double, double f)                     \
 	{                                                                                        \
-		char temp[ASHE_MAXNUM2STR];                                                      \
+		char temp[ASHE_MAXNUMSTR];                                                      \
 		a_ssize chars;                                                                   \
                                                                                                  \
 		ashe_assert(sizeof(type) == sizeof(char));                                       \
@@ -217,7 +217,7 @@ typedef void (*FreeFn)(void *value);
                                                                                                  \
 	static inline void _ARRAY_METHOD_VARARG(name, push_number, a_ssize n)                    \
 	{                                                                                        \
-		char temp[ASHE_MAXNUM2STR];                                                      \
+		char temp[ASHE_MAXNUMSTR];                                                      \
 		a_ssize chars;                                                                   \
                                                                                                  \
 		ashe_assert(sizeof(type) == sizeof(char));                                       \

@@ -60,6 +60,9 @@ a_pid ashe_fork(void);
 /* snprintf */
 a_ssize ashe_snprintf(char *s, a_memmax size, const char *fmt, ...);
 
+/* getpgrp */
+a_pid ashe_getpgrp(void);
+
 /* sigaction */
 void ashe_sigaction(a_int32 sig, const struct sigaction *act, struct sigaction *oact);
 

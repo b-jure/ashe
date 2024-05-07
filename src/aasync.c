@@ -62,7 +62,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ASHE_UNUSED(signum);
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
-	ashe_p_redraw();
+	ashe_redraw_prompt();
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif

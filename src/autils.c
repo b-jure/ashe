@@ -55,9 +55,10 @@ ASHE_PUBLIC void a_arr_char_push_vstrf(a_arr_char *buffer, const char *fmt, va_l
 			a_arr_char_push_ptr(buffer, p);
 			break;
 		case '%':
-			a_arr_char_push(buffer, c);
+			a_arr_char_push(buffer, '%');
 			break;
 		default:
+			c = *(end + 1);
 			ashe_panicf("invalid format specifier '%%%c'", c);
 			/* UNREACHED */
 		}

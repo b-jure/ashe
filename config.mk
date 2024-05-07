@@ -6,18 +6,18 @@ PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/man
 
 # AddresSanitizer
-ASANLIB = /usr/lib
-ASANFLAGS = -fsanitize=address -fsanitize=undefined
+#ASANLIB = /usr/lib
+#ASANFLAGS = -fsanitize=address -fsanitize=undefined
 
 # Shared libraries
-LIBS = -L${ASANLIB}
+#LIBS = -L${ASANLIB}
 
-# Debug definitions (builtin)
-DBGDEFS = -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_DBG_ASSERT \
+# Debug definitions
+#DBGDEFS = -DASHE_DBG -DASHE_DBG_LINES -DASHE_DBG_CURSOR -DASHE_DBG_ASSERT \
 	  -DASHE_DBG_LEX -DASHE_DBG_MAIN -DASHE_DBG_AST
 
 # Debug flags
-DBGFLAGS = -g
+#DBGFLAGS = -g
 
 CPPFLAGS = -D_POSIX_SOURCE_200809L -D_POSIX_C_SOURCE -D_DEFAULT_SOURCE ${DBGDEFS}
 CFLAGS = -std=c99 -Wpedantic -Wall -Wextra ${DBGFLAGS} ${ASANFLAGS} ${CPPFLAGS}

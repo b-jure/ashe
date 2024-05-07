@@ -8,23 +8,22 @@
 #include "adbg.h"
 #endif
 
-#define clear_ast() (a_block_free(&ashe.sh_block), a_block_init(&ashe.sh_block))
-#define clear_buffers() \
-	(a_arr_ccharp_free(&ashe.sh_strings, ashe_free_ccharp), a_arr_ccharp_init(&ashe.sh_strings))
+#define REPL for (;; ashe_dprint("REP[L]"))
 
 /* ashe entry */
 int main(int argc, char **argv)
 {
-	/* TODO: use arguments */
+	/* TODO: use args */
 	ASHE_UNUSED(argc);
 	ASHE_UNUSED(argv);
-	a_arr_char *statusbuf = &ashe.sh_status;
 	struct a_jobcntl *jobcntl;
+	a_arr_char *statusbuf;
 	a_int32 status;
 
-	status = 0;
-	jobcntl = &ashe.sh_jobcntl;
 	a_shell_init(&ashe);
+	statusbuf = &ashe.sh_status;
+	jobcntl = &ashe.sh_jobcntl;
+	status = 0;
 
 #if defined(ASHE_DBG_CURSOR)
 	logfile_create("/tmp/ashe.cursor.dbg.txt", ALOG_CURSOR);
@@ -33,14 +32,15 @@ int main(int argc, char **argv)
 	logfile_create("/tmp/ashe.lines.dbg.txt", ALOG_LINES);
 #endif
 
-	for (;;) { /* REPL */
+	REPL
+	{
 		a_jobcntl_update_and_notify(jobcntl);
 		ashe_enable_jobcntl_updates();
 		a_term_read();
 		ashe_disable_jobcntl_updates();
 		ashe_dprintf("read %n bytes: '%s'", A_IBF.len, A_IBF.data);
-		clear_ast();
-		clear_buffers();
+		a_shell_clear_ast(&ashe);
+		a_shell_clear_strings(&ashe);
 		ashe_expandvars(&A_IBF); /* '$' */
 		ashe_dprintf("expanded '$' vars: '%s'", A_IBF.data);
 
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 #if defined(ASHE_DBG_AST) && defined(ASHE_DBG)
 		debug_ast(&ashe.sh_block);
 #endif
-		status = abs(ashe_interpret(&ashe.sh_block));
+		status = abs(ashe_run(&ashe.sh_block));
 		a_arr_char_push_number(statusbuf, status);
 		a_arr_char_push(statusbuf, '\0');
 setenv:

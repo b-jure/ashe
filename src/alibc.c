@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#include "acommon.h"
 #include "ashell.h"
 #include "alibc.h"
 #include "autils.h"
@@ -163,6 +164,15 @@ ASHE_PUBLIC a_ssize ashe_snprintf(char *restrict s, a_memmax size, const char *r
 	}
 	va_end(argp);
 	return chars;
+}
+
+ASHE_PUBLIC a_pid ashe_getpgrp(void)
+{
+	a_pid pgid;
+
+	if (ASHE_UNLIKELY((pgid = getpgrp()) < 0))
+		ashe_panic_libcall(getpgrp);
+	return pgid;
 }
 
 ASHE_PUBLIC ASHE_NORET ashe_exit(a_int32 status)

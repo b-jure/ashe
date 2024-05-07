@@ -31,8 +31,10 @@ void ashe_perrno(const char *errfmt, ...);
 void ashe_pinfo(const char *ifmt, ...);
 #ifdef ASHE_DBG
 void ashe_dprintf(const char *dfmt, ...);
+#define ashe_dprint(str) ashe_dprintf(str)
 #else
 #define ashe_dprintf(dftm, ...) ((void)(0))
+#define ashe_dprint(str)	((void)(0))
 #endif
 
 /* duplicate string/bytes */

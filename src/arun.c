@@ -300,11 +300,11 @@ ASHE_PRIVATE a_int32 run_scmd_nofork(struct a_simple_cmd *restrict scmd, enum a_
 		status = -1;
 	} else if (ARGC(scmd) > 0) {
 		status = ashe_runbin(scmd, type);
+		rm_envs(&scmd->sc_env);
 	}
 
 	stdfd_restore(in, out, err);
 	extrafds_close(in, out, err);
-	rm_envs(&scmd->sc_env);
 	return status;
 }
 
@@ -466,6 +466,7 @@ ASHE_PRIVATE a_int32 a_run_cmd(struct a_cmd *restrict cmd, struct a_job *restric
 	default:
 		/* UNREACHED */
 		ashe_assert(0);
+		return 0;
 	}
 }
 
@@ -541,13 +542,14 @@ ASHE_PRIVATE a_int32 a_run_list(struct a_list *restrict list)
 	return status;
 }
 
-ASHE_PUBLIC a_int32 ashe_interpret(struct a_block *restrict block)
+ASHE_PUBLIC a_int32 ashe_run(struct a_block *restrict block)
 {
 	a_memmax i;
 	a_uint32 listcnt;
 	a_int32 status;
 	struct a_list *list;
 
+	ashe_dprint("RE[P]L");
 	status = 0;
 	listcnt = block->bl_lists.len;
 	for (i = 0; i < listcnt; i++) {

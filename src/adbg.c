@@ -85,7 +85,7 @@ static const char *tokenstr[] = {
 /* Auxiliary to 'a_token_debug()' */
 ASHE_PRIVATE inline const char *num2str(a_memmax n)
 {
-	static char buffer[ASHE_MAXNUM2STR + 1];
+	static char buffer[ASHE_MAXNUMSTR + 1];
 	ashe_snprintf(buffer, sizeof(buffer) - 1, "%zu", n);
 	return buffer;
 }
