@@ -995,7 +995,7 @@ ASHE_PUBLIC void sigwinch_redraw(void)
 
 	up = first_row_diff(1);
 	a_term_sync_dimensions();
-	up -= (A_TCOLMAX | A_TROWMAX) == 1;
+	up -= A_TCOLMAX == 1;
 	dbf_pushlit(a_csi_cursor_hide);
 	if (up > 0)
 		dbf_push_moveup(up);
