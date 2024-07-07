@@ -75,7 +75,7 @@ int main(int argc, char **argv)
 setenv:
 		ashe_dprintf("storing status '%s' into '%s' variable", a_arrp_ptr(statusbuf),
 			     ASHE_VAR_STATUS);
-		if (ASHE_UNLIKELY(setenv(ASHE_VAR_STATUS, a_arr_ptr(ashe.sh_status), 1) < 0))
+		if (a_unlikely(setenv(ASHE_VAR_STATUS, a_arr_ptr(ashe.sh_status), 1) < 0))
 			ashe_panic_libcall(setenv);
 		a_arr_len(ashe.sh_status) = 0;
 	}

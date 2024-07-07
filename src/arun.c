@@ -188,7 +188,7 @@ ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *restrict rds, a_ubyte 
 			ashe_assert(rdp->rd_rhsfd == -1);
 			ashe_assert(rdp->rd_fname);
 			if ((fd = ashe_open(rdp->rd_fname, AHOW_W, rdp->rd_append)) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			redirect_errout(fd);
 			break;
 		case ARDOP_REDIRECT_INOUT:
@@ -198,13 +198,13 @@ ASHE_PRIVATE a_int32 resolve_redirections(a_arr_redirect *restrict rds, a_ubyte 
 			ashe_assert(rdp->rd_fname);
 			fd = ashe_open(rdp->rd_fname, AHOW_RW, rdp->rd_append);
 			if (fd < 0 || fd_assert_bounds(rdp->rd_lhsfd) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			if (!exec) {
 				ashe_close(fd);
 				break;
 			}
 			if (fd_assert_valid(rdp->rd_lhsfd) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			redirect(fd, rdp->rd_lhsfd);
 			setdirty(rdp->rd_lhsfd);
 			break;
@@ -220,7 +220,7 @@ redirect:
 			ashe_assert(rdp->rd_fname);
 			fd = ashe_open(rdp->rd_fname, how, rdp->rd_append);
 			if (fd < 0 || fd_assert_bounds(rdp->rd_lhsfd) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			redirect(fd, rdp->rd_lhsfd);
 			break;
 		case ARDOP_DUP_IN:
@@ -229,11 +229,11 @@ redirect:
 			ashe_assert(rdp->rd_rhsfd != -1);
 			ashe_assert(rdp->rd_fname == NULL);
 			if (fd_assert_bounds(rdp->rd_rhsfd) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			/* FALLTHRU */
 		case ARDOP_CLOSE:
 			if (fd_assert_bounds(rdp->rd_lhsfd) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			if (!exec)
 				break;
 			switch (rdp->rd_op) {
@@ -244,7 +244,7 @@ redirect:
 				perms = O_RDONLY | O_RDWR;
 assertperms:
 				if (fd_assert_perms(rdp->rd_rhsfd, perms) < 0)
-					ASHE_DEFER(-1);
+					a_defer(-1);
 				ashe_dup2(rdp->rd_rhsfd, rdp->rd_lhsfd);
 				setdirty(rdp->rd_lhsfd);
 				break;
@@ -378,6 +378,7 @@ ASHE_PRIVATE a_int32 run_scmd_fork(struct a_simple_cmd *restrict scmd,
 	a_arr_ccharp *aenv = &scmd->sc_env;
 	a_uint32 argc;
 	a_int32 type;
+	a_int32 status;
 	a_pid pid;
 
 	pid = ashe_fork();
@@ -394,9 +395,7 @@ ASHE_PRIVATE a_int32 run_scmd_fork(struct a_simple_cmd *restrict scmd,
 	ashe_assert(pid == 0);
 	ashe.sh_flags.isfork = 1;
 	argc = a_arrp_len(aargv);
-
-	if (argc == 0)
-		add_envs(aenv);
+	status = EXIT_FAILURE;
 
 	pid = getpid();
 
@@ -409,6 +408,12 @@ ASHE_PRIVATE a_int32 run_scmd_fork(struct a_simple_cmd *restrict scmd,
 	ashe_setpgid(pid, job->pgid);
 	reset_signal_handling();
 	connect_pipe(ctx);
+	add_envs(aenv);
+
+	if (argc == 0) {
+		status = EXIT_SUCCESS;
+		goto cleanup;
+	}
 
 	type = ashe_isbin(ARGV(scmd, 0));
 
@@ -427,7 +432,7 @@ cleanup:
 		if (pipes)
 			ashe_free(pipes);
 		a_job_free(job);
-		ashe_exit(EXIT_FAILURE);
+		ashe_exit(status);
 	}
 	/* UNREACHED */
 	ashe_assert(0);
@@ -514,7 +519,7 @@ ASHE_PRIVATE a_int32 a_run_pipeline(struct a_pipeline *restrict pipeline)
 		cmd = a_arr_cmd_index(cmds, i);
 		status = a_run_cmd(cmd, &job, i, pipes, cmdcnt);
 
-		if (ASHE_LIKELY(status == 1)) { /* forked ? */
+		if (a_likely(status == 1)) { /* forked ? */
 			status = 0;
 		} else { /* else single builtin foreground command */
 			ashe_assert(status <= 0 && i == 0 && cmdcnt == 1);

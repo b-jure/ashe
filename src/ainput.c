@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "acommon.h"
+#include "ahist.h"
 #include "autils.h"
 #include "ainput.h"
 #include "ashell.h"
@@ -264,6 +265,25 @@ ASHE_PRIVATE a_uint32 last_row_diff(void)
 	return rows;
 }
 
+ASHE_PRIVATE void setinput2history(void)
+{
+	struct a_histnode *hist;
+	a_int32 i;
+
+	ashe_move_to_start();
+	a_arr_len(A_IBF) = 0;
+	a_arr_line_free(&A_ILINES, NULL);
+	a_arr_line_init(&A_ILINES);
+	a_arr_line_push(&A_ILINES, (struct a_line){.len = 0, .start = a_arr_ptr(A_IBF)});
+	hist = ashe.history.current;
+	/* This code is very very very slow, but I
+	 * am very very very lazy. */
+	draw_lit(a_csi_cursor_hide);
+	for (i = 0; i < hist->len; i++)
+		ashe_insert_char(hist->contents[i], 0);
+	draw_lit(a_csi_cursor_show);
+}
+
 ASHE_PRIVATE enum termkey read_key(void)
 {
 	a_ubyte seq[3];
@@ -272,7 +292,7 @@ ASHE_PRIVATE enum termkey read_key(void)
 
 	ashe_mask_signals(SIG_UNBLOCK);
 	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-		if (ASHE_UNLIKELY(nread == -1 && (errno != EINTR && !ashe.sh_int)))
+		if (a_unlikely(nread == -1 && (errno != EINTR && !ashe.sh_int)))
 			ashe_panic_libcall(read);
 		ashe.sh_int = 0;
 	}
@@ -338,12 +358,12 @@ ASHE_PRIVATE enum termkey read_key(void)
 ASHE_PRIVATE a_ubyte process_key(void)
 {
 	a_int32 c;
+	struct a_histnode *hist;
 
 	if (IMPLEMENTED((c = read_key()))) {
 		switch (c) {
 		case CR:
-			if (ashe_cr() == 0)
-				break;
+			if (ashe_cr()) break;
 			return 0;
 		case DEL_KEY:
 		case BACKSPACE:
@@ -354,9 +374,6 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			break;
 		case HOME_KEY:
 			ashe_move_to_sol();
-			break;
-		case CTRL_KEY('l'):
-			ashe_clear_screen_and_redraw();
 			break;
 		case L_ARW:
 			ashe_move_left();
@@ -370,15 +387,35 @@ ASHE_PRIVATE a_ubyte process_key(void)
 		case D_ARW:
 			ashe_move_down();
 			break;
+		case CTRL_KEY('n'):
+			if (ashe_histnext(&ashe.history))
+				setinput2history();
+			break;
+		case CTRL_KEY('p'):
+			if (ashe_histprev(&ashe.history))
+				setinput2history();
+			break;
 		case CTRL_KEY('h'):
-		case CTRL_KEY('x'):
+			ashe_move_left();
+			break;
 		case CTRL_KEY('j'):
+			ashe_move_down();
+			break;
 		case CTRL_KEY('k'):
+			ashe_move_up();
+			break;
+		case CTRL_KEY('l'):
+			ashe_move_right();
+			break;
+		case CTRL_KEY('r'):
+			ashe_clear_screen_and_redraw();
+			break;
+		case CTRL_KEY('x'):
 		case CTRL_KEY('i'):
 			break;
 		default:
-			if (isgraph(c) || isspace(c))
-				ashe_insert_char(c);
+			if (isgraph(c) || c == ' ')
+				ashe_insert_char(c, 1);
 			break;
 		}
 	}
@@ -393,6 +430,8 @@ ASHE_PRIVATE a_ubyte process_key(void)
 
 ASHE_PRIVATE void a_input_read(void)
 {
+	const char *cmd;
+
 	a_term_sync_cursor(); /* sync once in raw mode */
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
@@ -400,9 +439,11 @@ ASHE_PRIVATE void a_input_read(void)
 #ifdef ASHE_DBG_LINES
 	debug_lines();
 #endif
-	while (process_key())
-		;
+	while (process_key());
 	a_arr_char_push(&A_IBF, '\0');
+	cmd = ashe_dupstrn(a_arr_ptr(A_IBF), a_arr_len(A_IBF));
+	ashe_newhisthead(&ashe.history, cmd);
+	resethistcurrent();
 	ashe_move_to_end();
 }
 
@@ -454,7 +495,7 @@ ASHE_PUBLIC void a_term_sync_cursor(void)
 		buf[i++] = c;
 	}
 
-	if (ASHE_UNLIKELY(sscanf(buf, "\033[%u;%u", &srow, &scol) != 2))
+	if (a_unlikely(sscanf(buf, "\033[%u;%u", &srow, &scol) != 2))
 		ashe_panic_libcall(sscanf);
 
 	A_TROW = srow;
@@ -465,7 +506,7 @@ ASHE_PUBLIC void a_term_sync_dimensions(void)
 {
 	struct winsize ws;
 
-	if (ASHE_UNLIKELY(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
+	if (a_unlikely(ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0)) {
 		get_winsize_fallback();
 		return;
 	}
@@ -480,49 +521,48 @@ ASHE_PUBLIC void a_term_free(void)
 	a_arr_char_free(&A_TDBF, NULL);
 }
 
-ASHE_PUBLIC a_ubyte ashe_insert_char(a_ubyte c)
+ASHE_PUBLIC a_ubyte ashe_insert_char(a_ubyte c, a_ubyte hidecur)
 {
 	struct a_line newline;
 	a_uint32 idx;
 	a_ubyte relink;
 
 	/* return if input limit would be exceeded */
-	if (ASHE_UNLIKELY(a_arr_len(A_IBF) >= ARG_MAX - 1))
+	if (a_unlikely(a_arr_len(A_IBF) >= MAXCMDSIZE - 1))
 		return 0;
 
 	/* update state and input buffer */
 	idx = A_IBFIDX;
 	relink = (a_arr_len(A_IBF) >= a_arr_cap(A_IBF));
-	a_arr_char_insert(&A_IBF, A_IBFIDX, c);
+	a_arr_char_insert(&A_IBF, idx, c);
 	A_ILINE.len++;
-	if (ASHE_UNLIKELY(relink)) {
+	if (a_unlikely(relink))
 		relink_lines();
-		relink = 0;
-	}
 
 	/* draw */
 	shift_lines_from(A_IROW + 1, 1, +); /* shift right */
-	dbf_pushlit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down);
+	if (hidecur) dbf_pushlit(a_csi_cursor_hide);
+	dbf_pushlit(a_csi_clear_line_right a_csi_clear_down);
 	if (c == '\n' && A_TCOL < A_TCOLMAX) { /* inside of 'ashe_i_cr()' ? */
 		dbf_pushc('\n');
 		idx++;
 	}
 	dbf_pushlit(a_csi_cursor_save);
 	dbf_push_len(a_arr_char_index(&A_IBF, idx), a_arr_len(A_IBF) - idx);
-	dbf_pushlit(a_csi_cursor_load a_csi_cursor_show);
+	dbf_pushlit(a_csi_cursor_load);
+	if (hidecur) dbf_pushlit(a_csi_cursor_show);
 	dbf_flush();
 
 	if (c == '\n') {
-		A_TROW++;
-
 		newline.start = A_ILINE.start + A_ICOL + 1;
-		newline.len = A_ILINE.len - (A_ICOL + 1);
-		newline.trow = ++A_TROW;
+		newline.len = A_ILINE.len - A_ICOL - 1;
+		newline.trow = A_TROW < A_TROWMAX ? ++A_TROW : A_TROW;
 		newline.flags = 0;
-		a_arr_line_insert(&A_ILINES, ++A_IROW, newline);
+		a_arr_line_insert(&A_ILINES, A_IROW + 1, newline);
 
 		A_ILINE.len = A_ICOL + 1;
 		A_IBFIDX++;
+		A_IROW++;
 		A_ICOL = 0;
 		A_TCOL = 1;
 		return 1;
@@ -535,24 +575,7 @@ ASHE_PUBLIC a_ubyte ashe_insert_char(a_ubyte c)
 		draw_lit("\n");
 	}
 
-	/* TODO: fix input that is located in scroll area
-	lastline = a_arr_line_last(&A_ILINES);
-	lasttrow = lastline->trow + trowdiffx(lastline->len - 1);
-	if (lasttrow == A_TROWMAX) {
-		if (A_TROW > A_TROWMAX) {
-			relink = 1;
-			A_TROW--;
-			if (c != '\n' && A_IBFIDX == A_IBF.len)
-				draw_lit("\n");
-			else
-				draw_lit(a_csi_cursor_up(1));
-		} else if (tcol(A_ILINE.len == 1)) {
-			relink = 1;
-			draw_lit(a_csi_cursor_up(1));
-		}
-	}
-	*/
-
+	/* TODO: fix input that is located in scroll area */
 	return 1;
 }
 
@@ -583,7 +606,8 @@ ASHE_PUBLIC a_ubyte ashe_remove_char(void)
 }
 
 /*
- * TODO: needs testing
+ * TODO: needs testing, probably doesn't work, I don't
+ * even use it, cba.
  */
 ASHE_PUBLIC a_uint32 ashe_remove_bytes(a_ssize len)
 {
@@ -640,9 +664,11 @@ ASHE_PUBLIC a_uint32 ashe_remove_bytes(a_ssize len)
 
 ASHE_PUBLIC a_ubyte ashe_cr(void)
 {
-	if (ashe_isescaped(a_arr_ptr(A_IBF), A_IBFIDX) || ashe_indq(a_arr_ptr(A_IBF), A_IBFIDX))
-		ashe_insert_char('\n');
-	return 1;
+	if (ashe_isescaped(a_arr_ptr(A_IBF), A_IBFIDX) || ashe_indq(a_arr_ptr(A_IBF), A_IBFIDX)) {
+		ashe_insert_char('\n', 1);
+		return 1;
+	}
+	return 0;
 }
 
 /*
@@ -680,7 +706,7 @@ ASHE_PUBLIC a_ubyte ashe_draw_prompt_unsafe(void)
 	a_arr_len(A_TP) = 0;
 	parse_placeholders(&A_TP, ASHE_PROMPT);
 	sanitize_prompt();
-	if (ASHE_UNLIKELY(a_arr_len(A_TP) >= ASHE_USERSTR_MAX)) {
+	if (a_unlikely(a_arr_len(A_TP) >= ASHE_USERSTR_MAX)) {
 		a_arr_len(A_TP) = ASHE_USERSTR_MAX - 1;
 		a_arr_char_push(&A_TP, '\0');
 	}
@@ -941,7 +967,7 @@ ASHE_PUBLIC a_ubyte ashe_move_to_start(void)
 
 	/* update input buffer */
 	up = first_row_diff(0);
-	A_IROW -= up;
+	A_TROW -= up;
 	A_TCOL = tcol(A_TPLEN + 1);
 	A_IBFIDX = 0;
 	A_ICOL = 0;

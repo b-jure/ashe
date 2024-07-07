@@ -103,7 +103,7 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 		if (!isdigit(*arg)) {
 			ashe_eprintf("%s: expected number, instead got '%s'.", bin, arg);
 			print_help_opts(bin);
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 
 		errno = 0;
@@ -120,7 +120,7 @@ ASHE_PRIVATE a_int32 filter_jobs_by_pid_or_id(a_arr_ccharp *argv, a_int32 *nums)
 		}
 
 		print_help_opts(bin);
-		ASHE_DEFER(-1);
+		a_defer(-1);
 	}
 defer:
 	return status;
@@ -172,7 +172,7 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 		jobcnt = a_jobcntl_jobs(jobcntl);
 		if (jobcnt == 0) {
 			ashe_eprintf("jobs: there are no jobs running.");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		ashe_jobs_print_header();
 		for (i = 0; i < jobcnt; i++) {
@@ -188,7 +188,7 @@ ASHE_PRIVATE a_int32 ashe_bi_jobs(a_arr_ccharp *argv)
 		/* FALLTHRU */
 	default:
 		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		ashe_jobs_print_header();
 		ashe_jobs_print_filtered_jobs(nums, argc - 1);
 		break;
@@ -286,7 +286,7 @@ ASHE_PRIVATE a_int32 ashe_bi_bg(a_arr_ccharp *argv)
 	default:
 		nums = ashe_calloc(argc - 1, sizeof(a_int32));
 		if (filter_jobs_by_pid_or_id(argv, nums) < 0)
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		ashe_bg_background_filtered_jobs(nums, argc - 1);
 		break;
 	}
@@ -370,15 +370,15 @@ ASHE_PRIVATE a_int32 ashe_bi_fg(a_arr_ccharp *argv)
 			print_rows(usage, ASHE_ELEMENTS(usage));
 		} else {
 			if (filter_jobs_by_pid_or_id(argv, &n) < 0)
-				ASHE_DEFER(-1);
+				a_defer(-1);
 			if (n < 0)
-				ASHE_DEFER(ashe_fg_id(FLIP_SIGN_BIT(n)));
-			ASHE_DEFER(ashe_fg_pid(n));
+				a_defer(ashe_fg_id(FLIP_SIGN_BIT(n)));
+			a_defer(ashe_fg_pid(n));
 		}
 		break;
 	default:
 		print_help_opts("fg");
-		ASHE_DEFER(-1);
+		a_defer(-1);
 	}
 defer:
 	return status;
@@ -424,7 +424,7 @@ ASHE_PRIVATE a_int32 ashe_bi_exit(a_arr_ccharp *argv)
 		status = strtol(a_arrp_ptr(argv)[1], &endptr, 10);
 		if (errno == EINVAL || errno == ERANGE || *endptr != '\0' || status < 0) {
 			ashe_eprintf("exit: invalid exit status CODE '%s'.", a_arrp_ptr(argv)[1]);
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		} else {
 l_exit:
 			ashe_exit(status);
@@ -433,7 +433,7 @@ l_exit:
 	default:
 		print_help_opts("exit");
 		ashe.sh_flags.exit = 0;
-		ASHE_DEFER(-1);
+		a_defer(-1);
 	}
 defer:
 	return status;
@@ -458,9 +458,9 @@ ASHE_PRIVATE a_int32 ashe_bi_cd(a_arr_ccharp *argv)
 
 	switch (argc) {
 	case 1:
-		if (ASHE_UNLIKELY(chdir(getenv(HOME)) < 0)) {
+		if (a_unlikely(chdir(getenv(HOME)) < 0)) {
 			ashe_perrno("cd");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		break;
 	case 2:
@@ -468,12 +468,12 @@ ASHE_PRIVATE a_int32 ashe_bi_cd(a_arr_ccharp *argv)
 			print_rows(usage, ASHE_ELEMENTS(usage));
 		} else if (chdir(a_arrp_ptr(argv)[1]) < 0) {
 			ashe_perrno("chdir");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		break;
 	default:
 		print_help_opts("cd");
-		ASHE_DEFER(-1);
+		a_defer(-1);
 	}
 defer:
 	return status;
@@ -502,13 +502,13 @@ ASHE_PRIVATE a_int32 envcmd(a_arr_ccharp *argv, a_int32 option)
 	case ENV_SET:
 		if (setenv(a_arrp_ptr(argv)[1], a_arrp_ptr(argv)[2], option != ENV_ADD) < 0) {
 			ashe_perrno("senv");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		break;
 	case ENV_REMOVE:
-		if (ASHE_UNLIKELY(unsetenv(a_arrp_ptr(argv)[1]) < 0)) {
+		if (a_unlikely(unsetenv(a_arrp_ptr(argv)[1]) < 0)) {
 			ashe_perrno("renv");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		break;
 	case ENV_PRINT:
@@ -517,7 +517,7 @@ ASHE_PRIVATE a_int32 envcmd(a_arr_ccharp *argv, a_int32 option)
 			break;
 		} else {
 			ashe_eprintf("penv: variable '%s' doesn't exist.", a_arrp_ptr(argv)[1]);
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 	case ENV_PRINT_ALL:
 		print_environ();
@@ -648,9 +648,9 @@ ASHE_PRIVATE a_int32 ashe_bi_pwd(a_arr_ccharp *argv)
 
 	switch (argc) {
 	case 1:
-		if (ASHE_UNLIKELY(!getcwd(buff, PATH_MAX))) {
+		if (a_unlikely(!getcwd(buff, PATH_MAX))) {
 			ashe_perrno("getcwd");
-			ASHE_DEFER(-1);
+			a_defer(-1);
 		}
 		ashe_printf(stdout, "%s\r\n", buff);
 		break;
@@ -662,7 +662,7 @@ ASHE_PRIVATE a_int32 ashe_bi_pwd(a_arr_ccharp *argv)
 		/* FALLTHRU */
 	default:
 		print_help_opts("pwd");
-		ASHE_DEFER(-1);
+		a_defer(-1);
 	}
 defer:
 	return status;
@@ -774,7 +774,7 @@ ASHE_PRIVATE a_int32 ashe_bi_exec(a_arr_ccharp *argv)
 		execargs[i] = *a_arr_ccharp_index(argv, i + 1);
 	execargs[argc - 1] = NULL;
 
-	if (ASHE_UNLIKELY(execvp(execargs[0], (char *const *)execargs) < 0)) {
+	if (a_unlikely(execvp(execargs[0], (char *const *)execargs) < 0)) {
 		ashe_free(execargs);
 		ashe_perrno("execvp");
 		return -1;
@@ -877,7 +877,7 @@ ASHE_PUBLIC a_int32 ashe_runbin(struct a_simple_cmd *scmd, enum a_builtin_type t
 	};
 
 	ashe_assertf(tbi >= TBI_BUILTIN && tbi <= TBI_EXIT, "invalid tbi");
-	if (ASHE_UNLIKELY(tbi == TBI_EXIT))
+	if (a_unlikely(tbi == TBI_EXIT))
 		return ashe_bi_exit(&scmd->sc_argv);
 	ashe.sh_flags.exit = 0;
 	return table[tbi](&scmd->sc_argv);

@@ -87,7 +87,7 @@ ASHE_PUBLIC void a_arr_char_push_vstrf(a_arr_char *buffer, const char *fmt, va_l
 ASHE_PRIVATE inline void ashe_flush(FILE *stream)
 {
 	fflush(stream);
-	if (ASHE_UNLIKELY(ferror(stream)))
+	if (a_unlikely(ferror(stream)))
 		ashe_panic(NULL);
 }
 
@@ -268,7 +268,7 @@ ASHE_PUBLIC void ashe_expandvars(a_arr_char *buffer)
 		if (value) {
 			vlen = strlen(value);
 			diff = vlen - klen;
-			if (ASHE_UNLIKELY(diff > 0 && a_arrp_len(buffer) + diff >= ARG_MAX))
+			if (a_unlikely(diff > 0 && a_arrp_len(buffer) + diff >= MAXCMDSIZE))
 				continue;
 			a_arr_char_remove_n(buffer, idx, klen);
 			a_arr_char_insert_n(buffer, idx, value, vlen);
@@ -363,4 +363,13 @@ ASHE_PUBLIC void ashe_escape(a_arr_char *buffer)
 	}
 	*newp = '\0';
 	a_arrp_len(buffer) = (newp - a_arrp_ptr(buffer)) + 1;
+}
+
+
+ASHE_PUBLIC const char *strnchr(const char buff[], a_memmax size, a_int32 delim)
+{
+	a_memmax i;
+
+	for (i = 0; i < size && buff[i] != delim; i++);
+	return (i >= size ? NULL : buff);
 }

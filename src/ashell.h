@@ -21,6 +21,7 @@
 #include "acommon.h"
 #include "ainput.h"
 #include "ajobcntl.h"
+#include "ahist.h"
 
 #include <signal.h>
 #include <setjmp.h>
@@ -57,6 +58,7 @@ struct a_shell {
 	struct a_flags sh_flags;
 	struct a_settings sh_settings;
 	volatile sig_atomic_t sh_int; /* set if we got interrupted */
+	struct a_histlist history;
 	a_ubyte sh_dirtyfd[3]; /* fd flags */
 };
 

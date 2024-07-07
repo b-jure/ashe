@@ -20,7 +20,7 @@
 #include "acommon.h"
 #include "atoken.h"
 
-#define ASHE_USERSTR_MAX ((ARG_MAX >> 2) ? (ARG_MAX >> 2) : 1024)
+#define ASHE_USERSTR_MAX 	((MAXCMDSIZE >> 2) ? (MAXCMDSIZE >> 2) : 1024)
 
 void ashe_puserstr(const char *str, a_memmax len);
 void ashe_pwelcome(void);

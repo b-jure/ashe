@@ -566,7 +566,7 @@ ASHE_PUBLIC void debug_cursor(void)
 
 	a_arr_char_init(&buffer);
 
-	if (ASHE_UNLIKELY((fd = ashe_open(logfiles[ALOG_CURSOR], AHOW_RW, 1)) < 0))
+	if (a_unlikely((fd = ashe_open(logfiles[ALOG_CURSOR], AHOW_RW, 1)) < 0))
 		ashe_panic_libwcall(ashe_open, "can't open logfile for cursor logging");
 	a_arr_char_push_strf(
 		&buffer,
@@ -588,7 +588,7 @@ ASHE_PUBLIC void debug_lines(void)
 
 	a_arr_char_init(&buffer);
 
-	if (ASHE_UNLIKELY((fd = ashe_open(logfiles[ALOG_LINES], AHOW_W, 0)) < 0))
+	if (a_unlikely((fd = ashe_open(logfiles[ALOG_LINES], AHOW_W, 0)) < 0))
 		ashe_panic_libwcall(ashe_open, "can't open logfile for logging lines");
 
 	a_arr_char_push_strf(&buffer, "[A_TPLEN:%n] -> [", A_TPLEN);
@@ -619,7 +619,7 @@ ASHE_PUBLIC void remove_logfiles(void)
 	root = NULL;
 
 	if ((root = opendir(".")) == NULL)
-		ASHE_DEFER(-1);
+		a_defer(-1);
 
 	for (errno = 0; (entry = readdir(root)) != NULL;) {
 		if ((strcmp(entry->d_name, logfiles[ALOG_CURSOR]) == 0 ||
@@ -630,8 +630,8 @@ ASHE_PUBLIC void remove_logfiles(void)
 		}
 	}
 
-	if (ASHE_UNLIKELY(errno != 0 || closedir(root) < 0))
-		ASHE_DEFER(-1);
+	if (a_unlikely(errno != 0 || closedir(root) < 0))
+		a_defer(-1);
 defer:
 	if (root)
 		closedir(root);
@@ -647,7 +647,7 @@ ASHE_PUBLIC void logfile_create(const char *logfile, a_int32 which)
 	a_int32 fd;
 
 	logfiles[which] = logfile;
-	if (ASHE_UNLIKELY((fd = ashe_open(logfile, AHOW_W, 0)) < 0))
+	if (a_unlikely((fd = ashe_open(logfile, AHOW_W, 0)) < 0))
 		ashe_panic_libwcall(ashe_open, "can't create logfile");
 	ashe_close(fd);
 }

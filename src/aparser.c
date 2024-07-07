@@ -63,7 +63,7 @@ ASHE_PRIVATE void nexttok(struct a_lexer *restrict lexer)
 {
 	lexer->prev = lexer->curr;
 	lexer->curr = a_lexer_next(lexer);
-	if (ASHE_UNLIKELY(A_CTOK.type == TK_ERROR)) { /* lex error ? */
+	if (a_unlikely(A_CTOK.type == TK_ERROR)) { /* lex error ? */
 		ashe_eprintf(A_CTOK.u.error);
 		jump_out(-1);
 	}
@@ -479,7 +479,7 @@ ASHE_PRIVATE void simple_cmd(struct a_block *restrict block, struct a_simple_cmd
 		}
 		if (A_CTOK.type != TK_EOL)
 			simple_cmd_suffix(block, scmd);
-	} else if (ASHE_UNLIKELY(a_arr_len(scmd->sc_env) == 0 && a_arr_len(scmd->sc_rds) == 0)) {
+	} else if (a_unlikely(a_arr_len(scmd->sc_env) == 0 && a_arr_len(scmd->sc_rds) == 0)) {
 		/* this: 'input... ['|' | '&&' | '||'] EOL' */
 		expect_error("string");
 	}

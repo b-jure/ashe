@@ -33,7 +33,7 @@ static char plhbuf[BUFSIZ];
 
 ASHE_PUBLIC const char *ashe_host(void)
 {
-	if (ASHE_UNLIKELY(gethostname(plhbuf, sizeof(plhbuf) - 1) < 0))
+	if (a_unlikely(gethostname(plhbuf, sizeof(plhbuf) - 1) < 0))
 		ashe_panic_libcall(gethostname);
 	return plhbuf;
 }
@@ -45,7 +45,7 @@ ASHE_PUBLIC const char *ashe_user(void)
 
 	errno = 0;
 	uid = getuid();
-	if (ASHE_UNLIKELY(!(record = getpwuid(uid))))
+	if (a_unlikely(!(record = getpwuid(uid))))
 		ashe_panic_libcall(getpwuid);
 	ashe_snprintf(plhbuf, sizeof(plhbuf) - 1, "%s", record->pw_name);
 	return plhbuf;
@@ -63,7 +63,7 @@ ASHE_PUBLIC const char *ashe_dir(void)
 {
 	const char *ptr;
 
-	if (ASHE_UNLIKELY(!getcwd(plhbuf, BUFSIZ)))
+	if (a_unlikely(!getcwd(plhbuf, BUFSIZ)))
 		ashe_panic_libcall(getcwd);
 	if ((ptr = strrchr(plhbuf, '/'))) {
 		ptr++;
@@ -74,7 +74,7 @@ ASHE_PUBLIC const char *ashe_dir(void)
 
 ASHE_PUBLIC const char *ashe_adir(void)
 {
-	if (ASHE_UNLIKELY(!getcwd(plhbuf, BUFSIZ)))
+	if (a_unlikely(!getcwd(plhbuf, BUFSIZ)))
 		ashe_panic_libcall(getcwd);
 	return plhbuf;
 }
@@ -84,9 +84,9 @@ ASHE_PUBLIC const char *ashe_time(void)
 	time_t t;
 	struct tm *lt;
 
-	if (ASHE_UNLIKELY(time(&t) < 0))
+	if (a_unlikely(time(&t) < 0))
 		ashe_panic_libcall(time);
-	if (ASHE_UNLIKELY((lt = localtime(&t)) == NULL))
+	if (a_unlikely((lt = localtime(&t)) == NULL))
 		ashe_panic_libcall(localtime);
 	ashe_snprintf(plhbuf, sizeof(plhbuf) - 1, "%02d:%02d", lt->tm_hour, lt->tm_min);
 	return plhbuf;
@@ -97,9 +97,9 @@ ASHE_PUBLIC const char *ashe_date(void)
 	struct tm *lt;
 	time_t t;
 
-	if (ASHE_UNLIKELY(time(&t) < 0))
+	if (a_unlikely(time(&t) < 0))
 		ashe_panic_libcall(time);
-	if (ASHE_UNLIKELY((lt = localtime(&t)) == NULL))
+	if (a_unlikely((lt = localtime(&t)) == NULL))
 		ashe_panic_libcall(localtime);
 	ashe_snprintf(plhbuf, sizeof(plhbuf) - 1, "%d-%02d-%02d", lt->tm_year + 1900,
 		      lt->tm_mon + 1, lt->tm_mday);
@@ -110,7 +110,7 @@ ASHE_PUBLIC const char *ashe_uptime(void)
 {
 	struct sysinfo si;
 
-	if (ASHE_UNLIKELY(sysinfo(&si) < 0))
+	if (a_unlikely(sysinfo(&si) < 0))
 		ashe_panic_libcall(sysinfo);
 	ashe_snprintf(plhbuf, sizeof(plhbuf) - 1, "%ldh %ldm", (si.uptime / 3600),
 		      (si.uptime / 60) % 60);
@@ -131,15 +131,15 @@ ASHE_PRIVATE void expand_placeholders(a_arr_char *out, const char **ptr)
 	n = prev = 0;
 	for (i = 0; i < ASHE_MAXNUMSTR && isdigit((c = *p)); i++, p++) {
 		n = n * 10 + (c - '0');
-		if (ASHE_UNLIKELY(n < prev))
+		if (a_unlikely(n < prev))
 			ashe_panic("placeholder index overflowed");
 		prev = n;
 	}
 
-	if (ASHE_UNLIKELY(n >= ASHE_ELEMENTS(placeholders)))
+	if (a_unlikely(n >= ASHE_ELEMENTS(placeholders)))
 		goto push_plh_sign;
 
-	if (ASHE_LIKELY((res = placeholders[n]()) != NULL)) {
+	if (a_likely((res = placeholders[n]()) != NULL)) {
 		a_arr_char_push_str(out, res, strlen(res));
 		*ptr = p;
 	} else {
@@ -173,7 +173,7 @@ ASHE_PUBLIC void ashe_puserstr(const char *str, a_memmax len)
 	a_arr_char_init_cap(&buffer, len);
 	parse_placeholders(&buffer, str);
 
-	if (ASHE_UNLIKELY(a_arr_len(buffer) >= ASHE_USERSTR_MAX))
+	if (a_unlikely(a_arr_len(buffer) >= ASHE_USERSTR_MAX))
 		a_arr_len(buffer) = ASHE_USERSTR_MAX - 1;
 
 	ashe_print(a_arr_ptr(buffer), stderr);

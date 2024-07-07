@@ -17,52 +17,57 @@
 #ifndef ACONF_H
 #define ACONF_H
 
+
 /* Do not touch, unless you know what you are doing,
  * or are contributor... */
 #if defined(__linux__)
 #include <linux/limits.h>
-#define HOME "HOME"
+#define HOME 		"HOME"
 #else
 #error "Ashe is only compatible with linux platforms."
 #endif
+
 
 /* ---- Asserts ---- */
 #ifdef ASHE_DBG_ASSERT
 #undef NDBG
 #include <assert.h>
 #ifndef ashe_assert
-#define ashe_assert(expr) assert(expr)
+#define ashe_assert(expr) 		assert(expr)
 #endif
 #ifndef ashe_assertf
-#define ashe_assertf(expr, msg) assert((expr) && (msg))
+#define ashe_assertf(expr, msg) 	assert((expr) && (msg))
 #endif
 #else
 #ifndef ashe_assert
-#define ashe_assert(expr) (void)(0)
+#define ashe_assert(expr) 		(void)(0)
 #endif
 #ifndef ashe_assertf
-#define ashe_assertf(expr, msg) (void)(0)
+#define ashe_assertf(expr, msg) 	(void)(0)
 #endif
 #endif /* ASHE_ASSERT */
+
 
 /* ---- Prefix formats ---- */
 /*
  * Note:
  * Prefixes do not support placeholder expansion.
  */
-#define ASHE_DEBUG_PREFIX "[ashe debug]: "
-#define ASHE_PANIC_PREFIX "[ashe panic]: "
-#define ASHE_INFO_PREFIX  "[ashe info]: "
-#define ASHE_ERR_PREFIX	  "[ashe error]: "
+#define ASHE_DEBUG_PREFIX 	"[ashe debug]: "
+#define ASHE_PANIC_PREFIX 	"[ashe panic]: "
+#define ASHE_INFO_PREFIX  	"[ashe info]: "
+#define ASHE_ERR_PREFIX	  	"[ashe error]: "
+
 
 /* ---- Reserved file descriptors ---- */
 /*
  * These are file descriptors ashe uses internally,
  * you can change them if you know what you are doing.
  */
-#define ASHE_FD_0 10
-#define ASHE_FD_1 11
-#define ASHE_FD_2 12
+#define ASHE_FD_0 	10
+#define ASHE_FD_1 	11
+#define ASHE_FD_2 	12
+
 
 /* ---- Placeholders ---- */
 /*
@@ -82,8 +87,10 @@
  * the placeholder won't get expanded and it will
  * remain unchanged.
  */
-#define ASHE_PLH_SIGN '%'
+#define ASHE_PLH_SIGN 	'%'
+
 typedef const char *(*a_promptfn)(void);
+
 #ifdef ASHE_USE_PLACEHOLDERS_ARRAY /* include guard */
 extern const char *ashe_host(void);
 extern const char *ashe_user(void);
@@ -105,12 +112,14 @@ static a_promptfn placeholders[] = {
 };
 #endif
 
+
 /* ---- Welcome message ---- */
 #define ASHE_WELCOME      \
 	"Welcome %1!\n"   \
 	"\tuptime - %7\n" \
 	"\ttime   - %5\n" \
 	"\tdate   - %6\n"
+
 
 /* ---- Prompt ---- */
 /*
@@ -119,7 +128,8 @@ static a_promptfn placeholders[] = {
  * new line characters, carriage retrun, vertical tabs,
  * form feed are also prohibited and will be unescaped.
  */
-#define ASHE_PROMPT "%1@%0 %3$ "
+#define ASHE_PROMPT 	"%1@%0 %3$ "
+
 
 /* ---- Shell exit ---- */
 /*
@@ -128,6 +138,20 @@ static a_promptfn placeholders[] = {
  * Time is in milliseconds and can be >=0 or up to 1000
  * milliseconds (1 second).
  */
-#define ASHE_WAIT_BEFORE_HARVEST_MS 200
+#define ASHE_WAIT_BEFORE_HARVEST_MS 	200
+
+
+/* ---- History ---- */
+/*
+ * Default location where the command history file is saved.
+ * Env variables ('$') are expanded appropriately.
+ */
+#define ASHE_HISTFILEPATH 	"$HOME/.ashe_hist"
+
+/*
+ * Limit of how many commands history can hold.
+ */
+#define ASHE_HISTLIMIT 		1000
+
 
 #endif

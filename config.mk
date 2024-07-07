@@ -19,8 +19,11 @@ MANPREFIX = ${PREFIX}/man
 # Debug flags
 #DBGFLAGS = -g
 
+# Optimization flags
+OPTS = -O2
+
 CPPFLAGS = -D_POSIX_SOURCE_200809L -D_POSIX_C_SOURCE -D_DEFAULT_SOURCE ${DBGDEFS}
-CFLAGS = -std=c99 -Wpedantic -Wall -Wextra ${DBGFLAGS} ${ASANFLAGS} ${CPPFLAGS}
+CFLAGS = -std=c99 -Wpedantic -Wall -Wextra ${OPTS} ${DBGFLAGS} ${ASANFLAGS} ${CPPFLAGS}
 LDFLAGS = ${LIBS} ${ASANFLAGS}
 
 CC = cc

@@ -81,7 +81,7 @@ ASHE_PRIVATE void ppanic(const char *efmt, va_list argp, a_int32 apanic)
 	a_arr_char_free(&buffer, NULL);
 }
 
-ASHE_PUBLIC ASHE_NORET ashe_internal_panic(const char *restrict errmsg, a_int32 apanic, ...)
+ASHE_PUBLIC a_noret ashe_internal_panic(const char *restrict errmsg, a_int32 apanic, ...)
 {
 	va_list argp;
 
@@ -108,7 +108,7 @@ ASHE_PUBLIC void *ashe_realloc(void *ptr, a_memmax size)
 
 	ptr = realloc(ptr, size);
 
-	if (ASHE_UNLIKELY(ptr == NULL)) {
+	if (a_unlikely(ptr == NULL)) {
 		perror("ashe");
 		ashe_panic_abort();
 	}

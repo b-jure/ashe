@@ -22,6 +22,7 @@
 #include "ainput.h"
 #include "ajobcntl.h"
 #include "ashell.h"
+#include "ahist.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
 #endif
@@ -52,7 +53,7 @@ ASHE_PUBLIC void ashe_mask_signal(int signum, int how)
 	sigemptyset(&signal);
 	sigaddset(&signal, signum);
 	/* no way this fails, but check to satisfy OCD */
-	if (ASHE_UNLIKELY(sigprocmask(how, &signal, NULL) < 0))
+	if (a_unlikely(sigprocmask(how, &signal, NULL) < 0))
 		ashe_panic_libcall(sigprocmask);
 }
 
@@ -79,6 +80,7 @@ ASHE_PRIVATE void SIGINT_handler(int signum)
 	ashe_mask_signals(SIG_BLOCK);
 	ashe.sh_int = 1;
 	ashe_redraw_prompt();
+	resethistcurrent();
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
 #endif

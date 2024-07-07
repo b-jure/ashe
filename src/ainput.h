@@ -134,8 +134,11 @@ void sigwinch_redraw(void); // TODO: test
  *
  * If the input size limit is reached, character
  * won't get inserted and return value will be 0.
+ *
+ * If 'hidecur' is true, then cursor will be hidden
+ * until screen is redrawn.
  */
-a_ubyte ashe_insert_char(a_ubyte c);
+a_ubyte ashe_insert_char(a_ubyte c, a_ubyte hidecur);
 
 /*
  * Remove character under the cursor from the

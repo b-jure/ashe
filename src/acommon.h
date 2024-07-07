@@ -26,27 +26,13 @@
 
 /* compiler defines */
 #if defined(__GNUC__)
-#define ASHE_NORET	    void __attribute__((noreturn))
-#define ASHE_LIKELY(expr)   __glibc_likely(expr)
-#define ASHE_UNLIKELY(expr) __glibc_unlikely(expr)
-#define ASHE_MAX(a, b)                  \
-	__extension__({                 \
-		__typeof__(a) _a = (a); \
-		__typeof__(b) _b = (b); \
-		_a > _b ? _a : _b;      \
-	})
-#define ASHE_MIN(a, b)                  \
-	__extension__({                 \
-		__typeof__(a) _a = (a); \
-		__typeof__(b) _b = (b); \
-		_a > _b ? _b : _a;      \
-	})
+#define a_noret	    void __attribute__((noreturn))
+#define a_likely(expr)   __glibc_likely(expr)
+#define a_unlikely(expr) __glibc_unlikely(expr)
 #else
-#define ASHE_NORET	    void
-#define ASHE_LIKELY(expr)   (expr)
-#define ASHE_UNLIKELY(expr) (expr)
-#define ASHE_MAX(a, b)	    ((a) > (b) ? (a) : (b))
-#define ASHE_MIN(a, b)	    ((a) > (b) ? (b) : (a))
+#define a_noret	    void
+#define a_likely(expr)   (expr)
+#define a_unlikely(expr) (expr)
 #endif // __GNUC__
 
 #if __STDC_VERSION__ < 199901L
@@ -66,6 +52,10 @@
 #define ASHE_VAR_PID	  "$"
 #define ASHE_VAR_STATUS_C '?'
 #define ASHE_VAR_PID_C	  '$'
+/* -------------------------------- */
+
+/* maximum command size */
+#define MAXCMDSIZE 	8191
 /* -------------------------------- */
 
 /* ------ integer typedefs ------ */
@@ -110,6 +100,10 @@ typedef void (*a_sighandler)(int);
 #define SS(str) (sizeof(str) - 1)
 /* -------------------------------- */
 
+/* max compare */
+#define a_max(a, b) 	((a) > (b) ? (a) : (b))
+/* -------------------------------- */
+
 /* max lenghts of number to string conversions */
 #define ASHE_MAXINT8STR	 5
 #define ASHE_MAXINT16STR 7
@@ -125,7 +119,7 @@ typedef void (*a_sighandler)(int);
 /* -------------------------------- */
 
 /* defer */
-#define ASHE_DEFER(n)       \
+#define a_defer(n)       \
 	do {                \
 		status = n; \
 		goto defer; \

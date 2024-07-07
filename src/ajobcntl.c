@@ -311,7 +311,7 @@ ASHE_PUBLIC void a_job_continue(struct a_job *job, a_ubyte isfg)
 	if (isfg) {
 		stopped = 0;
 		a_job_move_to_foreground(job, 1, &stopped);
-		if (ASHE_UNLIKELY(!stopped && !a_jobcntl_remove_job(&ashe.sh_jobcntl, job, NULL)))
+		if (a_unlikely(!stopped && !a_jobcntl_remove_job(&ashe.sh_jobcntl, job, NULL)))
 			ashe_panic("job not found");
 	} else {
 		a_job_mark_as_background(job, 1);
@@ -478,7 +478,7 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 			continue;
 		} else if (a_job_is_stopped(job) && !job->notified) {
 notify:
-			if (ashe.sh_term.tm_reading) { /* in signal handler ? */
+			if (term->tm_reading) { /* in signal handler ? */
 				col = A_ICOL;
 				row = A_IROW;
 				idx = A_IBFIDX;
@@ -682,13 +682,13 @@ ASHE_PRIVATE void a_job_kill_and_harvest(struct a_job *job)
 	a_memmax zombies, processes;
 
 	/* do not call wrapper, it's okay if this fails*/
-	if (ASHE_UNLIKELY(kill(-job->pgid, SIGKILL) < 0))
+	if (a_unlikely(kill(-job->pgid, SIGKILL) < 0))
 		ashe_perrno("kill");
 
 	ts.tv_sec = 0;
 	ts.tv_nsec = (ASHE_WAIT_BEFORE_HARVEST_MS % 1000) * 1000000;
 
-	if (ASHE_UNLIKELY(nanosleep(&ts, NULL) < 0))
+	if (a_unlikely(nanosleep(&ts, NULL) < 0))
 		ashe_perrno("nanosleep");
 
 	zombies = 0;
@@ -702,7 +702,7 @@ ASHE_PRIVATE void a_job_kill_and_harvest(struct a_job *job)
 			zombies++;
 	} while (--processes > 0);
 
-	if (ASHE_UNLIKELY(zombies > 0))
+	if (a_unlikely(zombies > 0))
 		ashe_eprintf("created %d zombie processes in PGID %d", zombies, job->pgid);
 }
 

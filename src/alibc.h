@@ -83,4 +83,4 @@ a_pid ashe_getpgrp(void);
 void ashe_sigaction(a_int32 sig, const struct sigaction *act, struct sigaction *oact);
 
 /* exit */
-ASHE_NORET ashe_exit(a_int32 status);
+a_noret ashe_exit(a_int32 status);

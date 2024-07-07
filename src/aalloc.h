@@ -34,7 +34,7 @@ void ashe_cleanupfork(void);
 #define APANIC_LIBWCALL 2
 #define APANIC_ABORT	4
 /* never call this directly (use macros instead) */
-ASHE_NORET ashe_internal_panic(const char *errmsg, a_int32 apanic, ...);
+a_noret ashe_internal_panic(const char *errmsg, a_int32 apanic, ...);
 /* panic source information */
 #define ashe_panic_source __FILE__, __LINE__, __func__
 /* panic error info */

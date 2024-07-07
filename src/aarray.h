@@ -74,7 +74,7 @@ typedef void (*FreeFn)(void *value);
 	static void _ARRAY_METHOD(name, grow)                                                    \
 	{                                                                                        \
 		a_uint32 oldcap = self->cap;                                                     \
-		if (ASHE_UNLIKELY(oldcap >= UINT_MAX)) {                                         \
+		if (a_unlikely(oldcap >= UINT_MAX)) {                                         \
 			ashe_panicf("%d:%s: capacity limit of %u reached in array '%s'!",        \
 				    __LINE__, __FILE__, #name, UINT_MAX);                        \
 		}                                                                                \
@@ -87,7 +87,7 @@ typedef void (*FreeFn)(void *value);
 			oldcap++;                                                                \
 			oldcap >>= 1;                                                            \
 		}                                                                                \
-		self->cap = ASHE_MIN(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);                     \
+		self->cap = a_max(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);                     \
 		self->data = (type *)ashe_realloc(self->data, self->cap * sizeof(type));         \
 	}                                                                                        \
                                                                                                  \
@@ -180,7 +180,7 @@ typedef void (*FreeFn)(void *value);
 		type *arr;                                                                       \
                                                                                                  \
 		ashe_assert(self->len >= len);                                                   \
-		if (ASHE_UNLIKELY(len == 0))                                                     \
+		if (a_unlikely(len == 0))                                                     \
 			return;                                                                  \
 		arr = self->data + index;                                                        \
 		memmove(arr, arr + len, (self->len - index - len) * sizeof(type));               \
@@ -203,11 +203,9 @@ typedef void (*FreeFn)(void *value);
 	static inline void _ARRAY_METHOD_VARARG(name, push_str, const char *str, a_memmax len)   \
 	{                                                                                        \
 		ashe_assert(sizeof(type) == sizeof(char));                                       \
-		if (ASHE_UNLIKELY(len <= 0))                                                     \
-			return;                                                                  \
 		_CALL_ARRAY_METHOD_VARARG(name, ensure, len);                                    \
 		type *dest = self->data + self->len;                                             \
-		memcpy(dest, str, len * sizeof(char));                                           \
+		memmove(dest, str, len * sizeof(char));                                           \
 		self->len += len;                                                                \
 	}                                                                                        \
                                                                                                  \

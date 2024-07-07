@@ -69,7 +69,7 @@ ASHE_PRIVATE inline a_int32 advance(struct a_lexer *lexer)
 {
 	a_int32 c = *lexer->current;
 
-	if (ASHE_LIKELY(c != '\0'))
+	if (a_likely(c != '\0'))
 		lexer->current++;
 	return c;
 }
@@ -118,7 +118,7 @@ ASHE_PRIVATE struct a_token a_token_string(struct a_lexer *lexer)
 	token.end = lexer->current;
 	a_arr_char_push(&buffer, '\0');
 
-	if (ASHE_UNLIKELY(c == '\0' && dq)) {
+	if (a_unlikely(c == '\0' && dq)) {
 		a_arr_char_free(&buffer, NULL);
 		token.u.error = "expected '\"', instead got 'EOL'";
 		token.type = TK_ERROR;
