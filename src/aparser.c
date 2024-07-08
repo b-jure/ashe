@@ -577,7 +577,6 @@ ASHE_PUBLIC void pblock(struct a_block *block)
 
 ASHE_PUBLIC a_int32 ashe_parse(const char *restrict cstr)
 {
-	ashe_dprint("R[E]PL");
 	a_lexer_init(&ashe.sh_lexer, cstr);
 	ashe.sh_buf.buf_code = 0;
 	if (setjmp(ashe.sh_buf.buf_jmpbuf) == 0)

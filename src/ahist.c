@@ -1,4 +1,5 @@
 #include "ahist.h"
+#include "aconf.h"
 #include "autils.h"
 #include "aalloc.h"
 
@@ -48,7 +49,7 @@ ASHE_PUBLIC struct a_histnode *ashe_newhisthead(struct a_histlist *hl, const cha
 	if (!hl->head)
 		hl->tail = hnode;
 	else
-		hnode->prev->next = hnode;
+		hl->head->next = hnode;
 	hl->head = hnode;
 	hl->nnodes++;
 	return hnode;
@@ -66,7 +67,7 @@ ASHE_PUBLIC struct a_histnode *ashe_newhisttail(struct a_histlist *hl, const cha
 	if (!hl->tail)
 		hl->head = hnode;
 	else
-		hnode->next->prev = hnode;
+		hl->tail->prev = hnode;
 	hl->tail = hnode;
 	hl->nnodes++;
 	return hnode;
@@ -89,9 +90,14 @@ ASHE_PUBLIC const char *ashe_histprev(struct a_histlist *hl)
 
 ASHE_PUBLIC const char *ashe_histnext(struct a_histlist *hl)
 {
-	if (hl->current && hl->current->next) {
-		hl->current = hl->current->next;
-		return hl->current->contents;
+	if (hl->current) {
+		if (!hl->current->next) {
+			hl->current = NULL;
+			return "";
+		} else {
+			hl->current = hl->current->next;
+			return hl->current->contents;
+		}
 	}
 	return NULL;
 }
@@ -108,13 +114,14 @@ ASHE_PUBLIC const char *ashe_histnext(struct a_histlist *hl)
  * maximum size of command + one byte for newline
  * character (that is how each line is saved inside
  * of history file).
+ * This value ideally should be page size aligned.
  */
 #define HISTBUFFSIZE 	(MAXCMDSIZE + 1)
 
 struct histbuff {
 	FILE *fp;
 	a_ssize nread; /* unread bytes */
-	a_int32 len; /* len of 'buffer' */
+	a_int32 pos; /* position in 'buffer' */
 	char buffer[HISTBUFFSIZE];
 };
 
@@ -122,7 +129,7 @@ struct histbuff {
 ASHE_PRIVATE void inithistbuff(struct histbuff *buff)
 {
 	buff->fp = NULL;
-	buff->len = 0;
+	buff->pos = 0;
 	buff->nread = 0;
 }
 
@@ -135,8 +142,8 @@ ASHE_PRIVATE void fillhistbuff(struct histbuff *buff)
 	ashe_assert(buff->fp != NULL);
 	ashe_assert(buff->nread == 0);
 
-	rsize = HISTBUFFSIZE - buff->len;
-	buff->nread = fread(&buff->buffer[buff->len], 1, rsize, buff->fp);
+	rsize = HISTBUFFSIZE - buff->pos;
+	buff->nread = fread(&buff->buffer[buff->pos], 1, rsize, buff->fp);
 	if (a_unlikely(buff->nread != rsize && ferror(buff->fp))) {
 		saverrno = errno; /* in case 'fclose' fails */
 		fclose(buff->fp);
@@ -151,32 +158,54 @@ ASHE_PRIVATE const char *gethistline(struct histbuff *buff)
 	const char *buffp;
 	const char *base;
 	a_int32 len;
+	a_int32 toread;
+	a_ubyte haveline;
 
-	ashe_assert(buff->len > 0 || buff->nread > 0);
+	ashe_assert(buff->pos > 0 || buff->nread > 0);
 
-	base = buff->buffer + buff->len;
+	haveline = 0;
+	toread = buff->nread;
+	base = buff->buffer + buff->pos;
 	buffp = base;
 	len = 0;
 
-	while ((buffp = strnchr(buffp, HISTBUFFSIZE - buff->len, '\n'))) {
-		buff->len = buffp - buff->buffer;
+	while (buff->nread > 0 && (buffp = ashe_strnchr(buffp, buff->nread, '\n'))) {
+		buff->pos = (buffp - buff->buffer) + 1; /* +1 to skip newline */
 		len = buffp - base;
-		if (!ashe_isescaped(base, len) && !ashe_indq(base, len))
+		buff->nread = toread - len - 1;
+		if (!ashe_isescaped(base, len) && !ashe_indq(base, len)) {
+			haveline = 1;
 			break;
+		}
+		buffp++; /* skip newline */
 	}
 
-	if (buffp == NULL) { /* need to read more ? */
-		ashe_assert(base != buff->buffer);
+	if (!haveline && !feof(buff->fp)) {
+		if (a_unlikely(base == buff->buffer)) { /* command overflows ? */
+			fclose(buff->fp);
+			ashe_panicf("Unescaped quotes ('\"') in history file, "
+				"please remove or clear the history file! "
+				"According to the 'aconf.h' history file "
+				"is located at '%s'.", ASHE_HISTFILEPATH);
+		}
+		buff->pos += buff->nread;
 		buff->nread = 0;
 		len = HISTBUFFSIZE - (base - buff->buffer);
 		memmove(buff->buffer, base, len);
-		buff->len = len;
+		buff->pos = len;
 		fillhistbuff(buff);
 		return gethistline(buff);
+	} else {
+		if (!haveline) { /* file ends without newline char ? */
+			buff->pos += buff->nread;
+			ashe_assert(buff->pos <= HISTBUFFSIZE);
+			ashe_assert(&base[toread-1] == &buff->buffer[buff->pos-1]);
+			buff->nread = 0;
+			len = toread;
+		}
+		if (len > 0) return ashe_dupstrn(base, len);
+		return NULL;
 	}
-
-	buff->nread -= len;
-	return ashe_dupstrn(base, len - 1);
 }
 
 
@@ -195,10 +224,10 @@ ASHE_PRIVATE void getrealfilepath(a_arr_char *buffer, const char *filepath)
 
 ASHE_PRIVATE a_int32 readhistoryfile(struct a_histlist *hl, const char *filepath)
 {
+	const char *cmd;
 	struct histbuff buff;
 	a_arr_char filebuff;
 	a_int32 status;
-
 
 	status = 0;
 	inithistbuff(&buff);
@@ -214,8 +243,10 @@ ASHE_PRIVATE a_int32 readhistoryfile(struct a_histlist *hl, const char *filepath
 		a_defer(-1);
 
 	fillhistbuff(&buff); /* prime buffer */
-	while (!feof(buff.fp))
-		ashe_newhisttail(hl, gethistline(&buff));
+	while (!feof(buff.fp) || buff.nread > 0) {
+		if ((cmd = gethistline(&buff)) != NULL)
+			ashe_newhisthead(hl, cmd);
+	}
 
 defer:
 	if (buff.fp) fclose(buff.fp);
@@ -271,9 +302,10 @@ ASHE_PRIVATE a_int32 savehistoryfile(struct a_histlist *hl, const char *filepath
 	for (node = hl->tail; node; node = node->next) {
 		len = node->len;
 		a_arr_char_push_str(&buffer, node->contents, len++);
-		a_arr_char_push_strlit(&buffer, "\n\0");
+		a_arr_char_push(&buffer, '\n');
 		if (a_unlikely(fwrite(a_arr_ptr(buffer), 1, len, fp) != len))
 			a_defer(-1);
+		a_arr_len(buffer) = 0;
 	}
 
 defer:

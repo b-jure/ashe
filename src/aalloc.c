@@ -42,6 +42,7 @@ ASHE_PUBLIC void ashe_cleanup(void)
 
 ASHE_PUBLIC void ashe_cleanupfork(void)
 {
+	ashe_freehistnodes(&ashe.sh_history);
 	a_shell_free(&ashe);
 }
 

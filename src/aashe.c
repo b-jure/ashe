@@ -24,7 +24,7 @@
 #include "adbg.h"
 #endif
 
-#define REPL for (;; ashe_dprint("REP[L]"))
+#define REPL for (;;)
 
 /* ashe entry */
 int main(int argc, char **argv)
@@ -33,6 +33,7 @@ int main(int argc, char **argv)
 	ASHE_UNUSED(argc);
 	ASHE_UNUSED(argv);
 	struct a_jobcntl *jobcntl;
+	const char *cmd;
 	a_arr_char *statusbuf;
 	a_int32 status;
 
@@ -54,27 +55,32 @@ int main(int argc, char **argv)
 		ashe_enable_jobcntl_updates();
 		a_term_read();
 		ashe_disable_jobcntl_updates();
-		ashe_dprintf("read %n bytes: '%s'", A_IBF.len, A_IBF.data);
 		a_shell_clear_ast(&ashe);
 		a_shell_clear_strings(&ashe);
-		ashe_expandvars(&A_IBF); /* '$' */
-		ashe_dprintf("expanded '$' vars: '%s'", A_IBF.data);
+		ashe_expandvars(&A_IBF);
 
-		if (a_arr_len(A_IBF) <= 1 || (status = ashe_parse(a_arr_ptr(A_IBF))) == 1) {
+		if (a_arr_len(A_IBF) <= 1)
+			continue;
+
+		cmd = ashe_dupstrn(a_arr_ptr(A_IBF), a_arr_len(A_IBF) - 1);
+		ashe_newhisthead(&ashe.sh_history, cmd);
+
+		if ((status = ashe_parse(a_arr_ptr(A_IBF))) == 1) {
 			continue;
 		} else if (status < 0) {
 			a_arr_char_push_str(statusbuf, "1", 2);
 			goto setenv;
 		}
+
 #if defined(ASHE_DBG_AST) && defined(ASHE_DBG)
 		debug_ast(&ashe.sh_block);
 #endif
+
 		status = abs(ashe_run(&ashe.sh_block));
 		a_arr_char_push_number(statusbuf, status);
 		a_arr_char_push(statusbuf, '\0');
+
 setenv:
-		ashe_dprintf("storing status '%s' into '%s' variable", a_arrp_ptr(statusbuf),
-			     ASHE_VAR_STATUS);
 		if (a_unlikely(setenv(ASHE_VAR_STATUS, a_arr_ptr(ashe.sh_status), 1) < 0))
 			ashe_panic_libcall(setenv);
 		a_arr_len(ashe.sh_status) = 0;

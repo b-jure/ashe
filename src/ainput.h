@@ -256,6 +256,12 @@ a_ubyte ashe_move_to_start(void);
  */
 a_ubyte ashe_move_to_end(void);
 
+/*
+ * Moves cursor to the start of the input buffer
+ * and clears the whole buffer.
+ */
+void ashe_clearinput(void);
+
 
 a_ubyte ashe_draw_prompt_unsafe(void);
 void ashe_redraw_input_unsafe(void);

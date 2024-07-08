@@ -366,10 +366,10 @@ ASHE_PUBLIC void ashe_escape(a_arr_char *buffer)
 }
 
 
-ASHE_PUBLIC const char *strnchr(const char buff[], a_memmax size, a_int32 delim)
+ASHE_PUBLIC const char *ashe_strnchr(const char buff[], a_memmax size, a_int32 delim)
 {
 	a_memmax i;
 
 	for (i = 0; i < size && buff[i] != delim; i++);
-	return (i >= size ? NULL : buff);
+	return (i >= size ? NULL : buff + i);
 }

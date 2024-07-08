@@ -70,6 +70,6 @@ void ashe_escape(a_arr_char *buffer);
 void ashe_expandvars(a_arr_char *buffer);
 
 /* 'strchr' for non-null terminated strings */
-const char *strnchr(const char buff[], a_memmax size, a_int32 delim);
+const char *ashe_strnchr(const char buff[], a_memmax size, a_int32 delim);
 
 #endif

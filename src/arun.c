@@ -571,7 +571,6 @@ ASHE_PUBLIC a_int32 ashe_run(struct a_block *restrict block)
 	a_int32 status;
 	struct a_list *list;
 
-	ashe_dprint("RE[P]L");
 	status = 0;
 	listcnt = block->bl_lists.len;
 	for (i = 0; i < listcnt; i++) {

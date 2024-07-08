@@ -265,23 +265,31 @@ ASHE_PRIVATE a_uint32 last_row_diff(void)
 	return rows;
 }
 
-ASHE_PRIVATE void setinput2history(void)
+ASHE_PUBLIC void ashe_clearinput(void)
 {
-	struct a_histnode *hist;
-	a_int32 i;
-
 	ashe_move_to_start();
 	a_arr_len(A_IBF) = 0;
 	a_arr_line_free(&A_ILINES, NULL);
 	a_arr_line_init(&A_ILINES);
 	a_arr_line_push(&A_ILINES, (struct a_line){.len = 0, .start = a_arr_ptr(A_IBF)});
+	draw_lit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down a_csi_cursor_show);
+}
+
+ASHE_PRIVATE void setinput2history(void)
+{
+	struct a_histnode *hist;
+	a_int32 i;
+
+	ashe_clearinput();
 	hist = ashe.sh_history.current;
 	/* This code is very very very slow, but I
 	 * am very very very lazy. */
-	draw_lit(a_csi_cursor_hide);
-	for (i = 0; i < hist->len; i++)
-		ashe_insert_char(hist->contents[i], 0);
-	draw_lit(a_csi_cursor_show);
+	if (hist) {
+		draw_lit(a_csi_cursor_hide);
+		for (i = 0; i < hist->len; i++)
+			ashe_insert_char(hist->contents[i], 0);
+		draw_lit(a_csi_cursor_show);
+	}
 }
 
 ASHE_PRIVATE enum termkey read_key(void)
@@ -409,6 +417,20 @@ ASHE_PRIVATE a_ubyte process_key(void)
 		case CTRL_KEY('r'):
 			ashe_clear_screen_and_redraw();
 			break;
+		case CTRL_KEY('e'):
+			ashe_move_to_eol();
+			break;
+		case CTRL_KEY('s'):
+			ashe_move_to_sol();
+			break;
+		case CTRL_KEY('w'):
+			while (ashe_remove_char());
+			break;
+		case CTRL_KEY('d'):
+			ashe_clearinput();
+			break;
+		// TODO: CTRL + f (move forward by a single word)
+		// TODO: CTRL + b (move back by a single word)
 		case CTRL_KEY('x'):
 		case CTRL_KEY('i'):
 			break;
@@ -429,8 +451,6 @@ ASHE_PRIVATE a_ubyte process_key(void)
 
 ASHE_PRIVATE void a_input_read(void)
 {
-	const char *cmd;
-
 	a_term_sync_cursor(); /* sync once in raw mode */
 #ifdef ASHE_DBG_CURSOR
 	debug_cursor();
@@ -440,8 +460,6 @@ ASHE_PRIVATE void a_input_read(void)
 #endif
 	while (process_key());
 	a_arr_char_push(&A_IBF, '\0');
-	cmd = ashe_dupstrn(a_arr_ptr(A_IBF), a_arr_len(A_IBF));
-	ashe_newhisthead(&ashe.sh_history, cmd);
 	resethistcurrent();
 	ashe_move_to_end();
 }
@@ -467,7 +485,6 @@ ASHE_PUBLIC void a_term_init(void)
 ASHE_PUBLIC void a_term_read(void)
 {
 	ashe_mask_signals(SIG_BLOCK);
-	ashe_dprint("[R]EPL");
 	a_input_clear();
 	ashe_draw_prompt_unsafe();
 	A_TM.tm_reading = 1;
