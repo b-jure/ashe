@@ -458,6 +458,8 @@ ASHE_PUBLIC void a_jobcntl_update_and_notify(struct a_jobcntl *jobcntl)
 	struct a_job *job, out;
 	a_ubyte completed;
 
+	col = row = idx = 0; /* avoid compiler warnings */
+
 	if ((jobcnt = a_jobcntl_jobs(jobcntl)) == 0)
 		return;
 
