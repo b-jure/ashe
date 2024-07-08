@@ -27,7 +27,7 @@
 #include "acommon.h"
 #include "alibc.h"
 
-#define GROW_ARRAY_CAPACITY(cap) ((cap) < 8 ? 8 : (cap) * 2)
+#define GROW_ARRAY_CAPACITY(cap) 	((cap) < 8 ? 8 : (cap) * 2)
 
 /* These are internal only macros. */
 #define _ARRAY_METHOD_NAME(tname, name) tname##_##name
@@ -74,11 +74,11 @@ typedef void (*FreeFn)(void *value);
 	static void _ARRAY_METHOD(name, grow)                                                    \
 	{                                                                                        \
 		a_uint32 oldcap = self->cap;                                                     \
-		if (a_unlikely(oldcap >= UINT_MAX)) {                                         \
-			ashe_panicf("%d:%s: capacity limit of %u reached in array '%s'!",        \
-				    __LINE__, __FILE__, #name, UINT_MAX);                        \
+		if (a_unlikely(oldcap >= UINT_MAX)) {                                         	 \
+			ashe_panicf("capacity limit of %u reached in array '%s'!", 		 \
+			#name, UINT_MAX); 							 \
 		}                                                                                \
-		if (oldcap != 0 && !ASHE_ISPOW2(oldcap)) {                                       \
+		if (oldcap != 0 && !a_ispow2(oldcap)) {                                       \
 			oldcap |= (oldcap >> 1);                                                 \
 			oldcap |= (oldcap >> 2);                                                 \
 			oldcap |= (oldcap >> 4);                                                 \
@@ -87,7 +87,7 @@ typedef void (*FreeFn)(void *value);
 			oldcap++;                                                                \
 			oldcap >>= 1;                                                            \
 		}                                                                                \
-		self->cap = a_max(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);                     \
+		self->cap = a_min(GROW_ARRAY_CAPACITY(oldcap), UINT_MAX);                     	 \
 		self->data = (type *)ashe_realloc(self->data, self->cap * sizeof(type));         \
 	}                                                                                        \
                                                                                                  \

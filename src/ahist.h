@@ -4,7 +4,7 @@
 #include "acommon.h"
 
 
-#define resethistcurrent() 	(ashe.history.current = NULL)
+#define resethistcurrent() 	(ashe.sh_history.current = NULL)
 
 
  /* commands history */

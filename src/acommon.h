@@ -93,15 +93,16 @@ typedef void (*a_sighandler)(int);
 /* -------------------------------- */
 
 /* check if 'x' is power of 2 */
-#define ASHE_ISPOW2(x) (((x) & ((x)-1)) == 0)
+#define a_ispow2(x) (((x) & ((x)-1)) == 0)
 /* -------------------------------- */
 
 /* string literal size excluding null term */
 #define SS(str) (sizeof(str) - 1)
 /* -------------------------------- */
 
-/* max compare */
+/* max/min */
 #define a_max(a, b) 	((a) > (b) ? (a) : (b))
+#define a_min(a, b) 	((a) > (b) ? (b) : (a))
 /* -------------------------------- */
 
 /* max lenghts of number to string conversions */

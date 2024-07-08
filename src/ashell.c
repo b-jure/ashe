@@ -14,12 +14,12 @@
  * If not, see <https://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------------------------*/
 
+#include "aalloc.h"
+#include "aalloc.h"
+#include "aasync.h"
 #include "acommon.h"
 #include "aconf.h"
-#include "aasync.h"
 #include "ashell.h"
-#include "aalloc.h"
-#include "aalloc.h"
 #include "auserstr.h"
 #ifdef ASHE_DBG
 #include "adbg.h"
@@ -65,8 +65,15 @@ ASHE_PRIVATE void sh_init_vars(struct a_shell *sh)
 ASHE_PUBLIC void a_shell_init(struct a_shell *sh)
 {
 	pid_t sh_pgid;
+	a_ubyte canfail;
 
+#ifdef ASHE_DBG
+	canfail = 0;
+#else
+	canfail = 1;
+#endif
 	memset(sh, 0, sizeof(struct a_shell));
+	ashe_inithist(&sh->sh_history, NULL, canfail);
 	sh_pgid = ashe_getpgrp();
 	a_arr_ccharp_init_cap(&sh->sh_strings, 8);
 	a_arr_char_init_cap(&sh->sh_status, 8);

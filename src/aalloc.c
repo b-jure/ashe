@@ -25,8 +25,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
 ASHE_PUBLIC void ashe_cleanup(void)
 {
+	a_ubyte canfail;
+
+#ifdef ASHE_DBG
+	canfail = 0;
+#else
+	canfail = 1;
+#endif
+	ashe_freehistlist(&ashe.sh_history, NULL, canfail);
 	a_jobcntl_harvest(&ashe.sh_jobcntl);
 	a_shell_free(&ashe);
 }

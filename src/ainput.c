@@ -225,7 +225,7 @@ ASHE_PRIVATE a_uint32 first_row_diff(a_ubyte prompt)
 
 	prompt = (prompt != 0);
 	idx = A_IROW;
-	line = a_arr_line_index(&A_ILINES, idx);
+	line = &A_ILINE;
 	temp = line->len;
 
 	for (rows = 0; 0 < idx; idx--) {
@@ -275,7 +275,7 @@ ASHE_PRIVATE void setinput2history(void)
 	a_arr_line_free(&A_ILINES, NULL);
 	a_arr_line_init(&A_ILINES);
 	a_arr_line_push(&A_ILINES, (struct a_line){.len = 0, .start = a_arr_ptr(A_IBF)});
-	hist = ashe.history.current;
+	hist = ashe.sh_history.current;
 	/* This code is very very very slow, but I
 	 * am very very very lazy. */
 	draw_lit(a_csi_cursor_hide);
@@ -358,7 +358,6 @@ ASHE_PRIVATE enum termkey read_key(void)
 ASHE_PRIVATE a_ubyte process_key(void)
 {
 	a_int32 c;
-	struct a_histnode *hist;
 
 	if (IMPLEMENTED((c = read_key()))) {
 		switch (c) {
@@ -388,11 +387,11 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			ashe_move_down();
 			break;
 		case CTRL_KEY('n'):
-			if (ashe_histnext(&ashe.history))
+			if (ashe_histnext(&ashe.sh_history))
 				setinput2history();
 			break;
 		case CTRL_KEY('p'):
-			if (ashe_histprev(&ashe.history))
+			if (ashe_histprev(&ashe.sh_history))
 				setinput2history();
 			break;
 		case CTRL_KEY('h'):
@@ -442,7 +441,7 @@ ASHE_PRIVATE void a_input_read(void)
 	while (process_key());
 	a_arr_char_push(&A_IBF, '\0');
 	cmd = ashe_dupstrn(a_arr_ptr(A_IBF), a_arr_len(A_IBF));
-	ashe_newhisthead(&ashe.history, cmd);
+	ashe_newhisthead(&ashe.sh_history, cmd);
 	resethistcurrent();
 	ashe_move_to_end();
 }
@@ -840,7 +839,7 @@ ASHE_PUBLIC a_ubyte ashe_move_up(void)
 start:
 			A_ICOL = 0;
 			A_IBFIDX = 0;
-			A_TCOL = temp + 1;
+			A_TCOL = temp;
 			goto uptocol_draw;
 		} else {
 			goto up;
@@ -975,7 +974,7 @@ ASHE_PUBLIC a_ubyte ashe_move_to_start(void)
 
 	/* update terminal cursor */
 	dbf_pushlit(a_csi_cursor_hide);
-	dbf_push_moveup(up);
+	if (up > 0) dbf_push_moveup(up);
 	dbf_push_movecol(A_TCOL);
 	dbf_pushlit(a_csi_cursor_show);
 	dbf_flush();

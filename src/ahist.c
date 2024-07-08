@@ -32,6 +32,7 @@ ASHE_PRIVATE inline void checknodelimit(struct a_histlist *hl)
 		hl->tail = hl->tail->next;
 		hl->tail->prev = NULL;
 		freenode(hnode);
+		hl->nnodes--;
 	}
 }
 
@@ -46,6 +47,8 @@ ASHE_PUBLIC struct a_histnode *ashe_newhisthead(struct a_histlist *hl, const cha
 	hnode->next = NULL;
 	if (!hl->head)
 		hl->tail = hnode;
+	else
+		hnode->prev->next = hnode;
 	hl->head = hnode;
 	hl->nnodes++;
 	return hnode;
@@ -62,6 +65,8 @@ ASHE_PUBLIC struct a_histnode *ashe_newhisttail(struct a_histlist *hl, const cha
 	hnode->prev = NULL;
 	if (!hl->tail)
 		hl->head = hnode;
+	else
+		hnode->next->prev = hnode;
 	hl->tail = hnode;
 	hl->nnodes++;
 	return hnode;
@@ -70,9 +75,11 @@ ASHE_PUBLIC struct a_histnode *ashe_newhisttail(struct a_histlist *hl, const cha
 
 ASHE_PUBLIC const char *ashe_histprev(struct a_histlist *hl)
 {
-	if (!hl->current)
+	if (!hl->current) {
 		hl->current = hl->head;
-	if (hl->current && hl->current->prev) {
+		if (hl->current)
+			return hl->current->contents;
+	} else if (hl->current->prev) {
 		hl->current = hl->current->prev;
 		return hl->current->contents;
 	}
@@ -122,7 +129,7 @@ ASHE_PRIVATE void inithistbuff(struct histbuff *buff)
 
 ASHE_PRIVATE void fillhistbuff(struct histbuff *buff)
 {
-	a_memmax rsize;
+	a_ssize rsize;
 	a_int32 saverrno;
 
 	ashe_assert(buff->fp != NULL);
@@ -178,22 +185,30 @@ ASHE_PRIVATE const char *gethistline(struct histbuff *buff)
  * Read history file
  * ------------------------------------------------------------------------- */
 
-ASHE_PRIVATE a_int32 readhistoryfile(struct a_histlist *hl, const char **fpp)
+ASHE_PRIVATE void getrealfilepath(a_arr_char *buffer, const char *filepath)
 {
-	const char *filepath;
-	const char *histline;
-	struct a_histnode *node;
+	a_arr_char_push_str(buffer, filepath, strlen(filepath));
+	a_arr_char_push(buffer, '\0');
+	ashe_expandvars(buffer);
+}
+
+
+ASHE_PRIVATE a_int32 readhistoryfile(struct a_histlist *hl, const char *filepath)
+{
 	struct histbuff buff;
-	a_ssize nread;
-	a_ssize len;
+	a_arr_char filebuff;
 	a_int32 status;
 
 
 	status = 0;
 	inithistbuff(&buff);
+	a_arr_char_init(&filebuff);
 
-	if (!(filepath = *fpp))
-		*fpp = filepath = ASHE_HISTFILEPATH;
+	if (!filepath)
+		filepath = ASHE_HISTFILEPATH;
+
+	getrealfilepath(&filebuff, filepath);
+	filepath = a_arr_ptr(filebuff);
 
 	if (a_unlikely((buff.fp = fopen(filepath, "r")) == NULL))
 		a_defer(-1);
@@ -204,23 +219,20 @@ ASHE_PRIVATE a_int32 readhistoryfile(struct a_histlist *hl, const char **fpp)
 
 defer:
 	if (buff.fp) fclose(buff.fp);
+	a_arr_char_free(&filebuff, NULL);
 	return status;
 }
 
 
 ASHE_PUBLIC void ashe_inithist(struct a_histlist *hl, const char *filepath, int canfail)
 {
-	const char **fpp;
-
-	fpp = &filepath;
 	memset(hl, 0, sizeof(*hl));
-	if (readhistoryfile(hl, fpp) < 0) {
+	if (readhistoryfile(hl, filepath) < 0) {
 		if (canfail) {
-			ashe_perrno("reading file '%s'", *fpp);
 			ashe_freehistnodes(hl);
 			memset(hl, 0, sizeof(*hl));
 		} else {
-			ashe_panicf("reading file '%s'", *fpp);
+			ashe_panic_libcall("fopen");
 		}
 	}
 }
@@ -231,24 +243,31 @@ ASHE_PUBLIC void ashe_inithist(struct a_histlist *hl, const char *filepath, int 
  * Save to history file
  * ------------------------------------------------------------------------- */
 
-ASHE_PRIVATE a_int32 savehistoryfile(struct a_histlist *hl, const char **filepathp)
+ASHE_PRIVATE a_int32 savehistoryfile(struct a_histlist *hl, const char *filepath)
 {
 	FILE *fp;
 	a_arr_char buffer;
-	const char *filepath;
 	struct a_histnode *node;
 	size_t len;
 	a_int32 status;
 
-	status = 0;
 
-	if (!(filepath = *filepathp))
-		*filepathp = filepath = ASHE_HISTFILEPATH;
+	status = 0;
+	a_arr_char_init(&buffer);
+
+	/* early return if no history */
+	if (!hl->head) return status;
+
+	if (!filepath) filepath = ASHE_HISTFILEPATH;
+
+	getrealfilepath(&buffer, filepath);
+	filepath = a_arr_ptr(buffer);
 
 	if (a_unlikely((fp = fopen(filepath, "w")) == NULL))
 		a_defer(-1);
 
-	a_arr_char_init(&buffer);
+	a_arr_len(buffer) = 0;
+
 	for (node = hl->tail; node; node = node->next) {
 		len = node->len;
 		a_arr_char_push_str(&buffer, node->contents, len++);
@@ -285,12 +304,7 @@ ASHE_PUBLIC void ashe_freehistnodes(struct a_histlist *hl)
 
 ASHE_PUBLIC void ashe_freehistlist(struct a_histlist *hl, const char *filepath, a_ubyte canfail)
 {
-	const char **fpp;
-
-	fpp = &filepath;
-	if (savehistoryfile(hl, fpp) < 0) {
-		if (canfail) ashe_perrno("writing to '%s'", *fpp);
-		else ashe_panicf("writing to '%s'", *fpp);
-	}
+	if (savehistoryfile(hl, filepath) < 0 && !canfail)
+		ashe_panic("failed writing history file");
 	ashe_freehistnodes(hl);
 }

@@ -454,6 +454,7 @@ ASHE_PRIVATE a_int32 a_run_simple_cmd(struct a_simple_cmd *restrict scmd,
 	a_int32 type;
 	a_pid pid;
 
+	type = -1;
 	a_pipectx_init(&ctx);
 
 	if (cmdcnt > 1) {
