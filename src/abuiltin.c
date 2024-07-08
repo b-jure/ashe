@@ -652,7 +652,7 @@ ASHE_PRIVATE a_int32 ashe_bi_pwd(a_arr_ccharp *argv)
 			ashe_perrno("getcwd");
 			a_defer(-1);
 		}
-		ashe_printf(stdout, "%s\r\n", buff);
+		ashe_printf(stdout, "%s\n", buff);
 		break;
 	case 2:
 		if (is_help_opt(a_arrp_ptr(argv)[1])) {

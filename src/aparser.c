@@ -408,6 +408,7 @@ ASHE_PRIVATE void block_subst(struct a_block *restrict block)
 	insert = block->bl_lists.len - block->bl_subst;
 	a_list_init(&list);
 	a_arr_list_insert(&block->bl_lists, insert, list);
+	nexttok(&A_LEX);
 	plist(block, a_arr_list_index(&block->bl_lists, insert));
 	expect(0, BM(TK_RPAREN), "')' (end of command substitution)");
 	--block->bl_subst;

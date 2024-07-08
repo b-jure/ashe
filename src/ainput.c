@@ -14,6 +14,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  * ----------------------------------------------------------------------------------------------*/
 
+#include <complex.h>
 #include <signal.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -275,6 +276,16 @@ ASHE_PUBLIC void ashe_clearinput(void)
 	draw_lit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down a_csi_cursor_show);
 }
 
+ASHE_PUBLIC void ashe_deletefront(void)
+{
+	a_uint32 idx;
+
+	idx = A_IBFIDX;
+	while (ashe_move_right());
+	while (A_IBFIDX > idx)
+		ashe_remove_char();
+}
+
 ASHE_PRIVATE void setinput2history(void)
 {
 	struct a_histnode *hist;
@@ -427,11 +438,13 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			while (ashe_remove_char());
 			break;
 		case CTRL_KEY('d'):
-			ashe_clearinput();
+			ashe_deletefront();
 			break;
 		// TODO: CTRL + f (move forward by a single word)
 		// TODO: CTRL + b (move back by a single word)
 		case CTRL_KEY('x'):
+			ashe_exit(EXIT_SUCCESS);
+			break;
 		case CTRL_KEY('i'):
 			break;
 		default:
@@ -461,7 +474,7 @@ ASHE_PRIVATE void a_input_read(void)
 	while (process_key());
 	a_arr_char_push(&A_IBF, '\0');
 	resethistcurrent();
-	ashe_move_to_end();
+	while (ashe_move_right());
 }
 
 ASHE_PUBLIC void a_input_clear(void)
@@ -544,7 +557,7 @@ ASHE_PUBLIC a_ubyte ashe_insert_char(a_ubyte c, a_ubyte hidecur)
 	a_ubyte relink;
 
 	/* return if input limit would be exceeded */
-	if (a_unlikely(a_arr_len(A_IBF) >= MAXCMDSIZE - 1))
+	if (a_unlikely(a_arr_len(A_IBF) >= MAXCMDSIZE))
 		return 0;
 
 	/* update state and input buffer */
@@ -612,7 +625,6 @@ ASHE_PUBLIC a_ubyte ashe_remove_char(void)
 		A_ILINE.len--; /* '\n' */
 		A_ILINE.len += l->len;
 		a_arr_line_remove(&A_ILINES, A_IROW + 1);
-		A_TROW--;
 	}
 	dbf_pushlit(a_csi_cursor_hide a_csi_clear_line_right a_csi_clear_down a_csi_cursor_save);
 	dbf_push_len(a_arr_char_index(&A_IBF, A_IBFIDX), a_arr_len(A_IBF) - A_IBFIDX);

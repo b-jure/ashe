@@ -262,6 +262,11 @@ a_ubyte ashe_move_to_end(void);
  */
 void ashe_clearinput(void);
 
+/*
+ * Removes text in front of the cursor.
+ */
+void ashe_deletefront(void);
+
 
 a_ubyte ashe_draw_prompt_unsafe(void);
 void ashe_redraw_input_unsafe(void);
