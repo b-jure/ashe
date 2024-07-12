@@ -57,7 +57,7 @@ ASHE_PRIVATE inline void print_rows(const char **rows, a_uint32 len)
 
 ASHE_PRIVATE inline void ashe_jobs_print_header(void)
 {
-	const char *fmt = "\r\n%-*s%-*s%-*s\r\n";
+	const char *fmt = "%-*s%-*s%-*s\r\n";
 	a_uint32 pad;
 
 	pad = 10;

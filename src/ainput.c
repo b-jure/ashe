@@ -36,11 +36,14 @@
 #include "adbg.h"
 #endif
 
+
 #define ASHE_IBF_MAX ASHE_USERSTR_MAX
+
 
 /* control sequence introducer */
 #define A_CSI	   "\033["
 #define A_ESC(seq) A_CSI #seq
+
 
 /* cursor control sequences */
 #define a_csi_cursor_home	    A_ESC(H)
@@ -57,6 +60,7 @@
 #define a_csi_cursor_show 	    A_ESC(?25h)
 #define a_csi_scroll_down A_ESC(M)
 
+
 /* clear control sequences */
 #define a_csi_clear_down       A_ESC(0J)
 #define a_csi_clear_up	       A_ESC(1J)
@@ -65,18 +69,22 @@
 #define a_csi_clear_line_left  A_ESC(1K)
 #define a_csi_clear_line       A_ESC(2K)
 
+
 /* key code defs */
 #define CTRL_KEY(k)    ((k) & 0x1f)
 #define ESCAPE	       27
 #define CR	       0x0D
 #define IMPLEMENTED(c) (c != ESCAPE)
 
+
 /* terminal column position */
 #define tcol(x) ((((x)-1) % (A_TCOLMAX)) + 1)
+
 
 /* terminal row diff */
 #define trowdiff(x, y) (((x) / A_TCOLMAX) - ((y) / A_TCOLMAX))
 #define trowdiffx(x)   ((x) / A_TCOLMAX)
+
 
 /* draw buffer */
 #define dbf_pushc(c)	     a_arr_char_push(&A_TDBF, c)
@@ -87,30 +95,31 @@
 #define dbf_push_movedown(n) a_arr_char_push_strf(&A_TDBF, A_CSI "%nB", n)
 #define dbf_pushlit(strlit)  dbf_push_len(strlit, SS(strlit))
 
+
 /* draw without buffering */
 #define draw_lit(strlit) ashe_write(STDERR_FILENO, strlit, SS(strlit))
 
+
 /* turn on OPOST in raw mode */
-#define opost_on()                                           \
-	do {                                                 \
-		ashe.sh_term.tm_rawtermios.c_oflag |= OPOST; \
-		ashe_tcsetattr(TCSAFLUSH, &A_TIORAW);        \
-	} while (0)
+#define opost_on() \
+	{ ashe.sh_term.tm_rawtermios.c_oflag |= OPOST; \
+	  ashe_tcsetattr(TCSAFLUSH, &A_TIORAW); }
+
 
 /* turn off OPOST in raw mode */
-#define opost_off()                                             \
-	do {                                                    \
-		ashe.sh_term.tm_rawtermios.c_oflag &= ~(OPOST); \
-		ashe_tcsetattr(TCSAFLUSH, &A_TIORAW);           \
-	} while (0)
+#define opost_off() \
+	{ ashe.sh_term.tm_rawtermios.c_oflag &= ~(OPOST); \
+	  ashe_tcsetattr(TCSAFLUSH, &A_TIORAW); }
+
 
 /*
  * shift lines starting from 'row', 'n' bytes
  * to right or left depending on the 'sign'
  */
-#define shift_lines_from(row, n, sign)                \
+#define shift_lines_from(row, n, sign) \
 	for (a_uint32 i = row; i < A_ILINES.len; i++) \
 		a_arr_line_index(&A_ILINES, i)->start sign## = (n);
+
 
 /* Implemented keys */
 enum termkey {
@@ -388,21 +397,27 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			ashe_remove_char();
 			break;
 		case END_KEY:
+		case CTRL_KEY('e'):
 			ashe_move_to_eol();
 			break;
 		case HOME_KEY:
+		case CTRL_KEY('s'):
 			ashe_move_to_sol();
 			break;
 		case L_ARW:
+		case CTRL_KEY('h'):
 			ashe_move_left();
 			break;
 		case R_ARW:
+		case CTRL_KEY('l'):
 			ashe_move_right();
 			break;
 		case U_ARW:
+		case CTRL_KEY('k'):
 			ashe_move_up();
 			break;
 		case D_ARW:
+		case CTRL_KEY('j'):
 			ashe_move_down();
 			break;
 		case CTRL_KEY('n'):
@@ -413,26 +428,8 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			if (ashe_histprev(&ashe.sh_history))
 				setinput2history();
 			break;
-		case CTRL_KEY('h'):
-			ashe_move_left();
-			break;
-		case CTRL_KEY('j'):
-			ashe_move_down();
-			break;
-		case CTRL_KEY('k'):
-			ashe_move_up();
-			break;
-		case CTRL_KEY('l'):
-			ashe_move_right();
-			break;
 		case CTRL_KEY('r'):
 			ashe_clear_screen_and_redraw();
-			break;
-		case CTRL_KEY('e'):
-			ashe_move_to_eol();
-			break;
-		case CTRL_KEY('s'):
-			ashe_move_to_sol();
 			break;
 		case CTRL_KEY('w'):
 			while (ashe_remove_char());
@@ -446,6 +443,7 @@ ASHE_PRIVATE a_ubyte process_key(void)
 			ashe_exit(EXIT_SUCCESS);
 			break;
 		case CTRL_KEY('i'):
+			// TODO: glob operator (same as TAB in other shells)
 			break;
 		default:
 			if (isgraph(c) || c == ' ')
